@@ -19,7 +19,7 @@ type IconName = "shopping-cart" | "trending-up" | "arrow-down-left" | "arrow-up-
 interface EmptyStateProps {
   title: string;
   description: string;
-  icon: IconName;
+  icon: React.ReactNode;
   actionLabel?: string;
   onAction?: () => void;
 }
@@ -31,35 +31,10 @@ export default function EmptyState({
   actionLabel,
   onAction
 }: EmptyStateProps) {
-  const renderIcon = () => {
-    const iconProps = { size: 64, color: "#ccc", strokeWidth: 1.5 };
-    
-    switch (icon) {
-      case "shopping-cart":
-        return <ShoppingCart {...iconProps} />;
-      case "trending-up":
-        return <TrendingUp {...iconProps} />;
-      case "arrow-down-left":
-        return <ArrowDownLeft {...iconProps} />;
-      case "arrow-up-right":
-        return <ArrowUpRight {...iconProps} />;
-      case "bar-chart":
-        return <BarChart {...iconProps} />;
-      case "users":
-        return <Users {...iconProps} />;
-      case "building":
-        return <Building {...iconProps} />;
-      case "package":
-        return <Package {...iconProps} />;
-      default:
-        return <BarChart {...iconProps} />;
-    }
-  };
-
   return (
     <View style={styles.container}>
       <View style={styles.iconContainer}>
-        {renderIcon()}
+        {icon}
       </View>
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.description}>{description}</Text>

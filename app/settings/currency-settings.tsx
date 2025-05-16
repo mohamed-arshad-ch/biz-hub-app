@@ -11,7 +11,7 @@ import {
   Animated,
   Platform
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { 
   ArrowLeft, 
   Check,
@@ -19,19 +19,34 @@ import {
 } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
-import { 
-  Currency, 
-  getCurrencies, 
-  getSelectedCurrency, 
-  setSelectedCurrency,
-} from '@/utils/currencyStorageUtils';
+
+// Define Currency type
+interface Currency {
+  code: string;
+  name: string;
+  symbol: string;
+}
+
+// Mock currencies data
+const mockCurrencies: Currency[] = [
+  { code: 'USD', name: 'US Dollar', symbol: '$' },
+  { code: 'EUR', name: 'Euro', symbol: '€' },
+  { code: 'GBP', name: 'British Pound', symbol: '£' },
+  { code: 'JPY', name: 'Japanese Yen', symbol: '¥' },
+  { code: 'CAD', name: 'Canadian Dollar', symbol: 'CA$' },
+  { code: 'AUD', name: 'Australian Dollar', symbol: 'A$' },
+  { code: 'INR', name: 'Indian Rupee', symbol: '₹' },
+  { code: 'CNY', name: 'Chinese Yuan', symbol: '¥' },
+  { code: 'BRL', name: 'Brazilian Real', symbol: 'R$' },
+  { code: 'ZAR', name: 'South African Rand', symbol: 'R' }
+];
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 export default function CurrencySettingsScreen() {
   const router = useRouter();
   const [currencies, setCurrencies] = useState<Currency[]>([]);
-  const [selectedCurrency, setSelectedCurrencyCode] = useState<string>('');
+  const [selectedCurrency, setSelectedCurrencyCode] = useState<string>('USD');
   const [isLoading, setIsLoading] = useState(true);
   
   // Animation values
@@ -42,14 +57,11 @@ export default function CurrencySettingsScreen() {
     loadCurrencies();
   }, []);
 
-  const loadCurrencies = async () => {
+  const loadCurrencies = () => {
     setIsLoading(true);
-    try {
-      const currenciesData = await getCurrencies();
-      const selected = await getSelectedCurrency();
-      
-      setCurrencies(currenciesData);
-      setSelectedCurrencyCode(selected);
+    // Simulate API delay
+    setTimeout(() => {
+      setCurrencies(mockCurrencies);
       
       // Start animations when data is loaded
       Animated.parallel([
@@ -64,28 +76,21 @@ export default function CurrencySettingsScreen() {
           useNativeDriver: true,
         }),
       ]).start();
-    } catch (error) {
-      console.error('Error loading currencies:', error);
-      alert('Failed to load currency data');
-    } finally {
+      
       setIsLoading(false);
-    }
+    }, 500);
   };
 
-  const handleCurrencySelect = async (currencyCode: string) => {
+  const handleCurrencySelect = (currencyCode: string) => {
     if (currencyCode === selectedCurrency) return;
     
-    try {
-      setIsLoading(true);
-      await setSelectedCurrency(currencyCode);
+    // Simulate API delay
+    setIsLoading(true);
+    setTimeout(() => {
       setSelectedCurrencyCode(currencyCode);
       alert(`Currency successfully changed to ${currencyCode}`);
-    } catch (error) {
-      console.error('Error setting currency:', error);
-      alert('Failed to set currency');
-    } finally {
       setIsLoading(false);
-    }
+    }, 300);
   };
 
   const renderCurrencyItem = ({ item, index }: { item: Currency, index: number }) => {
@@ -132,29 +137,16 @@ export default function CurrencySettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen 
-        options={{
-          title: "Currency Settings",
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-        }} 
-      />
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
+      {/* Modern Header */}
       <View style={styles.header}>
-        <DollarSign size={24} color={Colors.primary} />
-        <Text style={styles.headerTitle}>Select Currency</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Currency Settings</Text>
+        <View style={{ width: 40 }} />
       </View>
-      
-      <Text style={styles.headerDescription}>
-        Choose your preferred currency for invoices and financial tracking.
-      </Text>
       
       {isLoading ? (
         <View style={styles.loadingContainer}>
@@ -162,13 +154,24 @@ export default function CurrencySettingsScreen() {
           <Text style={styles.loadingText}>Loading currencies...</Text>
         </View>
       ) : (
-        <FlatList
-          data={currencies}
-          renderItem={renderCurrencyItem}
-          keyExtractor={(item) => item.code}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
+        <>
+          <View style={styles.subHeader}>
+            <DollarSign size={24} color={Colors.primary} />
+            <Text style={styles.subHeaderTitle}>Select Currency</Text>
+          </View>
+          
+          <Text style={styles.subHeaderDescription}>
+            Choose your preferred currency for invoices and financial tracking.
+          </Text>
+          
+          <FlatList
+            data={currencies}
+            renderItem={renderCurrencyItem}
+            keyExtractor={(item) => item.code}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+        </>
       )}
     </View>
   );
@@ -177,26 +180,51 @@ export default function CurrencySettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f7fa',
-  },
-  headerButton: {
-    padding: 8,
+    backgroundColor: Colors.background.secondary,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: Colors.background.tertiary,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  subHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 24,
     marginHorizontal: 20,
   },
-  headerTitle: {
+  subHeaderTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#333',
+    color: Colors.text.primary,
     marginLeft: 12,
   },
-  headerDescription: {
+  subHeaderDescription: {
     fontSize: 15,
-    color: '#666',
+    color: Colors.text.secondary,
     marginTop: 8,
     marginBottom: 24,
     marginHorizontal: 20,
@@ -210,15 +238,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: Colors.background.default,
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 12,
     marginBottom: 12,
-    shadowColor: "rgba(0,0,0,0.06)",
-    shadowOffset: { width: 0, height: 2 },
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    shadowColor: "rgba(0,0,0,0.05)",
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowRadius: 2,
+    elevation: 1,
   },
   selectedCurrencyItem: {
     borderWidth: 1,
@@ -246,12 +276,12 @@ const styles = StyleSheet.create({
   currencyName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: Colors.text.primary,
     marginBottom: 3,
   },
   currencyCode: {
-    fontSize: 14,
-    color: '#777',
+    fontSize: 12,
+    color: Colors.text.secondary,
   },
   selectedIndicator: {
     width: 32,
@@ -260,11 +290,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
   },
   loadingContainer: {
     flex: 1,
@@ -274,6 +299,9 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#666',
+    color: Colors.text.secondary,
+  },
+  headerButton: {
+    padding: 8,
   },
 }); 

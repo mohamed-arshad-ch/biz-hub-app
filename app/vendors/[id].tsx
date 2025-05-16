@@ -9,13 +9,17 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Linking
+  Linking,
+  StatusBar,
+  Platform,
+  Share
 } from "react-native";
-import { Stack, useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { 
   ArrowLeft, 
   Edit, 
-  Trash, 
+  Trash2, 
+  Share2,
   Phone, 
   Mail, 
   Globe, 
@@ -30,7 +34,9 @@ import {
   User,
   DollarSign,
   Building,
-  Briefcase
+  Briefcase,
+  CreditCard,
+  Info
 } from "lucide-react-native";
 
 import Colors from "@/constants/colors";
@@ -38,7 +44,6 @@ import { formatCurrency, formatDate, formatPhoneNumber } from "@/utils/formatter
 import SnackBar from "@/components/SnackBar";
 import EmptyState from '@/components/EmptyState';
 import { Vendor } from '@/types/vendor';
-import { getVendorById, deleteVendor } from "@/utils/asyncStorageUtils";
 
 // Mock purchase history - this would be replaced with actual data
 const purchaseHistory = [
@@ -65,6 +70,105 @@ const purchaseHistory = [
   },
 ];
 
+// Mock vendors data for demonstration
+const mockVendors: { [key: string]: Vendor } = {
+  '1': {
+    id: '1',
+    name: 'TechSuppliers Inc.',
+    contactName: 'John Smith',
+    email: 'john@techsuppliers.com',
+    phone: '+1 (555) 123-4567',
+    address: '123 Supplier St, San Francisco, CA 94107',
+    website: 'https://techsuppliers.com',
+    notes: 'Primary supplier for electronics and technology products',
+    status: 'active',
+    paymentTerms: 'Net 30',
+    taxIdentifier: 'TX-12345678',
+    outstandingBalance: 5200.50,
+    totalPurchases: 42800.75,
+    category: 'Electronics',
+    tags: ['technology', 'electronics', 'computers'],
+    createdAt: new Date('2023-01-10'),
+    updatedAt: new Date('2023-05-15')
+  },
+  '2': {
+    id: '2',
+    name: 'FurniturePlus',
+    contactName: 'Sarah Johnson',
+    email: 'sarah@furnitureplus.com',
+    phone: '+1 (555) 987-6543',
+    address: '456 Furniture Ave, Chicago, IL 60611',
+    website: 'https://furnitureplus.com',
+    notes: 'Office furniture and accessories supplier',
+    status: 'active',
+    paymentTerms: 'Net 45',
+    taxIdentifier: 'TX-87654321',
+    outstandingBalance: 0,
+    totalPurchases: 18900.25,
+    category: 'Furniture',
+    tags: ['furniture', 'office', 'chairs'],
+    createdAt: new Date('2023-02-20'),
+    updatedAt: new Date('2023-06-01')
+  },
+  '3': {
+    id: '3',
+    name: 'Global Shipping Services',
+    contactName: 'Michael Brown',
+    email: 'michael@globalshipping.com',
+    phone: '+1 (555) 567-8901',
+    address: '789 Logistics Pkwy, Miami, FL 33101',
+    website: 'https://globalshipping.com',
+    notes: 'International shipping and logistics provider',
+    status: 'inactive',
+    paymentTerms: 'Net 15',
+    taxIdentifier: 'TX-23456789',
+    outstandingBalance: 1250.00,
+    totalPurchases: 35600.50,
+    category: 'Logistics',
+    tags: ['shipping', 'logistics', 'international'],
+    createdAt: new Date('2023-03-05'),
+    updatedAt: new Date('2023-04-10')
+  },
+  '4': {
+    id: '4',
+    name: 'Office Supplies Direct',
+    contactName: 'Jennifer Lee',
+    email: 'jennifer@officesupplies.com',
+    phone: '+1 (555) 234-5678',
+    address: '101 Office Park, Boston, MA 02110',
+    website: 'https://officesuppliesdirect.com',
+    notes: 'Bulk supplier for office consumables and supplies',
+    status: 'active',
+    paymentTerms: 'Net 30',
+    taxIdentifier: 'TX-34567890',
+    outstandingBalance: 750.25,
+    totalPurchases: 12500.75,
+    category: 'Office Supplies',
+    tags: ['office', 'supplies', 'paper'],
+    createdAt: new Date('2023-01-25'),
+    updatedAt: new Date('2023-05-05')
+  },
+  '5': {
+    id: '5',
+    name: 'Digital Marketing Solutions',
+    contactName: 'Robert Chen',
+    email: 'robert@digitalmarketing.com',
+    phone: '+1 (555) 345-6789',
+    address: '222 Digital Dr, Seattle, WA 98101',
+    website: 'https://digitalmarketingsolutions.com',
+    notes: 'Marketing services and software provider',
+    status: 'active',
+    paymentTerms: 'Net 15',
+    taxIdentifier: 'TX-45678901',
+    outstandingBalance: 3200.00,
+    totalPurchases: 28750.50,
+    category: 'Services',
+    tags: ['marketing', 'digital', 'software'],
+    createdAt: new Date('2023-02-15'),
+    updatedAt: new Date('2023-06-10')
+  }
+};
+
 export default function VendorDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -80,24 +184,24 @@ export default function VendorDetailScreen() {
   
   const loadVendorData = async () => {
     if (!id) {
-      setError('Vendor ID is required');
       setIsLoading(false);
       return;
     }
-
+    
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      const data = await getVendorById(id);
-      
-      if (!data) {
-        setError('Vendor not found');
+      // Use mock data instead of AsyncStorage
+      if (mockVendors[id]) {
+        setVendor(mockVendors[id]);
       } else {
-        setVendor(data);
-        setError(null);
+        console.error("Vendor not found");
+        setSnackbarMessage("Failed to load vendor details");
+        setSnackbarVisible(true);
       }
     } catch (error) {
-      console.error('Error loading vendor:', error);
-      setError('Failed to load vendor data');
+      console.error("Error loading vendor:", error);
+      setSnackbarMessage("Failed to load vendor details");
+      setSnackbarVisible(true);
     } finally {
       setIsLoading(false);
     }
@@ -109,10 +213,10 @@ export default function VendorDetailScreen() {
     }
   };
   
-  const handleDeleteVendor = () => {
+  const handleDeleteVendor = async () => {
     Alert.alert(
       "Delete Vendor",
-      "Are you sure you want to delete this vendor? This action cannot be undone.",
+      `Are you sure you want to delete ${vendor?.name}? This action cannot be undone.`,
       [
         {
           text: "Cancel",
@@ -122,14 +226,24 @@ export default function VendorDetailScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            if (id) {
-              try {
-                await deleteVendor(id);
-                router.replace("/vendors");
-              } catch (error) {
-                console.error('Error deleting vendor:', error);
-                showSnackbar("Failed to delete vendor");
-              }
+            setIsLoading(true);
+            
+            try {
+              // Simulate successful deletion
+              setTimeout(() => {
+                setSnackbarMessage("Vendor deleted successfully");
+                setSnackbarVisible(true);
+                
+                // Navigate back after a short delay
+                setTimeout(() => {
+                  router.replace("/vendors");
+                }, 1000);
+              }, 500);
+            } catch (error) {
+              console.error("Error deleting vendor:", error);
+              setSnackbarMessage("Failed to delete vendor");
+              setSnackbarVisible(true);
+              setIsLoading(false);
             }
           }
         }
@@ -164,6 +278,30 @@ export default function VendorDetailScreen() {
     }
   };
   
+  const handleShare = () => {
+    if (!vendor) return;
+    
+    const shareInfo = `Vendor: ${vendor.name}
+Email: ${vendor.email || 'N/A'}
+Phone: ${vendor.phone || 'N/A'}
+Address: ${vendor.address || 'N/A'}
+Website: ${vendor.website || 'N/A'}`;
+    
+    if (Platform.OS === 'android' || Platform.OS === 'ios') {
+      try {
+        Share.share({
+          message: shareInfo,
+          title: "Vendor Details"
+        });
+      } catch (error) {
+        console.error("Error sharing vendor:", error);
+      }
+    } else {
+      // Copy to clipboard or show a message for other platforms
+      showSnackbar("Sharing not available on this platform");
+    }
+  };
+  
   const getStatusColor = (status: string) => {
     switch (status) {
       case "paid":
@@ -174,6 +312,19 @@ export default function VendorDetailScreen() {
         return "#ea4335";
       default:
         return "#999";
+    }
+  };
+  
+  const getVendorStatusColor = (status: string) => {
+    switch (status) {
+      case 'active':
+        return Colors.status.active;
+      case 'inactive':
+        return Colors.status.inactive;
+      case 'blocked':
+        return Colors.status.blocked;
+      default:
+        return Colors.status.inactive;
     }
   };
   
@@ -188,7 +339,9 @@ export default function VendorDetailScreen() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading vendor details...</Text>
       </View>
     );
   }
@@ -196,6 +349,8 @@ export default function VendorDetailScreen() {
   if (error || !vendor) {
     return (
       <View style={styles.errorContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+        <Info size={48} color={Colors.negative} />
         <Text style={styles.errorText}>{error || 'Vendor not found'}</Text>
         <TouchableOpacity
           style={styles.errorButton}
@@ -208,299 +363,170 @@ export default function VendorDetailScreen() {
   }
   
   return (
-    <>
-      <Stack.Screen 
-        options={{
-          title: vendor.name,
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <View style={styles.headerActions}>
-              <TouchableOpacity 
-                onPress={handleEditVendor}
-                style={styles.headerButton}
-              >
-                <Edit size={20} color="#333" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={handleDeleteVendor}
-                style={styles.headerButton}
-              >
-                <Trash size={20} color="#333" />
-              </TouchableOpacity>
-            </View>
-          ),
-        }}
-      />
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
-      <ScrollView style={styles.container}>
-        {/* Vendor Profile Section */}
-        <View style={styles.profileSection}>
-          <View style={styles.profileHeader}>
-            <View style={styles.logoContainer}>
-              <Text style={styles.logoText}>{vendor.name.charAt(0)}</Text>
-            </View>
-            <View style={styles.profileInfo}>
-              <Text style={styles.vendorName}>{vendor.name}</Text>
-              <Text style={styles.vendorCompany}>{vendor.company}</Text>
-              <View style={styles.vendorMeta}>
-                <Text style={styles.vendorSince}>Vendor since: {formatDate(vendor.createdAt)}</Text>
-                <View style={[
-                  styles.statusBadge,
-                  { backgroundColor: vendor.status === "active" ? "#34a85320" : 
-                                    vendor.status === "inactive" ? "#fbbc0420" : "#ea433520" }
-                ]}>
-                  <Text style={[
-                    styles.statusText,
-                    { color: vendor.status === "active" ? "#34a853" : 
-                             vendor.status === "inactive" ? "#fbbc04" : "#ea4335" }
-                  ]}>
-                    {vendor.status.toUpperCase()}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
-          
-          <View style={styles.contactButtons}>
-            <TouchableOpacity
-              style={styles.contactButton}
-              onPress={handleCallVendor}
-              disabled={!vendor.phone}
-            >
-              <Phone size={20} color={vendor.phone ? Colors.primary : "#ccc"} />
-              <Text style={[styles.contactButtonText, !vendor.phone && styles.disabledText]}>Call</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.contactButton}
-              onPress={handleEmailVendor}
-              disabled={!vendor.email}
-            >
-              <Mail size={20} color={vendor.email ? Colors.primary : "#ccc"} />
-              <Text style={[styles.contactButtonText, !vendor.email && styles.disabledText]}>Email</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.contactButton}
-              onPress={handleVisitWebsite}
-              disabled={!vendor.website}
-            >
-              <Globe size={20} color={vendor.website ? Colors.primary : "#ccc"} />
-              <Text style={[styles.contactButtonText, !vendor.website && styles.disabledText]}>Website</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.contactButton}
-              onPress={handleCreatePurchase}
-            >
-              <ShoppingCart size={20} color={Colors.primary} />
-              <Text style={styles.contactButtonText}>Order</Text>
-            </TouchableOpacity>
-          </View>
+      {/* Modern Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.title}>Vendor Details</Text>
+        <View style={styles.actionButtons}>
+          <TouchableOpacity onPress={handleShare} style={styles.headerButton}>
+            <Share2 size={22} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleEditVendor} style={styles.headerButton}>
+            <Edit size={22} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleDeleteVendor} style={styles.headerButton}>
+            <Trash2 size={22} color={Colors.negative} />
+          </TouchableOpacity>
         </View>
-        
-        {/* Financial Summary Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Financial Summary</Text>
-          
-          <View style={styles.financialSummary}>
-            <View style={styles.financialItem}>
-              <Text style={styles.financialLabel}>Current Balance</Text>
-              <Text style={styles.financialValue}>{formatCurrency(vendor.outstandingBalance)}</Text>
-            </View>
-            
-            <View style={styles.financialItem}>
-              <Text style={styles.financialLabel}>Payment Terms</Text>
-              <Text style={styles.financialValue}>{vendor.paymentTerms || "Not specified"}</Text>
-            </View>
-            
-            <View style={styles.financialItem}>
-              <Text style={styles.financialLabel}>Total Purchases</Text>
-              <Text style={styles.financialValue}>{formatCurrency(vendor.totalPurchases)}</Text>
-            </View>
-            
-            <View style={styles.financialItem}>
-              <Text style={styles.financialLabel}>Last Purchase</Text>
-              <Text style={styles.financialValue}>
-                {vendor.lastPurchaseDate ? formatDate(vendor.lastPurchaseDate) : "No purchases yet"}
-              </Text>
-            </View>
-          </View>
-        </View>
-        
-        {/* Contact Information Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Contact Information</Text>
-          
-          <View style={styles.contactInfo}>
-            {vendor.contactPerson && (
-              <View style={styles.contactItem}>
-                <Text style={styles.contactLabel}>Contact Person</Text>
-                <Text style={styles.contactValue}>{vendor.contactPerson}</Text>
-              </View>
-            )}
-            
-            {vendor.phone && (
-              <View style={styles.contactItem}>
-                <View style={styles.contactItemHeader}>
-                  <Phone size={16} color="#666" style={styles.contactIcon} />
-                  <Text style={styles.contactLabel}>Phone</Text>
-                </View>
-                <Text style={styles.contactValue}>{formatPhoneNumber(vendor.phone)}</Text>
-              </View>
-            )}
-            
-            {vendor.email && (
-              <View style={styles.contactItem}>
-                <View style={styles.contactItemHeader}>
-                  <Mail size={16} color="#666" style={styles.contactIcon} />
-                  <Text style={styles.contactLabel}>Email</Text>
-                </View>
-                <Text style={styles.contactValue}>{vendor.email}</Text>
-              </View>
-            )}
-            
-            {vendor.website && (
-              <View style={styles.contactItem}>
-                <View style={styles.contactItemHeader}>
-                  <Globe size={16} color="#666" style={styles.contactIcon} />
-                  <Text style={styles.contactLabel}>Website</Text>
-                </View>
-                <Text style={styles.contactValue}>{vendor.website}</Text>
-              </View>
-            )}
-            
-            {vendor.address && (
-              <View style={styles.contactItem}>
-                <View style={styles.contactItemHeader}>
-                  <MapPin size={16} color="#666" style={styles.contactIcon} />
-                  <Text style={styles.contactLabel}>Address</Text>
-                </View>
-                <Text style={styles.contactValue}>
-                  {vendor.address}
-                  {vendor.city && `, ${vendor.city}`}
-                  {vendor.state && `, ${vendor.state}`}
-                  {vendor.zipCode && ` ${vendor.zipCode}`}
-                  {vendor.country && `, ${vendor.country}`}
+      </View>
+      
+      <ScrollView style={styles.mainContent} contentContainerStyle={styles.contentContainer}>
+        {/* Vendor Overview Card */}
+        <View style={styles.card}>
+          <View style={styles.vendorHeader}>
+            <View style={styles.avatarContainer}>
+              <View style={[styles.avatarPlaceholder, { backgroundColor: Colors.background.tertiary }]}>
+                <Text style={styles.avatarText}>
+                  {vendor.name.charAt(0).toUpperCase()}
                 </Text>
               </View>
-            )}
+            </View>
+            <View style={styles.vendorMainInfo}>
+              <Text style={styles.vendorName}>{vendor.name}</Text>
+              {vendor.company && (
+                <Text style={styles.companyName}>{vendor.company}</Text>
+              )}
+              <View style={styles.vendorSubInfo}>
+                <View style={[
+                  styles.statusBadge, 
+                  { backgroundColor: getVendorStatusColor(vendor.status) + '20' }
+                ]}>
+                  <View style={[
+                    styles.statusDot, 
+                    { backgroundColor: getVendorStatusColor(vendor.status) }
+                  ]} />
+                  <Text style={[
+                    styles.statusText,
+                    { color: getVendorStatusColor(vendor.status) }
+                  ]}>
+                    {vendor.status.charAt(0).toUpperCase() + vendor.status.slice(1)}
+                  </Text>
+                </View>
+                {vendor.category && (
+                  <View style={styles.categoryContainer}>
+                    <Tag size={14} color={Colors.text.secondary} />
+                    <Text style={styles.categoryText}>{vendor.category}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
           </View>
         </View>
         
-        {/* Purchase History Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Purchase History</Text>
-            <TouchableOpacity
-              style={styles.viewAllButton}
-              onPress={() => router.push(`/purchases?vendorId=${id}`)}
-            >
-              <Text style={styles.viewAllButtonText}>View All</Text>
-              <ChevronRight size={16} color={Colors.primary} />
-            </TouchableOpacity>
+        <View style={styles.statsContainer}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{formatCurrency(vendor.outstandingBalance)}</Text>
+            <Text style={styles.statLabel}>Payable Balance</Text>
           </View>
+          <View style={styles.divider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{formatCurrency(vendor.totalPurchases)}</Text>
+            <Text style={styles.statLabel}>Total Purchases</Text>
+          </View>
+        </View>
+        
+        {/* Contact Information Card */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Contact Information</Text>
           
-          {purchaseHistory.length > 0 ? (
-            <View style={styles.purchaseHistoryList}>
-              {purchaseHistory.map((purchase) => (
-                <TouchableOpacity
-                  key={purchase.id}
-                  style={styles.purchaseItem}
-                  onPress={() => router.push(`/purchases/${purchase.id}`)}
-                >
-                  <View style={styles.purchaseItemLeft}>
-                    <Text style={styles.purchaseDate}>{formatDate(purchase.date)}</Text>
-                    <Text style={styles.purchasePoNumber}>{purchase.invoiceNumber}</Text>
-                  </View>
-                  
-                  <View style={styles.purchaseItemRight}>
-                    <Text style={styles.purchaseAmount}>{formatCurrency(purchase.amount)}</Text>
-                    <View style={[
-                      styles.purchaseStatusBadge,
-                      { backgroundColor: `${getStatusColor(purchase.status)}20` }
-                    ]}>
-                      <Text style={[
-                        styles.purchaseStatusText,
-                        { color: getStatusColor(purchase.status) }
-                      ]}>
-                        {purchase.status.toUpperCase()}
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-              
-              <TouchableOpacity
-                style={styles.newPurchaseButton}
-                onPress={handleCreatePurchase}
-              >
-                <Plus size={16} color={Colors.primary} />
-                <Text style={styles.newPurchaseButtonText}>New Purchase Order</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.emptyPurchaseHistory}>
-              <Text style={styles.emptyPurchaseText}>No purchase history found</Text>
-              <TouchableOpacity
-                style={styles.newPurchaseButton}
-                onPress={handleCreatePurchase}
-              >
-                <Plus size={16} color={Colors.primary} />
-                <Text style={styles.newPurchaseButtonText}>New Purchase Order</Text>
-              </TouchableOpacity>
+          {vendor.phone && (
+            <TouchableOpacity style={styles.contactItem} onPress={handleCallVendor}>
+              <Phone size={20} color={Colors.primary} style={styles.contactIcon} />
+              <View style={styles.contactInfo}>
+                <Text style={styles.contactLabel}>Phone</Text>
+                <Text style={styles.contactValue}>{formatPhoneNumber(vendor.phone)}</Text>
+              </View>
+              <ChevronRight size={18} color="#999" />
+            </TouchableOpacity>
+          )}
+          
+          {vendor.email && (
+            <TouchableOpacity style={styles.contactItem} onPress={handleEmailVendor}>
+              <Mail size={20} color={Colors.primary} style={styles.contactIcon} />
+              <View style={styles.contactInfo}>
+                <Text style={styles.contactLabel}>Email</Text>
+                <Text style={styles.contactValue}>{vendor.email}</Text>
+              </View>
+              <ChevronRight size={18} color="#999" />
+            </TouchableOpacity>
+          )}
+          
+          {vendor.website && (
+            <TouchableOpacity style={styles.contactItem} onPress={handleVisitWebsite}>
+              <Globe size={20} color={Colors.primary} style={styles.contactIcon} />
+              <View style={styles.contactInfo}>
+                <Text style={styles.contactLabel}>Website</Text>
+                <Text style={styles.contactValue}>{vendor.website}</Text>
+              </View>
+              <ChevronRight size={18} color="#999" />
+            </TouchableOpacity>
+          )}
+          
+          {vendor.address && (
+            <View style={styles.contactItem}>
+              <MapPin size={20} color={Colors.primary} style={styles.contactIcon} />
+              <View style={styles.contactInfo}>
+                <Text style={styles.contactLabel}>Address</Text>
+                <Text style={styles.contactValue}>{vendor.address}</Text>
+              </View>
             </View>
           )}
         </View>
         
-        {/* Additional Information Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Additional Information</Text>
+        {/* Business Details Card */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Business Details</Text>
           
-          <View style={styles.additionalInfo}>
-            {vendor.category && (
-              <View style={styles.additionalItem}>
-                <View style={styles.additionalItemHeader}>
-                  <Tag size={16} color="#666" style={styles.additionalIcon} />
-                  <Text style={styles.additionalLabel}>Category</Text>
-                </View>
-                <Text style={styles.additionalValue}>{vendor.category}</Text>
+          {vendor.paymentTerms && (
+            <View style={styles.detailItem}>
+              <Clock size={20} color={Colors.primary} style={styles.detailIcon} />
+              <View style={styles.detailInfo}>
+                <Text style={styles.detailLabel}>Payment Terms</Text>
+                <Text style={styles.detailValue}>{vendor.paymentTerms}</Text>
               </View>
-            )}
-            
-            {vendor.taxId && (
-              <View style={styles.additionalItem}>
-                <View style={styles.additionalItemHeader}>
-                  <FileText size={16} color="#666" style={styles.additionalIcon} />
-                  <Text style={styles.additionalLabel}>Tax/VAT ID</Text>
-                </View>
-                <Text style={styles.additionalValue}>{vendor.taxId}</Text>
+            </View>
+          )}
+          
+          {vendor.creditLimit !== undefined && (
+            <View style={styles.detailItem}>
+              <CreditCard size={20} color={Colors.primary} style={styles.detailIcon} />
+              <View style={styles.detailInfo}>
+                <Text style={styles.detailLabel}>Credit Limit</Text>
+                <Text style={styles.detailValue}>{formatCurrency(vendor.creditLimit)}</Text>
               </View>
-            )}
-            
-            {vendor.bankDetails && (
-              <View style={styles.additionalItem}>
-                <View style={styles.additionalItemHeader}>
-                  <FileText size={16} color="#666" style={styles.additionalIcon} />
-                  <Text style={styles.additionalLabel}>Bank Details</Text>
-                </View>
-                <Text style={styles.additionalValue}>{vendor.bankDetails}</Text>
+            </View>
+          )}
+          
+          {vendor.category && (
+            <View style={styles.detailItem}>
+              <Tag size={20} color={Colors.primary} style={styles.detailIcon} />
+              <View style={styles.detailInfo}>
+                <Text style={styles.detailLabel}>Category</Text>
+                <Text style={styles.detailValue}>{vendor.category}</Text>
               </View>
-            )}
-            
-            {vendor.tags && vendor.tags.length > 0 && (
-              <View style={styles.additionalItem}>
-                <View style={styles.additionalItemHeader}>
-                  <Tag size={16} color="#666" style={styles.additionalIcon} />
-                  <Text style={styles.additionalLabel}>Tags</Text>
-                </View>
+            </View>
+          )}
+          
+          {vendor.tags && vendor.tags.length > 0 && (
+            <View style={styles.detailItem}>
+              <Tag size={20} color={Colors.primary} style={styles.detailIcon} />
+              <View style={styles.detailInfo}>
+                <Text style={styles.detailLabel}>Tags</Text>
                 <View style={styles.tagsContainer}>
                   {vendor.tags.map((tag, index) => (
                     <View key={index} style={styles.tag}>
@@ -509,45 +535,117 @@ export default function VendorDetailScreen() {
                   ))}
                 </View>
               </View>
-            )}
-            
-            {vendor.notes && (
-              <View style={styles.additionalItem}>
-                <View style={styles.additionalItemHeader}>
-                  <FileText size={16} color="#666" style={styles.additionalIcon} />
-                  <Text style={styles.additionalLabel}>Notes</Text>
-                </View>
-                <Text style={styles.additionalValue}>{vendor.notes}</Text>
+            </View>
+          )}
+          
+          {vendor.createdAt && (
+            <View style={styles.detailItem}>
+              <Calendar size={20} color={Colors.primary} style={styles.detailIcon} />
+              <View style={styles.detailInfo}>
+                <Text style={styles.detailLabel}>Vendor Since</Text>
+                <Text style={styles.detailValue}>{formatDate(vendor.createdAt)}</Text>
               </View>
-            )}
-          </View>
+            </View>
+          )}
         </View>
         
-        {/* Vendor Statistics Section */}
-        <View style={[styles.section, styles.lastSection]}>
-          <Text style={styles.sectionTitle}>Vendor Statistics</Text>
-          
-          <View style={styles.statisticsContainer}>
-            <View style={styles.statisticItem}>
-              <Text style={styles.statisticValue}>{formatCurrency(vendor.totalPurchases)}</Text>
-              <Text style={styles.statisticLabel}>Total Purchases</Text>
-            </View>
-            
-            <View style={styles.statisticItem}>
-              <Text style={styles.statisticValue}>
-                {vendor.lastPurchaseDate ? formatDate(vendor.lastPurchaseDate) : "N/A"}
-              </Text>
-              <Text style={styles.statisticLabel}>Last Purchase</Text>
-            </View>
-            
-            <View style={styles.statisticItem}>
-              <Text style={styles.statisticValue}>
-                {vendor.creditLimit ? formatCurrency(vendor.creditLimit) : "N/A"}
-              </Text>
-              <Text style={styles.statisticLabel}>Credit Limit</Text>
-            </View>
+        {/* Notes Card */}
+        {vendor.notes && (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Notes</Text>
+            <Text style={styles.notes}>{vendor.notes}</Text>
           </View>
+        )}
+        
+        {/* Purchase History Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.sectionTitle}>Purchase History</Text>
+            <TouchableOpacity 
+              style={styles.createButton}
+              onPress={handleCreatePurchase}
+            >
+              <Plus size={18} color="#fff" />
+              <Text style={styles.createButtonText}>New Purchase</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {purchaseHistory.length > 0 ? (
+            <FlatList
+              data={purchaseHistory}
+              keyExtractor={(item) => item.id}
+              scrollEnabled={false}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.purchaseItem}
+                  onPress={() => router.push(`/purchases/${item.id}`)}
+                >
+                  <View style={styles.purchaseItemContent}>
+                    <View style={styles.purchaseItemLeft}>
+                      <Text style={styles.purchaseInvoiceNumber}>{item.invoiceNumber}</Text>
+                      <Text style={styles.purchaseDate}>{formatDate(item.date)}</Text>
+                    </View>
+                    <View style={styles.purchaseItemRight}>
+                      <Text style={styles.purchaseAmount}>{formatCurrency(item.amount)}</Text>
+                      <View style={[
+                        styles.purchaseStatusBadge,
+                        { backgroundColor: `${getStatusColor(item.status)}15` }
+                      ]}>
+                        <Text style={[
+                          styles.purchaseStatusText, 
+                          { color: getStatusColor(item.status) }
+                        ]}>
+                          {item.status.toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No purchase history yet</Text>
+            </View>
+          )}
+          
+          {purchaseHistory.length > 0 && (
+            <TouchableOpacity 
+              style={styles.viewAllButton}
+              onPress={() => {
+                // Navigate to purchases with filter for this vendor
+                router.back();
+                setTimeout(() => {
+                  router.push("/vendors");
+                }, 100);
+              }}
+            >
+              <Text style={styles.viewAllText}>View All Purchases</Text>
+              <ChevronRight size={18} color={Colors.primary} />
+            </TouchableOpacity>
+          )}
         </View>
+        
+        {/* Action Buttons */}
+        <View style={styles.actionButtonsContainer}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.editButton]}
+            onPress={handleEditVendor}
+          >
+            <Edit size={20} color="#fff" />
+            <Text style={styles.actionButtonText}>Edit</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.actionButton, styles.deleteButton]}
+            onPress={handleDeleteVendor}
+          >
+            <Trash2 size={20} color="#fff" />
+            <Text style={styles.actionButtonText}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.bottomSpacer} />
       </ScrollView>
       
       <SnackBar
@@ -555,233 +653,285 @@ export default function VendorDetailScreen() {
         message={snackbarMessage}
         onDismiss={() => setSnackbarVisible(false)}
       />
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: Colors.background.secondary,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: Colors.background.default,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
   },
   headerButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  headerActions: {
-    flexDirection: "row",
+  actionButtons: {
+    flexDirection: 'row',
   },
-  loadingContainer: {
+  mainContent: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
   },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+  contentContainer: {
     padding: 16,
+    paddingBottom: 32,
   },
-  errorText: {
-    color: "#333",
-    marginBottom: 16,
-  },
-  errorButton: {
-    padding: 12,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-  },
-  errorButtonText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#fff",
-  },
-  profileSection: {
-    backgroundColor: "#fff",
-    margin: 16,
+  card: {
+    backgroundColor: Colors.background.default,
     borderRadius: 12,
     padding: 16,
+    marginBottom: 16,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  profileHeader: {
-    flexDirection: "row",
-    alignItems: "center",
+  vendorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  logoContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.primary + "20",
-    justifyContent: "center",
-    alignItems: "center",
+  avatarContainer: {
     marginRight: 16,
   },
-  logoText: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: Colors.primary,
+  avatarPlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  profileInfo: {
+  avatarText: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  vendorMainInfo: {
     flex: 1,
   },
   vendorName: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#333",
+    fontSize: 22,
+    fontWeight: '600',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
-  vendorCompany: {
+  companyName: {
     fontSize: 16,
-    color: "#666",
+    color: Colors.text.secondary,
     marginBottom: 8,
   },
-  vendorMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  vendorSince: {
-    fontSize: 12,
-    color: "#888",
+  vendorSubInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
   },
   statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
+    borderRadius: 12,
+    marginRight: 12,
+    marginBottom: 4,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
     borderRadius: 4,
+    marginRight: 6,
   },
   statusText: {
-    fontSize: 10,
-    fontWeight: "500",
-  },
-  contactButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
-  },
-  contactButton: {
-    alignItems: "center",
-    padding: 8,
-  },
-  contactButtonText: {
     fontSize: 12,
-    color: Colors.primary,
-    marginTop: 4,
+    fontWeight: '500',
   },
-  disabledText: {
-    color: "#ccc",
+  categoryContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
   },
-  section: {
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
+  categoryText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginLeft: 6,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.background.default,
     marginBottom: 16,
-    borderRadius: 12,
     padding: 16,
+    borderRadius: 12,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  lastSection: {
-    marginBottom: 32,
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
   },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.primary,
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+  },
+  divider: {
+    width: 1,
+    height: '100%',
+    backgroundColor: Colors.border.light,
+    marginHorizontal: 8,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
+    fontWeight: '600',
+    color: Colors.text.primary,
     marginBottom: 16,
-  },
-  viewAllButton: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  viewAllButtonText: {
-    fontSize: 14,
-    color: Colors.primary,
-    marginRight: 4,
-  },
-  financialSummary: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  financialItem: {
-    width: "48%",
-    marginBottom: 16,
-  },
-  financialLabel: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 4,
-  },
-  financialValue: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-  },
-  contactInfo: {
-    marginBottom: 8,
   },
   contactItem: {
-    marginBottom: 16,
-  },
-  contactItemHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  contactIcon: {
-    marginRight: 8,
-  },
-  contactLabel: {
-    fontSize: 14,
-    color: "#666",
-  },
-  contactValue: {
-    fontSize: 16,
-    color: "#333",
-  },
-  purchaseHistoryList: {
-    marginBottom: 8,
-  },
-  purchaseItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: Colors.border.light,
+  },
+  contactIcon: {
+    marginRight: 12,
+  },
+  contactInfo: {
+    flex: 1,
+  },
+  contactLabel: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 2,
+  },
+  contactValue: {
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  detailIcon: {
+    marginRight: 12,
+  },
+  detailInfo: {
+    flex: 1,
+  },
+  detailLabel: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 2,
+  },
+  detailValue: {
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
+  tagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4,
+  },
+  tag: {
+    backgroundColor: Colors.background.tertiary,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  tagText: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+  },
+  notes: {
+    fontSize: 14,
+    color: Colors.text.primary,
+    lineHeight: 20,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  createButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  createButtonText: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  purchaseItem: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  purchaseItemContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   purchaseItemLeft: {
     flex: 1,
   },
-  purchaseItemRight: {
-    alignItems: "flex-end",
-  },
-  purchaseDate: {
+  purchaseInvoiceNumber: {
     fontSize: 14,
-    color: "#333",
+    fontWeight: '500',
+    color: Colors.text.primary,
     marginBottom: 4,
   },
-  purchasePoNumber: {
+  purchaseDate: {
     fontSize: 12,
-    color: "#666",
+    color: Colors.text.secondary,
+  },
+  purchaseItemRight: {
+    alignItems: 'flex-end',
   },
   purchaseAmount: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.primary,
     marginBottom: 4,
   },
   purchaseStatusBadge: {
@@ -791,87 +941,91 @@ const styles = StyleSheet.create({
   },
   purchaseStatusText: {
     fontSize: 10,
-    fontWeight: "500",
+    fontWeight: '600',
   },
-  emptyPurchaseHistory: {
-    alignItems: "center",
-    padding: 16,
+  emptyState: {
+    padding: 20,
+    alignItems: 'center',
   },
-  emptyPurchaseText: {
+  emptyStateText: {
     fontSize: 14,
-    color: "#666",
-    marginBottom: 16,
+    color: Colors.text.secondary,
   },
-  newPurchaseButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 16,
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 8,
   },
-  newPurchaseButtonText: {
+  viewAllText: {
     fontSize: 14,
     color: Colors.primary,
-    fontWeight: "500",
+    fontWeight: '500',
+    marginRight: 4,
+  },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 8,
+  },
+  editButton: {
+    backgroundColor: Colors.primary,
+  },
+  deleteButton: {
+    backgroundColor: Colors.negative,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
     marginLeft: 8,
   },
-  additionalInfo: {
-    marginBottom: 8,
+  bottomSpacer: {
+    height: 40,
   },
-  additionalItem: {
-    marginBottom: 16,
-  },
-  additionalItemHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  additionalIcon: {
-    marginRight: 8,
-  },
-  additionalLabel: {
-    fontSize: 14,
-    color: "#666",
-  },
-  additionalValue: {
-    fontSize: 16,
-    color: "#333",
-  },
-  tagsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginTop: 4,
-  },
-  tag: {
-    backgroundColor: "#f0f0f0",
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  tagText: {
-    fontSize: 12,
-    color: "#666",
-  },
-  statisticsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  statisticItem: {
-    alignItems: "center",
+  loadingContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
   },
-  statisticValue: {
+  loadingText: {
+    marginTop: 16,
     fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
+    color: Colors.text.secondary,
   },
-  statisticLabel: {
-    fontSize: 12,
-    color: "#666",
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: Colors.background.default,
+  },
+  errorText: {
+    fontSize: 18,
+    color: Colors.negative,
+    marginVertical: 20,
+    textAlign: 'center',
+  },
+  errorButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  errorButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

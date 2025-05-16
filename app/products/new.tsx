@@ -11,7 +11,8 @@ import {
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  StatusBar
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { 
@@ -21,14 +22,20 @@ import {
   ChevronDown, 
   ChevronUp,
   Barcode,
-  Plus
+  Plus,
+  Tag,
+  DollarSign,
+  Package,
+  Info,
+  FileText,
+  Save,
+  ShoppingBag
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import Colors from "@/constants/colors";
 import { Product, StockStatus } from "@/types/product";
 import SnackBar from "@/components/SnackBar";
-import { addProduct } from "@/utils/asyncStorageUtils";
 
 export default function AddProductScreen() {
   const router = useRouter();
@@ -260,7 +267,9 @@ export default function AddProductScreen() {
       const stockQty = parseInt(stockQuantity);
       const reorderLvl = parseInt(reorderLevel);
       
-      if (stockQty === 0) {
+      if (!isActive) {
+        status = "discontinued";
+      } else if (stockQty === 0) {
         status = "out_of_stock";
       } else if (stockQty < reorderLvl) {
         status = "low_stock";
@@ -270,59 +279,77 @@ export default function AddProductScreen() {
       
       // Create new product object
       const newProduct: Product = {
-        id: `prod-${Date.now()}`,
-        name: productName,
-        sku,
-        barcode: barcode || undefined,
-        description: fullDescription || shortDescription || undefined,
-        category: category || undefined,
-        tags: tags ? tags.split(",").map(tag => tag.trim()) : undefined,
+        id: `product-${Date.now()}`, // Generate a temporary ID (would be replaced with server-generated ID)
+        name: productName.trim(),
+        sku: sku.trim(),
+        barcode: barcode.trim() || undefined,
+        description: fullDescription.trim() || shortDescription.trim() || undefined,
+        category: category.trim() || undefined,
+        tags: tags.trim() ? tags.split(",").map(tag => tag.trim()) : [],
         purchasePrice: parseFloat(costPrice),
         sellingPrice: parseFloat(sellingPrice),
         stockQuantity: parseInt(stockQuantity),
         reorderLevel: parseInt(reorderLevel),
         unit,
-        taxRate: taxRate ? parseFloat(taxRate) : undefined,
-        images: images.length > 0 ? images : undefined,
-        vendor: vendor || undefined,
-        location: location || undefined,
-        dimensions: (length || width || height || weight) ? {
-          length: length ? parseFloat(length) : undefined,
-          width: width ? parseFloat(width) : undefined,
-          height: height ? parseFloat(height) : undefined,
-          weight: weight ? parseFloat(weight) : undefined,
+        taxRate: taxRate.trim() ? parseFloat(taxRate) : undefined,
+        images: images.length > 0 ? images : [],
+        vendor: vendor.trim() || undefined,
+        location: location.trim() || undefined,
+        dimensions: (length.trim() || width.trim() || height.trim() || weight.trim()) ? {
+          length: length.trim() ? parseFloat(length) : undefined,
+          width: width.trim() ? parseFloat(width) : undefined,
+          height: height.trim() ? parseFloat(height) : undefined,
+          weight: weight.trim() ? parseFloat(weight) : undefined,
         } : undefined,
         status,
+        notes: notes.trim() || undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
-        notes: notes || undefined,
       };
       
-      // Save product to AsyncStorage
-      await addProduct(newProduct);
-      
-      // Show success message
-      setSnackbarMessage("Product saved successfully");
-      setSnackbarVisible(true);
-      
-      // Navigate back after a short delay
+      // Simulate saving to database/storage with a delay
       setTimeout(() => {
-        router.back();
-      }, 1500);
+        // In a real implementation, would save to AsyncStorage or backend
+        
+        setIsLoading(false);
+        setSnackbarMessage("Product added successfully");
+        setSnackbarVisible(true);
+        
+        // Navigate back to products list after a short delay
+        setTimeout(() => {
+          router.replace("/products");
+        }, 1500);
+      }, 800);
     } catch (error) {
-      console.error("Error saving product:", error);
-      setSnackbarMessage("Failed to save product. Please try again.");
+      console.error("Error adding product:", error);
+      setSnackbarMessage("Failed to add product");
       setSnackbarVisible(true);
-    } finally {
       setIsLoading(false);
     }
   };
   
   const handleSaveAndAddAnother = async () => {
     if (!validateForm()) {
-      // Show error message
-      setSnackbarMessage("Please fix the errors in the form");
-      setSnackbarVisible(true);
+      // Scroll to the first error
+      const firstErrorKey = Object.keys(errors)[0];
+      if (firstErrorKey) {
+        // Expand the section containing the error
+        if (["productName", "sku", "barcode", "category", "brand"].includes(firstErrorKey)) {
+          setBasicInfoExpanded(true);
+        } else if (["costPrice", "sellingPrice", "taxRate"].includes(firstErrorKey)) {
+          setPricingExpanded(true);
+        } else if (["stockQuantity", "reorderLevel", "unit", "vendor", "location"].includes(firstErrorKey)) {
+          setInventoryExpanded(true);
+        } else if (["shortDescription", "fullDescription", "weight", "length", "width", "height"].includes(firstErrorKey)) {
+          setDetailsExpanded(true);
+        } else if (["tags", "notes"].includes(firstErrorKey)) {
+          setAdditionalExpanded(true);
+        }
+        
+        // Show error message
+        setSnackbarMessage("Please fix the errors in the form");
+        setSnackbarVisible(true);
+      }
       return;
     }
     
@@ -334,7 +361,9 @@ export default function AddProductScreen() {
       const stockQty = parseInt(stockQuantity);
       const reorderLvl = parseInt(reorderLevel);
       
-      if (stockQty === 0) {
+      if (!isActive) {
+        status = "discontinued";
+      } else if (stockQty === 0) {
         status = "out_of_stock";
       } else if (stockQty < reorderLvl) {
         status = "low_stock";
@@ -344,645 +373,648 @@ export default function AddProductScreen() {
       
       // Create new product object
       const newProduct: Product = {
-        id: `prod-${Date.now()}`,
-        name: productName,
-        sku,
-        barcode: barcode || undefined,
-        description: fullDescription || shortDescription || undefined,
-        category: category || undefined,
-        tags: tags ? tags.split(",").map(tag => tag.trim()) : undefined,
+        id: `product-${Date.now()}`, // Generate a temporary ID (would be replaced with server-generated ID)
+        name: productName.trim(),
+        sku: sku.trim(),
+        barcode: barcode.trim() || undefined,
+        description: fullDescription.trim() || shortDescription.trim() || undefined,
+        category: category.trim() || undefined,
+        tags: tags.trim() ? tags.split(",").map(tag => tag.trim()) : [],
         purchasePrice: parseFloat(costPrice),
         sellingPrice: parseFloat(sellingPrice),
         stockQuantity: parseInt(stockQuantity),
         reorderLevel: parseInt(reorderLevel),
         unit,
-        taxRate: taxRate ? parseFloat(taxRate) : undefined,
-        images: images.length > 0 ? images : undefined,
-        vendor: vendor || undefined,
-        location: location || undefined,
-        dimensions: (length || width || height || weight) ? {
-          length: length ? parseFloat(length) : undefined,
-          width: width ? parseFloat(width) : undefined,
-          height: height ? parseFloat(height) : undefined,
-          weight: weight ? parseFloat(weight) : undefined,
+        taxRate: taxRate.trim() ? parseFloat(taxRate) : undefined,
+        images: images.length > 0 ? images : [],
+        vendor: vendor.trim() || undefined,
+        location: location.trim() || undefined,
+        dimensions: (length.trim() || width.trim() || height.trim() || weight.trim()) ? {
+          length: length.trim() ? parseFloat(length) : undefined,
+          width: width.trim() ? parseFloat(width) : undefined,
+          height: height.trim() ? parseFloat(height) : undefined,
+          weight: weight.trim() ? parseFloat(weight) : undefined,
         } : undefined,
         status,
+        notes: notes.trim() || undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
-        notes: notes || undefined,
       };
       
-      // Save product to AsyncStorage
-      await addProduct(newProduct);
-      
-      // Show success message
-      setSnackbarMessage("Product saved successfully");
-      setSnackbarVisible(true);
-      
-      // Clear form for next product
-      setProductName("");
-      setSku("");
-      setBarcode("");
-      setCategory("");
-      setBrand("");
-      setCostPrice("");
-      setSellingPrice("");
-      setTaxRate("");
-      setStockQuantity("");
-      setReorderLevel("");
-      setVendor("");
-      setLocation("");
-      setShortDescription("");
-      setFullDescription("");
-      setWeight("");
-      setLength("");
-      setWidth("");
-      setHeight("");
-      setTags("");
-      setNotes("");
-      setImages([]);
-      
-      // Reset errors
-      setErrors({});
-      
-      // Scroll to top
-      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+      // Simulate saving to database/storage with a delay
+      setTimeout(() => {
+        // In a real implementation, would save to AsyncStorage or backend
+        
+        // Clear the form
+        setProductName("");
+        setSku("");
+        setBarcode("");
+        setCategory("");
+        setBrand("");
+        setCostPrice("");
+        setSellingPrice("");
+        setTaxRate("");
+        setStockQuantity("");
+        setReorderLevel("");
+        setVendor("");
+        setLocation("");
+        setShortDescription("");
+        setFullDescription("");
+        setWeight("");
+        setLength("");
+        setWidth("");
+        setHeight("");
+        setTags("");
+        setNotes("");
+        setImages([]);
+        
+        // Reset form validation
+        setErrors({});
+        
+        // Show success message
+        setSnackbarMessage("Product added successfully, you can add another");
+        setSnackbarVisible(true);
+        setIsLoading(false);
+        
+        // Scroll back to top
+        if (scrollViewRef.current) {
+          scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: true });
+        }
+      }, 800);
     } catch (error) {
-      console.error("Error saving product:", error);
-      setSnackbarMessage("Failed to save product. Please try again.");
+      console.error("Error adding product:", error);
+      setSnackbarMessage("Failed to add product");
       setSnackbarVisible(true);
-    } finally {
       setIsLoading(false);
     }
   };
   
   // Calculate profit margin
   const calculateProfitMargin = () => {
-    if (!costPrice || !sellingPrice) return "0.00";
+    if (!costPrice || !sellingPrice) return 0;
     
     const cost = parseFloat(costPrice);
     const selling = parseFloat(sellingPrice);
     
-    if (isNaN(cost) || isNaN(selling) || cost <= 0 || selling <= 0) return "0.00";
+    if (isNaN(cost) || isNaN(selling) || cost <= 0 || selling <= 0) return 0;
     
     const margin = ((selling - cost) / selling) * 100;
-    return margin.toFixed(2);
+    return margin;
   };
   
   return (
-    <>
-      <Stack.Screen 
-        options={{
-          title: "Add Product",
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-        }} 
-      />
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
-      <KeyboardAvoidingView 
-        style={styles.container}
+      {/* Modern Header */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.headerButton} 
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Add New Product</Text>
+        <TouchableOpacity 
+          style={[styles.headerActionButton, isLoading && styles.disabledButton]} 
+          onPress={handleSave}
+          disabled={isLoading}
+          activeOpacity={0.7}
+        >
+          {isLoading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.headerActionButtonText}>Save</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+      
+      <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
+        style={styles.keyboardAvoidingView}
       >
-        <ScrollView 
+        <ScrollView
           ref={scrollViewRef}
           style={styles.scrollView}
-          contentContainerStyle={styles.contentContainer}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         >
-          {/* Basic Information Section */}
-          <TouchableOpacity 
-            style={styles.sectionHeader}
-            onPress={() => setBasicInfoExpanded(!basicInfoExpanded)}
-          >
-            <Text style={styles.sectionTitle}>Basic Information</Text>
-            {basicInfoExpanded ? (
-              <ChevronUp size={20} color="#333" />
-            ) : (
-              <ChevronDown size={20} color="#333" />
-            )}
-          </TouchableOpacity>
+          {/* Form sections will go here */}
           
-          {basicInfoExpanded && (
-            <View style={styles.sectionContent}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Product Name <Text style={styles.required}>*</Text></Text>
-                <TextInput
-                  style={[styles.input, errors.productName && styles.inputError]}
-                  value={productName}
-                  onChangeText={setProductName}
-                  placeholder="Enter product name"
-                />
-                {errors.productName && (
-                  <Text style={styles.errorText}>{errors.productName}</Text>
-                )}
+          {/* Basic Information Card */}
+          <View style={styles.formSection}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => setBasicInfoExpanded(!basicInfoExpanded)}
+            >
+              <View style={styles.sectionHeaderLeft}>
+                <Tag size={20} color={Colors.text.primary} />
+                <Text style={styles.sectionTitle}>Basic Information</Text>
               </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>SKU <Text style={styles.required}>*</Text></Text>
-                <View style={styles.inputWithButton}>
+              {basicInfoExpanded ? (
+                <ChevronUp size={20} color={Colors.text.secondary} />
+              ) : (
+                <ChevronDown size={20} color={Colors.text.secondary} />
+              )}
+            </TouchableOpacity>
+            
+            {basicInfoExpanded && (
+              <View style={styles.sectionContent}>
+                {/* Product Name */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Product Name <Text style={styles.requiredAsterisk}>*</Text></Text>
                   <TextInput
-                    style={[
-                      styles.input, 
-                      styles.inputWithButtonField,
-                      errors.sku && styles.inputError
-                    ]}
-                    value={sku}
-                    onChangeText={setSku}
-                    placeholder="Enter SKU"
+                    style={[styles.input, errors.productName && styles.inputError]}
+                    placeholder="Enter product name"
+                    value={productName}
+                    onChangeText={setProductName}
                   />
-                  <TouchableOpacity 
-                    style={styles.inputButton}
-                    onPress={generateSku}
-                  >
-                    <Text style={styles.inputButtonText}>Generate</Text>
-                  </TouchableOpacity>
+                  {errors.productName && <Text style={styles.errorText}>{errors.productName}</Text>}
                 </View>
-                {errors.sku && (
-                  <Text style={styles.errorText}>{errors.sku}</Text>
-                )}
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Barcode</Text>
-                <View style={styles.inputWithButton}>
-                  <TextInput
-                    style={[
-                      styles.input, 
-                      styles.inputWithButtonField,
-                      errors.barcode && styles.inputError
-                    ]}
-                    value={barcode}
-                    onChangeText={setBarcode}
-                    placeholder="Enter barcode"
-                    keyboardType="numeric"
-                  />
-                  <TouchableOpacity 
-                    style={styles.inputButton}
-                    onPress={handleScanBarcode}
-                  >
-                    <Barcode size={16} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-                {errors.barcode && (
-                  <Text style={styles.errorText}>{errors.barcode}</Text>
-                )}
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Category</Text>
-                <TextInput
-                  style={[styles.input, errors.category && styles.inputError]}
-                  value={category}
-                  onChangeText={setCategory}
-                  placeholder="Enter category"
-                />
-                {errors.category && (
-                  <Text style={styles.errorText}>{errors.category}</Text>
-                )}
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Brand/Manufacturer</Text>
-                <TextInput
-                  style={[styles.input, errors.brand && styles.inputError]}
-                  value={brand}
-                  onChangeText={setBrand}
-                  placeholder="Enter brand or manufacturer"
-                />
-                {errors.brand && (
-                  <Text style={styles.errorText}>{errors.brand}</Text>
-                )}
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Product Images</Text>
-                <View style={styles.imagesContainer}>
-                  {images.map((image, index) => (
-                    <View key={index} style={styles.imageContainer}>
-                      <Image source={{ uri: image }} style={styles.image} />
-                      <TouchableOpacity 
-                        style={styles.removeImageButton}
-                        onPress={() => handleRemoveImage(index)}
+                
+                {/* SKU and Barcode row */}
+                <View style={styles.twoColumnRow}>
+                  <View style={[styles.formGroup, { flex: 2, marginRight: 8 }]}>
+                    <Text style={styles.inputLabel}>SKU <Text style={styles.requiredAsterisk}>*</Text></Text>
+                    <View style={styles.inputWithButton}>
+                      <TextInput
+                        style={[
+                          styles.input, 
+                          styles.inputWithButtonText, 
+                          errors.sku && styles.inputError
+                        ]}
+                        placeholder="Product SKU"
+                        value={sku}
+                        onChangeText={setSku}
+                      />
+                      <TouchableOpacity
+                        style={styles.inputActionButton}
+                        onPress={generateSku}
                       >
-                        <X size={16} color="#fff" />
+                        <Text style={styles.inputActionButtonText}>Generate</Text>
                       </TouchableOpacity>
                     </View>
-                  ))}
-                  <TouchableOpacity 
-                    style={styles.addImageButton}
-                    onPress={handleAddImage}
-                  >
-                    <Camera size={24} color="#666" />
-                    <Text style={styles.addImageText}>Add Image</Text>
-                  </TouchableOpacity>
+                    {errors.sku && <Text style={styles.errorText}>{errors.sku}</Text>}
+                  </View>
+                  
+                  <View style={[styles.formGroup, { flex: 2 }]}>
+                    <Text style={styles.inputLabel}>Barcode</Text>
+                    <View style={styles.inputWithButton}>
+                      <TextInput
+                        style={[styles.input, styles.inputWithButtonText]}
+                        placeholder="Product barcode"
+                        value={barcode}
+                        onChangeText={setBarcode}
+                        keyboardType="number-pad"
+                      />
+                      <TouchableOpacity
+                        style={styles.inputActionButton}
+                        onPress={handleScanBarcode}
+                      >
+                        <Barcode size={18} color={Colors.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Status</Text>
-                <View style={styles.switchContainer}>
-                  <Text style={styles.switchLabel}>
-                    {isActive ? "Active" : "Inactive"}
+                
+                {/* Category and Brand row */}
+                <View style={styles.twoColumnRow}>
+                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                    <Text style={styles.inputLabel}>Category</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Product category"
+                      value={category}
+                      onChangeText={setCategory}
+                    />
+                  </View>
+                  
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>Brand</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Product brand"
+                      value={brand}
+                      onChangeText={setBrand}
+                    />
+                  </View>
+                </View>
+                
+                {/* Active Status */}
+                <View style={styles.formGroup}>
+                  <View style={styles.switchRow}>
+                    <Text style={styles.inputLabel}>Active Product</Text>
+                    <Switch
+                      trackColor={{ false: Colors.border.medium, true: `${Colors.primary}80` }}
+                      thumbColor={isActive ? Colors.primary : Colors.border.dark}
+                      onValueChange={setIsActive}
+                      value={isActive}
+                    />
+                  </View>
+                  <Text style={styles.helperText}>
+                    Inactive products won't appear in sales transactions
                   </Text>
-                  <Switch
-                    value={isActive}
-                    onValueChange={setIsActive}
-                    trackColor={{ false: "#ccc", true: `${Colors.primary}80` }}
-                    thumbColor={isActive ? Colors.primary : "#f4f3f4"}
+                </View>
+                
+                {/* Product Images */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Product Images</Text>
+                  <View style={styles.imagesContainer}>
+                    {images.map((image, index) => (
+                      <View key={index} style={styles.imageWrapper}>
+                        <Image source={{ uri: image }} style={styles.productImage} />
+                        <TouchableOpacity
+                          style={styles.removeImageButton}
+                          onPress={() => handleRemoveImage(index)}
+                        >
+                          <X size={16} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                    
+                    <TouchableOpacity
+                      style={styles.addImageButton}
+                      onPress={handleAddImage}
+                    >
+                      <Camera size={24} color={Colors.text.secondary} />
+                      <Text style={styles.addImageText}>Add Image</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                
+                {/* Short Description */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Short Description</Text>
+                  <TextInput
+                    style={[styles.input, styles.textArea]}
+                    placeholder="Brief description of the product"
+                    value={shortDescription}
+                    onChangeText={setShortDescription}
+                    multiline
+                    numberOfLines={3}
                   />
                 </View>
               </View>
-            </View>
-          )}
-          
-          {/* Pricing Information Section */}
-          <TouchableOpacity 
-            style={styles.sectionHeader}
-            onPress={() => setPricingExpanded(!pricingExpanded)}
-          >
-            <Text style={styles.sectionTitle}>Pricing Information</Text>
-            {pricingExpanded ? (
-              <ChevronUp size={20} color="#333" />
-            ) : (
-              <ChevronDown size={20} color="#333" />
             )}
-          </TouchableOpacity>
+          </View>
           
-          {pricingExpanded && (
-            <View style={styles.sectionContent}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Cost Price <Text style={styles.required}>*</Text></Text>
-                <View style={styles.inputWithPrefix}>
-                  <Text style={styles.inputPrefix}>$</Text>
-                  <TextInput
-                    style={[
-                      styles.input, 
-                      styles.inputWithPrefixField,
-                      errors.costPrice && styles.inputError
-                    ]}
-                    value={costPrice}
-                    onChangeText={setCostPrice}
-                    placeholder="0.00"
-                    keyboardType="decimal-pad"
-                  />
-                </View>
-                {errors.costPrice && (
-                  <Text style={styles.errorText}>{errors.costPrice}</Text>
-                )}
+          {/* Pricing Card */}
+          <View style={styles.formSection}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => setPricingExpanded(!pricingExpanded)}
+            >
+              <View style={styles.sectionHeaderLeft}>
+                <DollarSign size={20} color={Colors.text.primary} />
+                <Text style={styles.sectionTitle}>Pricing</Text>
               </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Selling Price <Text style={styles.required}>*</Text></Text>
-                <View style={styles.inputWithPrefix}>
-                  <Text style={styles.inputPrefix}>$</Text>
-                  <TextInput
-                    style={[
-                      styles.input, 
-                      styles.inputWithPrefixField,
-                      errors.sellingPrice && styles.inputError
-                    ]}
-                    value={sellingPrice}
-                    onChangeText={setSellingPrice}
-                    placeholder="0.00"
-                    keyboardType="decimal-pad"
-                  />
+              {pricingExpanded ? (
+                <ChevronUp size={20} color={Colors.text.secondary} />
+              ) : (
+                <ChevronDown size={20} color={Colors.text.secondary} />
+              )}
+            </TouchableOpacity>
+            
+            {pricingExpanded && (
+              <View style={styles.sectionContent}>
+                {/* Cost and Selling Price row */}
+                <View style={styles.twoColumnRow}>
+                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                    <Text style={styles.inputLabel}>Cost Price <Text style={styles.requiredAsterisk}>*</Text></Text>
+                    <View style={styles.inputWithIcon}>
+                      <DollarSign 
+                        size={16} 
+                        color={Colors.text.secondary} 
+                        style={styles.inputIcon} 
+                      />
+                      <TextInput
+                        style={[
+                          styles.input, 
+                          styles.inputWithIconText, 
+                          errors.costPrice && styles.inputError
+                        ]}
+                        placeholder="0.00"
+                        value={costPrice}
+                        onChangeText={setCostPrice}
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                    {errors.costPrice && <Text style={styles.errorText}>{errors.costPrice}</Text>}
+                  </View>
+                  
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>Selling Price <Text style={styles.requiredAsterisk}>*</Text></Text>
+                    <View style={styles.inputWithIcon}>
+                      <DollarSign 
+                        size={16} 
+                        color={Colors.text.secondary} 
+                        style={styles.inputIcon} 
+                      />
+                      <TextInput
+                        style={[
+                          styles.input, 
+                          styles.inputWithIconText, 
+                          errors.sellingPrice && styles.inputError
+                        ]}
+                        placeholder="0.00"
+                        value={sellingPrice}
+                        onChangeText={setSellingPrice}
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                    {errors.sellingPrice && <Text style={styles.errorText}>{errors.sellingPrice}</Text>}
+                  </View>
                 </View>
-                {errors.sellingPrice && (
-                  <Text style={styles.errorText}>{errors.sellingPrice}</Text>
-                )}
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Profit Margin</Text>
-                <View style={styles.inputWithSuffix}>
-                  <TextInput
-                    style={[
-                      styles.input, 
-                      styles.inputWithSuffixField,
-                      { backgroundColor: "#f0f0f0" }
-                    ]}
-                    value={calculateProfitMargin()}
-                    editable={false}
-                  />
-                  <Text style={styles.inputSuffix}>%</Text>
+                
+                {/* Profit Margin */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Profit Margin</Text>
+                  <View style={styles.profitMarginContainer}>
+                    <View style={[
+                      styles.profitMarginBar,
+                      {
+                        backgroundColor: Colors.primary,
+                        width: `${Math.min(Math.round(calculateProfitMargin()), 100)}%`
+                      }
+                    ]}>
+                      <Text style={styles.profitMarginText}>
+                        {costPrice && sellingPrice && !isNaN(parseFloat(costPrice)) && !isNaN(parseFloat(sellingPrice)) 
+                          ? `${calculateProfitMargin().toFixed(2)}%` 
+                          : '0%'
+                        }
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-                <Text style={styles.helperText}>
-                  Calculated automatically based on cost and selling price
-                </Text>
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Tax Rate</Text>
-                <View style={styles.inputWithSuffix}>
+                
+                {/* Tax Rate */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Tax Rate (%)</Text>
                   <TextInput
-                    style={[
-                      styles.input, 
-                      styles.inputWithSuffixField,
-                      errors.taxRate && styles.inputError
-                    ]}
+                    style={[styles.input, errors.taxRate && styles.inputError]}
+                    placeholder="0"
                     value={taxRate}
                     onChangeText={setTaxRate}
-                    placeholder="0.00"
                     keyboardType="decimal-pad"
                   />
-                  <Text style={styles.inputSuffix}>%</Text>
+                  {errors.taxRate && <Text style={styles.errorText}>{errors.taxRate}</Text>}
                 </View>
-                {errors.taxRate && (
-                  <Text style={styles.errorText}>{errors.taxRate}</Text>
-                )}
               </View>
-            </View>
-          )}
-          
-          {/* Inventory Information Section */}
-          <TouchableOpacity 
-            style={styles.sectionHeader}
-            onPress={() => setInventoryExpanded(!inventoryExpanded)}
-          >
-            <Text style={styles.sectionTitle}>Inventory Information</Text>
-            {inventoryExpanded ? (
-              <ChevronUp size={20} color="#333" />
-            ) : (
-              <ChevronDown size={20} color="#333" />
             )}
-          </TouchableOpacity>
+          </View>
           
-          {inventoryExpanded && (
-            <View style={styles.sectionContent}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Current Stock <Text style={styles.required}>*</Text></Text>
-                <TextInput
-                  style={[styles.input, errors.stockQuantity && styles.inputError]}
-                  value={stockQuantity}
-                  onChangeText={setStockQuantity}
-                  placeholder="0"
-                  keyboardType="numeric"
-                />
-                {errors.stockQuantity && (
-                  <Text style={styles.errorText}>{errors.stockQuantity}</Text>
-                )}
+          {/* Inventory Card */}
+          <View style={styles.formSection}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => setInventoryExpanded(!inventoryExpanded)}
+            >
+              <View style={styles.sectionHeaderLeft}>
+                <ShoppingBag size={20} color={Colors.text.primary} />
+                <Text style={styles.sectionTitle}>Inventory</Text>
               </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Unit of Measure <Text style={styles.required}>*</Text></Text>
-                <TextInput
-                  style={styles.input}
-                  value={unit}
-                  onChangeText={setUnit}
-                  placeholder="piece, kg, liter, etc."
-                />
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Reorder Level <Text style={styles.required}>*</Text></Text>
-                <TextInput
-                  style={[styles.input, errors.reorderLevel && styles.inputError]}
-                  value={reorderLevel}
-                  onChangeText={setReorderLevel}
-                  placeholder="0"
-                  keyboardType="numeric"
-                />
-                {errors.reorderLevel && (
-                  <Text style={styles.errorText}>{errors.reorderLevel}</Text>
-                )}
-                <Text style={styles.helperText}>
-                  Minimum stock level before reordering
-                </Text>
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Preferred Vendor</Text>
-                <TextInput
-                  style={styles.input}
-                  value={vendor}
-                  onChangeText={setVendor}
-                  placeholder="Enter vendor name"
-                />
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Location in Store/Warehouse</Text>
-                <TextInput
-                  style={styles.input}
-                  value={location}
-                  onChangeText={setLocation}
-                  placeholder="Enter storage location"
-                />
-              </View>
-            </View>
-          )}
-          
-          {/* Product Details Section */}
-          <TouchableOpacity 
-            style={styles.sectionHeader}
-            onPress={() => setDetailsExpanded(!detailsExpanded)}
-          >
-            <Text style={styles.sectionTitle}>Product Details</Text>
-            {detailsExpanded ? (
-              <ChevronUp size={20} color="#333" />
-            ) : (
-              <ChevronDown size={20} color="#333" />
-            )}
-          </TouchableOpacity>
-          
-          {detailsExpanded && (
-            <View style={styles.sectionContent}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Short Description</Text>
-                <TextInput
-                  style={styles.input}
-                  value={shortDescription}
-                  onChangeText={setShortDescription}
-                  placeholder="Brief description of the product"
-                />
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Full Description</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  value={fullDescription}
-                  onChangeText={setFullDescription}
-                  placeholder="Detailed description of the product"
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                />
-              </View>
-              
-              <Text style={styles.subSectionTitle}>Dimensions & Weight</Text>
-              
-              <View style={styles.formRow}>
-                <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                  <Text style={styles.label}>Weight</Text>
-                  <View style={styles.inputWithSuffix}>
+              {inventoryExpanded ? (
+                <ChevronUp size={20} color={Colors.text.secondary} />
+              ) : (
+                <ChevronDown size={20} color={Colors.text.secondary} />
+              )}
+            </TouchableOpacity>
+            
+            {inventoryExpanded && (
+              <View style={styles.sectionContent}>
+                {/* Stock Quantity and Unit row */}
+                <View style={styles.twoColumnRow}>
+                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                    <Text style={styles.inputLabel}>Stock Quantity <Text style={styles.requiredAsterisk}>*</Text></Text>
                     <TextInput
-                      style={[
-                        styles.input, 
-                        styles.inputWithSuffixField,
-                        errors.weight && styles.inputError
-                      ]}
-                      value={weight}
-                      onChangeText={setWeight}
-                      placeholder="0.00"
-                      keyboardType="decimal-pad"
+                      style={[styles.input, errors.stockQuantity && styles.inputError]}
+                      placeholder="0"
+                      value={stockQuantity}
+                      onChangeText={setStockQuantity}
+                      keyboardType="number-pad"
                     />
-                    <Text style={styles.inputSuffix}>kg</Text>
+                    {errors.stockQuantity && <Text style={styles.errorText}>{errors.stockQuantity}</Text>}
                   </View>
-                  {errors.weight && (
-                    <Text style={styles.errorText}>{errors.weight}</Text>
-                  )}
+                  
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>Unit <Text style={styles.requiredAsterisk}>*</Text></Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="piece, kg, liter, etc."
+                      value={unit}
+                      onChangeText={setUnit}
+                    />
+                  </View>
                 </View>
                 
-                <View style={[styles.formGroup, { flex: 1 }]}>
-                  <Text style={styles.label}>Length</Text>
-                  <View style={styles.inputWithSuffix}>
+                {/* Reorder Level */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Reorder Level <Text style={styles.requiredAsterisk}>*</Text></Text>
+                  <TextInput
+                    style={[styles.input, errors.reorderLevel && styles.inputError]}
+                    placeholder="Minimum stock before reordering"
+                    value={reorderLevel}
+                    onChangeText={setReorderLevel}
+                    keyboardType="number-pad"
+                  />
+                  {errors.reorderLevel && <Text style={styles.errorText}>{errors.reorderLevel}</Text>}
+                  <Text style={styles.helperText}>
+                    System will alert when stock falls below this level
+                  </Text>
+                </View>
+                
+                {/* Vendor and Location row */}
+                <View style={styles.twoColumnRow}>
+                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                    <Text style={styles.inputLabel}>Vendor/Supplier</Text>
                     <TextInput
-                      style={[
-                        styles.input, 
-                        styles.inputWithSuffixField,
-                        errors.length && styles.inputError
-                      ]}
+                      style={styles.input}
+                      placeholder="Supplier name"
+                      value={vendor}
+                      onChangeText={setVendor}
+                    />
+                  </View>
+                  
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>Storage Location</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Shelf, warehouse, etc."
+                      value={location}
+                      onChangeText={setLocation}
+                    />
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
+          
+          {/* Details Card */}
+          <View style={styles.formSection}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => setDetailsExpanded(!detailsExpanded)}
+            >
+              <View style={styles.sectionHeaderLeft}>
+                <Info size={20} color={Colors.text.primary} />
+                <Text style={styles.sectionTitle}>Additional Details</Text>
+              </View>
+              {detailsExpanded ? (
+                <ChevronUp size={20} color={Colors.text.secondary} />
+              ) : (
+                <ChevronDown size={20} color={Colors.text.secondary} />
+              )}
+            </TouchableOpacity>
+            
+            {detailsExpanded && (
+              <View style={styles.sectionContent}>
+                {/* Full Description */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Full Description</Text>
+                  <TextInput
+                    style={[styles.input, styles.textArea]}
+                    placeholder="Detailed description of the product features, benefits, etc."
+                    value={fullDescription}
+                    onChangeText={setFullDescription}
+                    multiline
+                    numberOfLines={5}
+                  />
+                </View>
+                
+                {/* Dimensions */}
+                <Text style={styles.subSectionTitle}>Dimensions</Text>
+                
+                {/* Weight */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Weight (kg)</Text>
+                  <TextInput
+                    style={[styles.input, errors.weight && styles.inputError]}
+                    placeholder="0.00"
+                    value={weight}
+                    onChangeText={setWeight}
+                    keyboardType="decimal-pad"
+                  />
+                  {errors.weight && <Text style={styles.errorText}>{errors.weight}</Text>}
+                </View>
+                
+                {/* Length, Width, Height row */}
+                <View style={styles.threeColumnRow}>
+                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                    <Text style={styles.inputLabel}>Length (cm)</Text>
+                    <TextInput
+                      style={[styles.input, errors.length && styles.inputError]}
+                      placeholder="0"
                       value={length}
                       onChangeText={setLength}
-                      placeholder="0.00"
                       keyboardType="decimal-pad"
                     />
-                    <Text style={styles.inputSuffix}>cm</Text>
+                    {errors.length && <Text style={styles.errorText}>{errors.length}</Text>}
                   </View>
-                  {errors.length && (
-                    <Text style={styles.errorText}>{errors.length}</Text>
-                  )}
-                </View>
-              </View>
-              
-              <View style={styles.formRow}>
-                <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                  <Text style={styles.label}>Width</Text>
-                  <View style={styles.inputWithSuffix}>
+                  
+                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                    <Text style={styles.inputLabel}>Width (cm)</Text>
                     <TextInput
-                      style={[
-                        styles.input, 
-                        styles.inputWithSuffixField,
-                        errors.width && styles.inputError
-                      ]}
+                      style={[styles.input, errors.width && styles.inputError]}
+                      placeholder="0"
                       value={width}
                       onChangeText={setWidth}
-                      placeholder="0.00"
                       keyboardType="decimal-pad"
                     />
-                    <Text style={styles.inputSuffix}>cm</Text>
+                    {errors.width && <Text style={styles.errorText}>{errors.width}</Text>}
                   </View>
-                  {errors.width && (
-                    <Text style={styles.errorText}>{errors.width}</Text>
-                  )}
-                </View>
-                
-                <View style={[styles.formGroup, { flex: 1 }]}>
-                  <Text style={styles.label}>Height</Text>
-                  <View style={styles.inputWithSuffix}>
+                  
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>Height (cm)</Text>
                     <TextInput
-                      style={[
-                        styles.input, 
-                        styles.inputWithSuffixField,
-                        errors.height && styles.inputError
-                      ]}
+                      style={[styles.input, errors.height && styles.inputError]}
+                      placeholder="0"
                       value={height}
                       onChangeText={setHeight}
-                      placeholder="0.00"
                       keyboardType="decimal-pad"
                     />
-                    <Text style={styles.inputSuffix}>cm</Text>
+                    {errors.height && <Text style={styles.errorText}>{errors.height}</Text>}
                   </View>
-                  {errors.height && (
-                    <Text style={styles.errorText}>{errors.height}</Text>
-                  )}
                 </View>
               </View>
-            </View>
-          )}
-          
-          {/* Additional Information Section */}
-          <TouchableOpacity 
-            style={styles.sectionHeader}
-            onPress={() => setAdditionalExpanded(!additionalExpanded)}
-          >
-            <Text style={styles.sectionTitle}>Additional Information</Text>
-            {additionalExpanded ? (
-              <ChevronUp size={20} color="#333" />
-            ) : (
-              <ChevronDown size={20} color="#333" />
             )}
-          </TouchableOpacity>
+          </View>
           
-          {additionalExpanded && (
-            <View style={styles.sectionContent}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Tags</Text>
-                <TextInput
-                  style={styles.input}
-                  value={tags}
-                  onChangeText={setTags}
-                  placeholder="Enter tags separated by commas"
-                />
-                <Text style={styles.helperText}>
-                  Example: electronics, gadget, wireless
-                </Text>
+          {/* Notes Card */}
+          <View style={styles.formSection}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => setAdditionalExpanded(!additionalExpanded)}
+            >
+              <View style={styles.sectionHeaderLeft}>
+                <FileText size={20} color={Colors.text.primary} />
+                <Text style={styles.sectionTitle}>Notes & Tags</Text>
               </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Notes</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  value={notes}
-                  onChangeText={setNotes}
-                  placeholder="Additional notes about the product"
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                />
+              {additionalExpanded ? (
+                <ChevronUp size={20} color={Colors.text.secondary} />
+              ) : (
+                <ChevronDown size={20} color={Colors.text.secondary} />
+              )}
+            </TouchableOpacity>
+            
+            {additionalExpanded && (
+              <View style={styles.sectionContent}>
+                {/* Notes */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Notes</Text>
+                  <TextInput
+                    style={[styles.input, styles.textArea]}
+                    placeholder="Add any additional notes for internal reference"
+                    value={notes}
+                    onChangeText={setNotes}
+                    multiline
+                    numberOfLines={4}
+                  />
+                </View>
+                
+                {/* Tags */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.inputLabel}>Tags</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter tags separated by commas"
+                    value={tags}
+                    onChangeText={setTags}
+                  />
+                  <Text style={styles.helperText}>
+                    Tags help with organization and searching
+                  </Text>
+                </View>
               </View>
-            </View>
-          )}
+            )}
+          </View>
           
-          {/* Bottom padding */}
-          <View style={{ height: 100 }} />
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[styles.saveButton, isLoading && styles.disabledButton]}
+              onPress={handleSave}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Save size={18} color="#fff" />
+                  <Text style={styles.saveButtonText}>Save Product</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.saveAndNewButton, isLoading && styles.disabledButton]}
+              onPress={handleSaveAndAddAnother}
+              disabled={isLoading}
+            >
+              <Plus size={18} color="#fff" />
+              <Text style={styles.saveButtonText}>Save & Add Another</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
-        
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity 
-            style={[styles.button, styles.saveButton]}
-            onPress={handleSave}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Save</Text>
-            )}
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.button, styles.saveAndAddButton]}
-            onPress={handleSaveAndAddAnother}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color={Colors.primary} />
-            ) : (
-              <>
-                <Plus size={16} color={Colors.primary} />
-                <Text style={styles.saveAndAddButtonText}>Save & Add Another</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
       </KeyboardAvoidingView>
       
       <SnackBar
@@ -990,260 +1022,295 @@ export default function AddProductScreen() {
         message={snackbarMessage}
         onDismiss={() => setSnackbarVisible(false)}
       />
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: Colors.background.secondary,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   headerButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: Colors.background.tertiary,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  headerActionButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerActionButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  keyboardAvoidingView: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
   },
-  contentContainer: {
+  scrollContent: {
     padding: 16,
+    paddingBottom: 40,
+  },
+  formSection: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
   sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#fff",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 16,
-    borderRadius: 8,
-    marginBottom: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginLeft: 12,
   },
   sectionContent: {
-    backgroundColor: "#fff",
     padding: 16,
-    borderRadius: 8,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
-  subSectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
+  buttonContainer: {
     marginTop: 8,
+    marginBottom: 24,
+  },
+  saveButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingVertical: 14,
+    borderRadius: 8,
     marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  saveAndNewButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.status.pending,
+    paddingVertical: 14,
+    borderRadius: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   formGroup: {
     marginBottom: 16,
   },
-  formRow: {
-    flexDirection: "row",
-    marginBottom: 16,
-  },
-  label: {
+  inputLabel: {
     fontSize: 14,
-    color: "#333",
+    fontWeight: '500',
+    color: Colors.text.primary,
     marginBottom: 8,
   },
-  required: {
-    color: "#ea4335",
+  requiredAsterisk: {
+    color: Colors.negative,
   },
   input: {
-    backgroundColor: "#f9f9f9",
-    borderWidth: 1,
-    borderColor: "#ddd",
+    backgroundColor: Colors.background.tertiary,
     borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    color: "#333",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: Colors.text.primary,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
   },
   inputError: {
-    borderColor: "#ea4335",
+    borderColor: Colors.negative,
   },
   errorText: {
-    color: "#ea4335",
-    fontSize: 12,
-    marginTop: 4,
-  },
-  helperText: {
-    color: "#666",
+    color: Colors.negative,
     fontSize: 12,
     marginTop: 4,
   },
   textArea: {
-    minHeight: 100,
-    textAlignVertical: "top",
+    minHeight: 80,
+    textAlignVertical: 'top',
+    paddingTop: 12,
+  },
+  twoColumnRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  threeColumnRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  subSectionTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: Colors.text.primary,
+    marginBottom: 12,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  helperText: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginTop: 4,
   },
   inputWithButton: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  inputWithButtonField: {
+  inputWithButtonText: {
     flex: 1,
     borderTopRightRadius: 0,
     borderBottomRightRadius: 0,
   },
-  inputButton: {
+  inputActionButton: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 12,
-    paddingVertical: 13,
+    paddingVertical: 11,
     borderTopRightRadius: 8,
     borderBottomRightRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  inputButtonText: {
-    color: "#fff",
+  inputActionButtonText: {
+    color: '#fff',
     fontSize: 14,
-    fontWeight: "500",
+    fontWeight: '500',
   },
-  inputWithPrefix: {
-    flexDirection: "row",
-    alignItems: "center",
+  inputWithIcon: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  inputPrefix: {
-    backgroundColor: "#f0f0f0",
-    paddingHorizontal: 12,
-    paddingVertical: 13,
-    borderTopLeftRadius: 8,
-    borderBottomLeftRadius: 8,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRightWidth: 0,
-    fontSize: 14,
-    color: "#333",
+  inputIcon: {
+    position: 'absolute',
+    left: 12,
+    zIndex: 1,
   },
-  inputWithPrefixField: {
-    flex: 1,
-    borderTopLeftRadius: 0,
-    borderBottomLeftRadius: 0,
-  },
-  inputWithSuffix: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  inputSuffix: {
-    backgroundColor: "#f0f0f0",
-    paddingHorizontal: 12,
-    paddingVertical: 13,
-    borderTopRightRadius: 8,
-    borderBottomRightRadius: 8,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderLeftWidth: 0,
-    fontSize: 14,
-    color: "#333",
-  },
-  inputWithSuffixField: {
-    flex: 1,
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: 0,
-  },
-  switchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#f9f9f9",
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
-  },
-  switchLabel: {
-    fontSize: 14,
-    color: "#333",
+  inputWithIconText: {
+    paddingLeft: 36,
   },
   imagesContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
   },
-  imageContainer: {
+  imageWrapper: {
     width: 80,
     height: 80,
     borderRadius: 8,
-    marginRight: 8,
-    marginBottom: 8,
-    position: "relative",
+    marginRight: 12,
+    marginBottom: 12,
+    position: 'relative',
   },
-  image: {
-    width: "100%",
-    height: "100%",
+  productImage: {
+    width: '100%',
+    height: '100%',
     borderRadius: 8,
   },
   removeImageButton: {
-    position: "absolute",
+    position: 'absolute',
     top: -8,
     right: -8,
-    backgroundColor: "#ea4335",
-    borderRadius: 12,
     width: 24,
     height: 24,
-    justifyContent: "center",
-    alignItems: "center",
+    borderRadius: 12,
+    backgroundColor: Colors.negative,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   addImageButton: {
     width: 80,
     height: 80,
+    backgroundColor: Colors.background.tertiary,
     borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderStyle: "dashed",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 8,
+    borderColor: Colors.border.light,
+    borderStyle: 'dashed',
   },
   addImageText: {
     fontSize: 12,
-    color: "#666",
-    marginTop: 4,
+    color: Colors.text.secondary,
+    marginTop: 8,
   },
-  buttonContainer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    padding: 16,
-    backgroundColor: "#fff",
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
+  profitMarginContainer: {
+    height: 36,
+    backgroundColor: Colors.background.tertiary,
     borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  saveButton: {
-    backgroundColor: Colors.primary,
-    marginRight: 8,
-  },
-  saveAndAddButton: {
-    backgroundColor: "#fff",
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: Colors.primary,
-    flexDirection: "row",
+    borderColor: Colors.border.light,
   },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "500",
+  profitMarginBar: {
+    height: '100%',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
   },
-  saveAndAddButtonText: {
-    color: Colors.primary,
-    fontSize: 14,
-    fontWeight: "500",
-    marginLeft: 4,
+  profitMarginText: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });

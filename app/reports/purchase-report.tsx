@@ -35,7 +35,7 @@ import {
   Save,
   Clock
 } from 'lucide-react-native';
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { formatCurrency, formatDate, formatDateShort, formatPercentage, formatNumber } from '@/utils/formatters';
 import { getPurchasesData } from '@/mocks/purchasesData';

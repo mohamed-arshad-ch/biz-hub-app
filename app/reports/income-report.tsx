@@ -30,7 +30,7 @@ import {
   CheckSquare,
   Square
 } from 'lucide-react-native';
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { getIncomeData } from '@/mocks/incomeData';
 import { IncomeRecord } from '@/types/income';

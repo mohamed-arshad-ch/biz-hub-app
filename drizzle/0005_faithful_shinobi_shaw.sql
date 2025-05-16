@@ -1,0 +1,22 @@
+CREATE TABLE `vendors` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`user_id` integer NOT NULL,
+	`name` text NOT NULL,
+	`email` text,
+	`phone` text,
+	`address` text,
+	`city` text,
+	`state` text,
+	`zip_code` text,
+	`country` text,
+	`company` text,
+	`notes` text,
+	`category` text,
+	`tags` text,
+	`contact_person` text,
+	`tax_id` text,
+	`payment_terms` text,
+	`credit_limit` integer,
+	`status` text,
+	`created_at` text DEFAULT CURRENT_TIMESTAMP
+);

@@ -14,8 +14,10 @@ import {
   Users, 
   Building, 
   Package,
-  ChevronRight
+  ChevronRight,
+  Settings
 } from "lucide-react-native";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Colors from "@/constants/colors";
 
@@ -49,9 +51,14 @@ const MenuItem = ({ icon, title, description, onPress }: MenuItemProps) => (
 
 export default function FilesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const navigateToScreen = (screen: string) => {
     router.push(screen as any);
+  };
+  
+  const navigateToSettings = () => {
+    router.push("/settings");
   };
 
   const menuItems = [
@@ -76,12 +83,27 @@ export default function FilesScreen() {
   ];
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+    <View style={[
+      styles.container,
+      {
+        paddingTop: insets.top,
+        paddingBottom: insets.bottom
+      }
+    ]}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Business Hub</Text>
-        <Text style={styles.headerSubtitle}>Manage your business in one place</Text>
+        <View>
+          <Text style={styles.headerTitle}>Files</Text>
+          <Text style={styles.headerSubtitle}>Manage your business in one place</Text>
+        </View>
+        <TouchableOpacity 
+          style={styles.settingsButton}
+          onPress={navigateToSettings}
+          activeOpacity={0.7}
+        >
+          <Settings size={22} color={Colors.text.primary} />
+        </TouchableOpacity>
       </View>
       
       <ScrollView 
@@ -113,14 +135,15 @@ export default function FilesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: Colors.background.secondary,
   },
   header: {
-    backgroundColor: "#fff",
-    padding: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 24,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: Colors.background.default,
   },
   headerTitle: {
     fontSize: 28,
@@ -193,5 +216,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     color: Colors.primary,
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.background.tertiary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

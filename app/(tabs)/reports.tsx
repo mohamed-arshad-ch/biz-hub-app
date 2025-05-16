@@ -7,7 +7,8 @@ import {
   TouchableOpacity, 
   SafeAreaView,
   Dimensions,
-  Platform
+  Platform,
+  StatusBar
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { 
@@ -17,7 +18,8 @@ import {
   ShoppingCart, 
   ShoppingBag, 
   BarChart2,
-  ChevronRight
+  ChevronRight,
+  Settings
 } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
@@ -75,20 +77,35 @@ export default function ReportsScreen() {
         router.push("/reports");
     }
   };
+  
+  const navigateToSettings = () => {
+    router.push("/settings");
+  };
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+      
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>Reports</Text>
+          <Text style={styles.headerSubtitle}>
+             View detailed business reports
+          </Text>
+        </View>
+        <TouchableOpacity 
+          style={styles.settingsButton}
+          onPress={navigateToSettings}
+          activeOpacity={0.7}
+        >
+          <Settings size={22} color={Colors.text.primary} />
+        </TouchableOpacity>
+      </View>
+      
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.headerContainer}>
-          <Text style={styles.headerTitle}>Reports</Text>
-          <Text style={styles.headerSubtitle}>
-            Generate and view detailed business reports
-          </Text>
-        </View>
-        
         <View style={styles.grid}>
           <ReportCard 
             title="Ledger Report" 
@@ -145,15 +162,27 @@ export default function ReportsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: Colors.background.secondary,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: Colors.background.default,
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.background.tertiary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   scrollContent: {
     padding: 16,
-    paddingTop: Platform.OS === 'ios' ? 20 : 30,
     paddingBottom: 40,
-  },
-  headerContainer: {
-    marginBottom: 24,
   },
   headerTitle: {
     fontSize: 28,

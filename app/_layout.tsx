@@ -2,17 +2,15 @@ import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useState } from "react";
-import { Platform } from "react-native";
+import { useEffect, useState, Suspense } from "react";
+import { View, ActivityIndicator, Text } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { ErrorBoundary } from "./error-boundary";
 import CustomSplashScreen from "@/components/SplashScreen";
-import { useAuthStore } from "@/stores/auth-store";
-import { initializeCategories } from "@/utils/categoryStorageUtils";
-import { initializeAccountGroups } from "@/utils/accountGroupStorageUtils";
-import { initializeCurrencies } from "@/utils/currencyStorageUtils";
-import { initializeUser } from '@/utils/userStorageUtils';
+import { SQLiteProvider } from 'expo-sqlite';
+import { DATABASE_NAME } from '@/db';
+import { setupDatabase } from '@/db/setup';
 
 export const unstable_settings = {
   // Ensure that reloading on `/modal` keeps a back button present.
@@ -23,43 +21,42 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
+  const [loaded, fontError] = useFonts({
     ...FontAwesome.font,
     // Using only FontAwesome and system default fonts
   });
   const [showSplash, setShowSplash] = useState(true);
-  const { isAuthenticated } = useAuthStore();
+  const [dbReady, setDbReady] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
 
-  // Initialize app data
+  // Set up database
   useEffect(() => {
-    async function prepare() {
+    const initDb = async () => {
       try {
-        // Initialize AsyncStorage data
-        await Promise.all([
-          initializeCategories(),
-          initializeAccountGroups(),
-          initializeCurrencies(),
-          initializeUser()
-        ]);
-        
-        // Other setup tasks can be added here
-      } catch (e) {
-        console.warn("Error initializing app data:", e);
+        const success = await setupDatabase();
+        setDbReady(success);
+        if (!success) {
+          setDbError('Failed to set up database');
+        }
+      } catch (error) {
+        console.error('Database initialization error:', error);
+        setDbError('An error occurred setting up the database');
+        setDbReady(false);
       }
-    }
+    };
 
-    prepare();
+    initDb();
   }, []);
 
   useEffect(() => {
-    if (error) {
-      console.error(error);
-      throw error;
+    if (fontError) {
+      console.error(fontError);
+      throw fontError;
     }
-  }, [error]);
+  }, [fontError]);
 
   useEffect(() => {
-    if (loaded) {
+    if (loaded && dbReady) {
       // Hide the native splash screen
       SplashScreen.hideAsync();
       
@@ -70,43 +67,52 @@ export default function RootLayout() {
       
       return () => clearTimeout(timer);
     }
-  }, [loaded]);
+  }, [loaded, dbReady]);
 
-  if (!loaded || showSplash) {
+  if (!loaded || !dbReady || showSplash) {
+    // Show loading or custom splash screen
+    if (dbError) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Text style={{ fontSize: 18, color: 'red', textAlign: 'center', marginBottom: 20 }}>
+            {dbError}
+          </Text>
+          <Text style={{ fontSize: 14, color: '#666', textAlign: 'center' }}>
+            Please restart the app. If the problem persists, contact support.
+          </Text>
+        </View>
+      );
+    }
+    
     // Return our custom splash screen while loading or during the timed display
     return loaded ? <CustomSplashScreen /> : null;
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ErrorBoundary>
-        <RootLayoutNav />
-      </ErrorBoundary>
-    </GestureHandlerRootView>
+    <Suspense fallback={<ActivityIndicator size="large" color="#4CAF50" />}>
+      <SQLiteProvider
+        databaseName={DATABASE_NAME}
+        options={{ enableChangeListener: true }}
+        useSuspense
+      >
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <ErrorBoundary>
+            <RootLayoutNav />
+          </ErrorBoundary>
+        </GestureHandlerRootView>
+      </SQLiteProvider>
+    </Suspense>
   );
 }
 
 function RootLayoutNav() {
-  const { isAuthenticated } = useAuthStore();
-  
   return (
-    <Stack
-    screenOptions={{
-      headerBackTitle: "Back",
-    }}
-    >
-      <Stack.Screen 
-        name="(tabs)" 
-        options={{ headerShown: false }} 
-      />
-      <Stack.Screen 
-        name="login" 
-        options={{ headerShown: false }} 
-      />
-      <Stack.Screen 
-        name="index" 
-        options={{ headerShown: false }} 
-      />
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="index" />
+      <Stack.Screen name="login" />
+      <Stack.Screen name="register" />
+      <Stack.Screen name="company-info" />
     </Stack>
   );
 }

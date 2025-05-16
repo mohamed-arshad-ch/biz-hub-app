@@ -9,13 +9,13 @@ import {
   Alert,
   Share,
   Platform,
-  ToastAndroid
+  StatusBar
 } from "react-native";
-import { Stack, useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { 
   ArrowLeft, 
   Edit, 
-  Trash, 
+  Trash2, 
   Share2, 
   Calendar, 
   Tag, 
@@ -23,9 +23,10 @@ import {
   User, 
   CreditCard, 
   Hash, 
-  FileText
+  FileText,
+  Printer
 } from "lucide-react-native";
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from "@/constants/colors";
 import { getIncomeById, deleteIncome } from "@/mocks/incomeData";
 import { formatCurrency, formatDate } from "@/utils/formatters";
@@ -36,7 +37,7 @@ export default function IncomeDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [income, setIncome] = useState<IncomeRecord | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [snackBarVisible, setSnackBarVisible] = useState(false);
   const [snackBarMessage, setSnackBarMessage] = useState("");
@@ -46,18 +47,18 @@ export default function IncomeDetailScreen() {
     if (id) {
       // Simulate API call
       setTimeout(() => {
-        const incomeData = getIncomeById(id);
+        const incomeData = getIncomeById("i1");
         if (incomeData) {
           setIncome(incomeData);
         }
-        setIsLoading(false);
+        setLoading(false);
       }, 500);
     }
   }, [id]);
 
   const handleEdit = () => {
     if (income) {
-      router.push(`/income/edit/${income.id}`);
+      router.push(`/income/edit/1`);
     }
   };
 
@@ -130,7 +131,7 @@ export default function IncomeDetailScreen() {
     // In a real app, this would restore the deleted income in the database
     // For now, we'll just show a message
     if (Platform.OS === "android") {
-      ToastAndroid.show("Income record restored", ToastAndroid.SHORT);
+      Alert.alert("Income Restored", "The income record has been restored successfully.");
     } else {
       Alert.alert("Income Restored", "The income record has been restored successfully.");
     }
@@ -160,10 +161,29 @@ Notes: ${income.notes || "N/A"}`,
     }
   };
 
-  if (isLoading) {
+  const handlePrint = () => {
+    Alert.alert('Print', 'Printing income record...');
+  };
+
+  // Get category color based on category name
+  const getCategoryColor = (category: string): string => {
+    const categoryColors: Record<string, string> = {
+      'Salary': '#4CAF50',
+      'Investment': '#2196F3',
+      'Business': '#FBBC04',
+      'Freelance': '#9C27B0',
+      'Other': '#757575'
+    };
+    
+    return categoryColors[category] || '#757575';
+  };
+
+  if (loading) {
     return (
       <View style={styles.loadingContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading income details...</Text>
       </View>
     );
   }
@@ -171,8 +191,9 @@ Notes: ${income.notes || "N/A"}`,
   if (isDeleting) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ea4335" />
-        <Text style={styles.deletingText}>Deleting...</Text>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+        <ActivityIndicator size="large" color="#FF3B30" />
+        <Text style={styles.loadingText}>Deleting income record...</Text>
       </View>
     );
   }
@@ -180,6 +201,7 @@ Notes: ${income.notes || "N/A"}`,
   if (!income) {
     return (
       <View style={styles.errorContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <Text style={styles.errorText}>Income record not found</Text>
         <TouchableOpacity 
           style={styles.backButton}
@@ -192,287 +214,286 @@ Notes: ${income.notes || "N/A"}`,
   }
 
   return (
-    <>
-      <Stack.Screen 
-        options={{
-          title: "Income Details",
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <View style={styles.headerRightContainer}>
-              <TouchableOpacity 
-                onPress={handleShare}
-                style={styles.headerButton}
-              >
-                <Share2 size={20} color="#333" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={handleEdit}
-                style={styles.headerButton}
-              >
-                <Edit size={20} color="#333" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={handleDelete}
-                style={styles.headerButton}
-              >
-                <Trash size={20} color="#ea4335" />
-              </TouchableOpacity>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.title}>Income Details</Text>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity onPress={handlePrint} style={styles.headerButton}>
+            <Printer size={22} color={Colors.text.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleShare} style={styles.headerButton}>
+            <Share2 size={22} color={Colors.text.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleEdit} style={styles.headerButton}>
+            <Edit size={22} color={Colors.text.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleDelete} style={styles.headerButton}>
+            <Trash2 size={22} color={Colors.negative || "#FF3B30"} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.amountCard}>
+          <Text style={styles.amountLabel}>Amount</Text>
+          <Text style={styles.amountValue}>{formatCurrency(income.amount)}</Text>
+          <View style={[
+            styles.categoryBadge,
+            { backgroundColor: `${getCategoryColor(income.category)}20` }
+          ]}>
+            <Tag size={16} color={getCategoryColor(income.category)} style={styles.categoryIcon} />
+            <Text style={[
+              styles.categoryText,
+              { color: getCategoryColor(income.category) }
+            ]}>
+              {income.category.toUpperCase()}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Income Information</Text>
+          
+          <View style={styles.infoItem}>
+            <View style={styles.infoIconContainer}>
+              <User size={20} color={Colors.primary} />
             </View>
-          ),
-        }} 
-      />
-      
-      <ScrollView style={styles.container}>
-        <View style={styles.card}>
-          <View style={styles.amountContainer}>
-            <Text style={styles.amountLabel}>Amount</Text>
-            <Text style={styles.amountValue}>{formatCurrency(income.amount)}</Text>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoLabel}>Source</Text>
+              <Text style={styles.infoValue}>{income.source}</Text>
+            </View>
           </View>
           
-          <View style={styles.divider} />
-          
-          <View style={styles.detailsContainer}>
-            <View style={styles.detailRow}>
-              <View style={styles.detailIconContainer}>
-                <Calendar size={20} color={Colors.primary} />
-              </View>
-              <View style={styles.detailTextContainer}>
-                <Text style={styles.detailLabel}>Date</Text>
-                <Text style={styles.detailValue}>{formatDate(income.date)}</Text>
-              </View>
+          <View style={styles.infoItem}>
+            <View style={styles.infoIconContainer}>
+              <Calendar size={20} color={Colors.primary} />
             </View>
-            
-            <View style={styles.detailRow}>
-              <View style={styles.detailIconContainer}>
-                <Tag size={20} color={Colors.primary} />
-              </View>
-              <View style={styles.detailTextContainer}>
-                <Text style={styles.detailLabel}>Category</Text>
-                <Text style={styles.detailValue}>{income.category}</Text>
-              </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoLabel}>Income Date</Text>
+              <Text style={styles.infoValue}>{formatDate(income.date)}</Text>
             </View>
-            
-            <View style={styles.detailRow}>
-              <View style={styles.detailIconContainer}>
-                <User size={20} color={Colors.primary} />
-              </View>
-              <View style={styles.detailTextContainer}>
-                <Text style={styles.detailLabel}>Source</Text>
-                <Text style={styles.detailValue}>{income.source}</Text>
-              </View>
-            </View>
-            
-            {income.paymentMethod && (
-              <View style={styles.detailRow}>
-                <View style={styles.detailIconContainer}>
-                  <CreditCard size={20} color={Colors.primary} />
-                </View>
-                <View style={styles.detailTextContainer}>
-                  <Text style={styles.detailLabel}>Payment Method</Text>
-                  <Text style={styles.detailValue}>{income.paymentMethod}</Text>
-                </View>
-              </View>
-            )}
-            
-            {income.reference && (
-              <View style={styles.detailRow}>
-                <View style={styles.detailIconContainer}>
-                  <Hash size={20} color={Colors.primary} />
-                </View>
-                <View style={styles.detailTextContainer}>
-                  <Text style={styles.detailLabel}>Reference</Text>
-                  <Text style={styles.detailValue}>{income.reference}</Text>
-                </View>
-              </View>
-            )}
           </View>
+          
+          {income.paymentMethod && (
+            <View style={styles.infoItem}>
+              <View style={styles.infoIconContainer}>
+                <CreditCard size={20} color={Colors.primary} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Payment Method</Text>
+                <Text style={styles.infoValue}>{income.paymentMethod}</Text>
+              </View>
+            </View>
+          )}
+          
+          {income.reference && (
+            <View style={styles.infoItem}>
+              <View style={styles.infoIconContainer}>
+                <Hash size={20} color={Colors.primary} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Reference Number</Text>
+                <Text style={styles.infoValue}>{income.reference}</Text>
+              </View>
+            </View>
+          )}
         </View>
         
         {income.notes && (
-          <View style={styles.card}>
-            <View style={styles.notesHeader}>
-              <FileText size={20} color={Colors.primary} />
-              <Text style={styles.notesHeaderText}>Notes</Text>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Notes</Text>
+            <View style={styles.notesContainer}>
+              <View style={styles.infoIconContainer}>
+                <FileText size={20} color={Colors.primary} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.notesText}>{income.notes}</Text>
+              </View>
             </View>
-            <Text style={styles.notesText}>{income.notes}</Text>
           </View>
         )}
-        
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.editButton]}
-            onPress={handleEdit}
-          >
-            <Edit size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Edit</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.deleteButton]}
-            onPress={handleDelete}
-          >
-            <Trash size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Delete</Text>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
       
       <SnackBar
         visible={snackBarVisible}
         message={snackBarMessage}
-        actionLabel="UNDO"
+        action="UNDO"
         onAction={handleUndoDelete}
         onDismiss={() => setSnackBarVisible(false)}
-        duration={5000}
       />
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: Colors.background.default,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: Colors.background.default,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  headerButtons: {
+    flexDirection: 'row',
   },
   headerButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  headerRightContainer: {
-    flexDirection: "row",
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+  amountCard: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: Colors.primary + '20',
+  },
+  amountLabel: {
+    fontSize: 16,
+    color: Colors.text.secondary,
+    marginBottom: 8,
+  },
+  amountValue: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginBottom: 16,
+  },
+  categoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  categoryIcon: {
+    marginRight: 6,
+  },
+  categoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  section: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 16,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  infoIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.primary + '10',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  infoContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  infoLabel: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginBottom: 4,
+  },
+  infoValue: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    fontWeight: '500',
+  },
+  notesContainer: {
+    flexDirection: 'row',
+  },
+  notesText: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    lineHeight: 24,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: Colors.background.default,
   },
-  deletingText: {
+  loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: "#ea4335",
+    color: Colors.text.secondary,
   },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: Colors.background.default,
     padding: 16,
   },
   errorText: {
-    fontSize: 16,
-    color: "#ea4335",
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.negative || "#FF3B30",
     marginBottom: 16,
-  },
-  backButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
   },
   backButtonText: {
     color: "#fff",
-    fontWeight: "500",
-  },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    margin: 16,
-    marginBottom: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  amountContainer: {
-    alignItems: "center",
-    paddingVertical: 16,
-  },
-  amountLabel: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 8,
-  },
-  amountValue: {
-    fontSize: 32,
     fontWeight: "600",
-    color: "#34a853",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#eee",
-    marginVertical: 16,
-  },
-  detailsContainer: {
-    marginTop: 8,
-  },
-  detailRow: {
-    flexDirection: "row",
-    marginBottom: 16,
-  },
-  detailIconContainer: {
-    width: 40,
-    alignItems: "center",
-  },
-  detailTextContainer: {
-    flex: 1,
-  },
-  detailLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 4,
-  },
-  detailValue: {
     fontSize: 16,
-    color: "#333",
-  },
-  notesHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  notesHeaderText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#333",
-    marginLeft: 8,
-  },
-  notesText: {
-    fontSize: 14,
-    color: "#333",
-    lineHeight: 20,
-  },
-  actionButtonsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    margin: 16,
-    marginTop: 8,
-  },
-  actionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  editButton: {
-    backgroundColor: Colors.primary,
-  },
-  deleteButton: {
-    backgroundColor: "#ea4335",
-  },
-  actionButtonText: {
-    color: "#fff",
-    fontWeight: "500",
-    marginLeft: 8,
   },
 });

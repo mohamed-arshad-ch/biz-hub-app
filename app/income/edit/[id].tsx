@@ -1,55 +1,75 @@
-import React, { useState, useEffect, useRef } from "react";
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  ScrollView, 
-  TouchableOpacity, 
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
   TextInput,
+  StatusBar,
+  Alert,
+  Modal,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ActivityIndicator
-} from "react-native";
-import { Stack, useRouter, useLocalSearchParams } from "expo-router";
-import { 
-  ArrowLeft, 
-  Calendar, 
-  Tag, 
-  DollarSign, 
-  User, 
-  CreditCard, 
-  Hash, 
+} from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import {
+  ArrowLeft,
+  Calendar,
+  Tag,
+  DollarSign,
+  User,
+  CreditCard,
+  Hash,
   FileText,
-  Check
-} from "lucide-react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import BottomSheetSelector, { BottomSheetSelectorRef } from "@/components/BottomSheetSelector";
-import CategorySelector, { Category } from "@/components/CategorySelector";
-import PaymentMethodSelector, { defaultPaymentMethods } from "@/components/PaymentMethodSelector";
-import { getIncomeCategories } from "@/utils/categoryStorageUtils";
+  Check,
+  ChevronRight,
+  X,
+  ChevronDown
+} from 'lucide-react-native';
+import Colors from '@/constants/colors';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { getIncomeCategories } from "@/mocks/categoryData";
 import { IncomeCategory } from "@/types/category";
-
-import Colors from "@/constants/colors";
 import { getIncomeById } from "@/mocks/incomeData";
-import { IncomeRecord } from "@/types/income";
+
+// Mock income categories if the utility function doesn't work
+const mockIncomeCategories = [
+  { id: '1', name: 'Salary', description: 'Regular employment income', color: '#4CAF50' },
+  { id: '2', name: 'Investment', description: 'Returns from investments', color: '#2196F3' },
+  { id: '3', name: 'Business', description: 'Income from business operations', color: '#FBBC04' },
+  { id: '4', name: 'Freelance', description: 'Income from freelance work', color: '#9C27B0' },
+  { id: '5', name: 'Other', description: 'Miscellaneous income', color: '#757575' }
+];
+
+// Mock payment methods
+const paymentMethods = [
+  { id: '1', name: 'Cash' },
+  { id: '2', name: 'Bank Transfer' },
+  { id: '3', name: 'Credit Card' },
+  { id: '4', name: 'Digital Wallet' },
+  { id: '5', name: 'Check' }
+];
 
 export default function EditIncomeScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   
-  const [source, setSource] = useState("");
-  const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState("");
+  const [source, setSource] = useState('');
+  const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState<IncomeCategory | null>(null);
   const [date, setDate] = useState(new Date());
-  const [paymentMethod, setPaymentMethod] = useState("");
-  const [reference, setReference] = useState("");
-  const [notes, setNotes] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState('');
+  const [reference, setReference] = useState('');
+  const [notes, setNotes] = useState('');
   
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
-  const [showPaymentMethodPicker, setShowPaymentMethodPicker] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
+  const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([]);
   
   const [errors, setErrors] = useState<{
     source?: string;
@@ -57,36 +77,26 @@ export default function EditIncomeScreen() {
     category?: string;
   }>({});
 
-  const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<IncomeCategory | null>(null);
-  
-  const categoryBottomSheetRef = useRef<BottomSheetSelectorRef>(null);
-  const paymentMethodBottomSheetRef = useRef<BottomSheetSelectorRef>(null);
-
-  const paymentMethods = [
-    "Cash",
-    "Credit Card",
-    "Debit Card",
-    "Bank Transfer",
-    "Check",
-    "PayPal",
-    "Venmo",
-    "Other"
-  ];
-
+  // Load income categories
   useEffect(() => {
     const loadCategories = async () => {
       try {
         const categories = await getIncomeCategories();
-        setIncomeCategories(categories);
+        if (categories && categories.length > 0) {
+          setIncomeCategories(categories);
+        } else {
+          setIncomeCategories(mockIncomeCategories);
+        }
       } catch (error) {
         console.error('Error loading income categories:', error);
+        setIncomeCategories(mockIncomeCategories);
       }
     };
     
     loadCategories();
   }, []);
 
+  // Load income data
   useEffect(() => {
     if (id) {
       // Simulate API call
@@ -95,22 +105,21 @@ export default function EditIncomeScreen() {
         if (incomeData) {
           setSource(incomeData.source);
           setAmount(incomeData.amount.toString());
-          setCategory(incomeData.category);
           setDate(new Date(incomeData.date));
-          setPaymentMethod(incomeData.paymentMethod || "");
-          setReference(incomeData.reference || "");
-          setNotes(incomeData.notes || "");
+          setPaymentMethod(incomeData.paymentMethod || '');
+          setReference(incomeData.reference || '');
+          setNotes(incomeData.notes || '');
 
-          // Find the corresponding category object
-          const categoryObj = incomeCategories.find(cat => cat.name === incomeData.category);
-          if (categoryObj) {
-            setSelectedCategory(categoryObj);
+          // Find and set the category object
+          const foundCategory = mockIncomeCategories.find(cat => cat.name === incomeData.category);
+          if (foundCategory) {
+            setCategory(foundCategory);
           }
         }
-        setIsLoading(false);
+        setLoading(false);
       }, 500);
     }
-  }, [id, incomeCategories]);
+  }, [id]);
 
   const validateForm = () => {
     const newErrors: {
@@ -129,7 +138,7 @@ export default function EditIncomeScreen() {
       newErrors.amount = "Amount must be a positive number";
     }
     
-    if (!category.trim()) {
+    if (!category) {
       newErrors.category = "Category is required";
     }
     
@@ -137,14 +146,12 @@ export default function EditIncomeScreen() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleUpdate = () => {
+  const handleSave = () => {
     if (!validateForm()) {
       return;
     }
     
-    // In a real app, you would call an API to update the income record
-    // For now, just show a success message and navigate back
-    
+    // In a real app, you would call an API to save the income record
     Alert.alert(
       "Success",
       "Income record updated successfully",
@@ -164,352 +171,382 @@ export default function EditIncomeScreen() {
     }
   };
 
-  const openCategorySelector = () => {
-    categoryBottomSheetRef.current?.open();
-  };
-
-  const openPaymentMethodSelector = () => {
-    paymentMethodBottomSheetRef.current?.open();
-  };
-
-  const handleCategorySelect = (selectedCat: IncomeCategory) => {
-    setSelectedCategory(selectedCat);
-    setCategory(selectedCat.name);
-    categoryBottomSheetRef.current?.close();
+  const handleCategorySelect = (selectedCategory: IncomeCategory) => {
+    setCategory(selectedCategory);
+    setShowCategoryModal(false);
   };
 
   const handlePaymentMethodSelect = (method: string) => {
     setPaymentMethod(method);
-    paymentMethodBottomSheetRef.current?.close();
+    setShowPaymentMethodModal(false);
   };
 
-  if (isLoading) {
+  const getCategoryColor = (categoryId: string) => {
+    const foundCategory = incomeCategories.find(cat => cat.id === categoryId);
+    return foundCategory ? foundCategory.color : '#757575';
+  };
+
+  if (loading) {
     return (
       <View style={styles.loadingContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading income details...</Text>
       </View>
     );
   }
 
   return (
-    <>
-      <Stack.Screen 
-        options={{
-          title: "Edit Income",
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-        }} 
-      />
-      
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
-      >
-        <ScrollView style={styles.container}>
-          <View style={styles.formContainer}>
-            {/* Source Field */}
-            <View style={styles.inputGroup}>
-              <View style={styles.labelContainer}>
-                <User size={16} color="#666" />
-                <Text style={styles.label}>Source</Text>
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.keyboardAvoidingView}
+    >
+      <View style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+            <ArrowLeft size={24} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Edit Income</Text>
+          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+            <Text style={styles.saveButtonText}>Save</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Income Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Income Information</Text>
+            <View style={styles.card}>
+              <View style={styles.formField}>
+                <Text style={styles.fieldLabel}>Source</Text>
+                <TextInput
+                  style={[styles.input, errors.source ? {borderColor: '#FF3B30'} : null]}
+                  value={source}
+                  onChangeText={setSource}
+                  placeholder="Enter income source"
+                />
+                {errors.source && <Text style={styles.errorText}>{errors.source}</Text>}
               </View>
-              <TextInput
-                style={[styles.input, errors.source ? styles.inputError : null]}
-                placeholder="Enter source or payer name"
-                value={source}
-                onChangeText={setSource}
-              />
-              {errors.source ? (
-                <Text style={styles.errorText}>{errors.source}</Text>
-              ) : null}
-            </View>
-            
-            {/* Amount Field */}
-            <View style={styles.inputGroup}>
-              <View style={styles.labelContainer}>
-                <DollarSign size={16} color="#666" />
-                <Text style={styles.label}>Amount</Text>
+
+              <View style={styles.divider} />
+
+              <View style={styles.formField}>
+                <Text style={styles.fieldLabel}>Amount</Text>
+                <TextInput
+                  style={[styles.input, errors.amount ? {borderColor: '#FF3B30'} : null]}
+                  value={amount}
+                  onChangeText={setAmount}
+                  placeholder="0.00"
+                  keyboardType="numeric"
+                />
+                {errors.amount && <Text style={styles.errorText}>{errors.amount}</Text>}
               </View>
-              <TextInput
-                style={[styles.input, errors.amount ? styles.inputError : null]}
-                placeholder="0.00"
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="numeric"
-              />
-              {errors.amount ? (
-                <Text style={styles.errorText}>{errors.amount}</Text>
-              ) : null}
-            </View>
-            
-            {/* Category Field */}
-            <View style={styles.inputGroup}>
-              <View style={styles.labelContainer}>
-                <Tag size={16} color="#666" />
-                <Text style={styles.label}>Category</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.input, styles.pickerInput, errors.category ? styles.inputError : null]}
-                onPress={openCategorySelector}
+
+              <View style={styles.divider} />
+
+              <TouchableOpacity 
+                style={styles.formField}
+                onPress={() => setShowCategoryModal(true)}
               >
-                {selectedCategory ? (
-                  <View style={styles.selectedCategoryContainer}>
-                    <View 
-                      style={[
-                        styles.categoryColorDot, 
-                        { backgroundColor: selectedCategory.color }
-                      ]} 
-                    />
-                    <Text style={styles.inputText}>{selectedCategory.name}</Text>
+                <Text style={styles.fieldLabel}>Category</Text>
+                {category ? (
+                  <View style={styles.selectedItem}>
+                    <View style={[styles.categoryColorDot, { backgroundColor: category.color }]} />
+                    <Text style={styles.fieldValue}>{category.name}</Text>
+                    <ChevronRight size={20} color={Colors.text.secondary} />
                   </View>
                 ) : (
-                  <Text style={styles.placeholderText}>
-                    Select a category
-                  </Text>
+                  <View style={styles.placeholderContainer}>
+                    <Text style={styles.placeholder}>Select Category</Text>
+                    <ChevronRight size={20} color={Colors.text.secondary} />
+                  </View>
                 )}
+                {errors.category && <Text style={styles.errorText}>{errors.category}</Text>}
               </TouchableOpacity>
-              {errors.category ? (
-                <Text style={styles.errorText}>{errors.category}</Text>
-              ) : null}
-            </View>
-            
-            {/* Date Field */}
-            <View style={styles.inputGroup}>
-              <View style={styles.labelContainer}>
-                <Calendar size={16} color="#666" />
-                <Text style={styles.label}>Date</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.input, styles.pickerInput]}
+
+              <View style={styles.divider} />
+
+              <TouchableOpacity 
+                style={styles.formField}
                 onPress={() => setShowDatePicker(true)}
               >
-                <Text style={styles.inputText}>
-                  {date.toLocaleDateString()}
-                </Text>
+                <Text style={styles.fieldLabel}>Date</Text>
+                <View style={styles.selectedItem}>
+                  <Text style={styles.fieldValue}>
+                    {date.toLocaleDateString()}
+                  </Text>
+                  <Calendar size={20} color={Colors.text.secondary} />
+                </View>
               </TouchableOpacity>
-              
-              {showDatePicker && (
-                <DateTimePicker
-                  value={date}
-                  mode="date"
-                  display="default"
-                  onChange={handleDateChange}
-                />
-              )}
-            </View>
-            
-            {/* Payment Method Field */}
-            <View style={styles.inputGroup}>
-              <View style={styles.labelContainer}>
-                <CreditCard size={16} color="#666" />
-                <Text style={styles.label}>Payment Method</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.input, styles.pickerInput]}
-                onPress={openPaymentMethodSelector}
-              >
-                <Text style={paymentMethod ? styles.inputText : styles.placeholderText}>
-                  {paymentMethod || "Select payment method"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            
-            {/* Reference Field */}
-            <View style={styles.inputGroup}>
-              <View style={styles.labelContainer}>
-                <Hash size={16} color="#666" />
-                <Text style={styles.label}>Reference (Optional)</Text>
-              </View>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter reference number"
-                value={reference}
-                onChangeText={setReference}
-              />
-            </View>
-            
-            {/* Notes Field */}
-            <View style={styles.inputGroup}>
-              <View style={styles.labelContainer}>
-                <FileText size={16} color="#666" />
-                <Text style={styles.label}>Notes (Optional)</Text>
-              </View>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Add notes or description"
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
-              />
             </View>
           </View>
-          
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={handleUpdate}
-            >
-              <Text style={styles.saveButtonText}>Update</Text>
-            </TouchableOpacity>
+
+          {/* Payment Details */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Payment Details</Text>
+            <View style={styles.card}>
+              <TouchableOpacity 
+                style={styles.formField}
+                onPress={() => setShowPaymentMethodModal(true)}
+              >
+                <Text style={styles.fieldLabel}>Payment Method</Text>
+                {paymentMethod ? (
+                  <View style={styles.selectedItem}>
+                    <Text style={styles.fieldValue}>{paymentMethod}</Text>
+                    <ChevronRight size={20} color={Colors.text.secondary} />
+                  </View>
+                ) : (
+                  <View style={styles.placeholderContainer}>
+                    <Text style={styles.placeholder}>Select Payment Method</Text>
+                    <ChevronRight size={20} color={Colors.text.secondary} />
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.divider} />
+
+              <View style={styles.formField}>
+                <Text style={styles.fieldLabel}>Reference Number</Text>
+                <TextInput
+                  style={styles.input}
+                  value={reference}
+                  onChangeText={setReference}
+                  placeholder="Enter reference number (optional)"
+                />
+              </View>
+            </View>
+          </View>
+
+          {/* Additional Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Additional Information</Text>
+            <View style={styles.card}>
+              <View style={styles.formField}>
+                <Text style={styles.fieldLabel}>Notes</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="Add notes (optional)"
+                  multiline={true}
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+              </View>
+            </View>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
 
-      <BottomSheetSelector ref={categoryBottomSheetRef}>
-        <CategorySelector
-          categories={incomeCategories as Category[]}
-          onSelectCategory={(category: Category) => handleCategorySelect(category as IncomeCategory)}
-          type="income"
-        />
-      </BottomSheetSelector>
+        {/* Category Selection Modal */}
+        <Modal
+          visible={showCategoryModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowCategoryModal(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Category</Text>
+                <TouchableOpacity
+                  onPress={() => setShowCategoryModal(false)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              
+              <FlatList
+                data={incomeCategories}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.modalList}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.modalItem}
+                    onPress={() => handleCategorySelect(item)}
+                  >
+                    <View style={styles.categoryItemContent}>
+                      <View style={[styles.categoryColorDot, { backgroundColor: item.color }]} />
+                      <Text style={styles.categoryItemText}>{item.name}</Text>
+                    </View>
+                    {category?.id === item.id && (
+                      <Check size={20} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                )}
+                ItemSeparatorComponent={() => <View style={styles.modalDivider} />}
+              />
+            </View>
+          </View>
+        </Modal>
 
-      <BottomSheetSelector ref={paymentMethodBottomSheetRef} height={400}>
-        <PaymentMethodSelector
-          selectedMethod={paymentMethod}
-          onSelectPaymentMethod={handlePaymentMethodSelect}
-        />
-      </BottomSheetSelector>
-    </>
+        {/* Payment Method Selection Modal */}
+        <Modal
+          visible={showPaymentMethodModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowPaymentMethodModal(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Payment Method</Text>
+                <TouchableOpacity
+                  onPress={() => setShowPaymentMethodModal(false)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              
+              <FlatList
+                data={paymentMethods}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.modalList}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.modalItem}
+                    onPress={() => handlePaymentMethodSelect(item.name)}
+                  >
+                    <Text style={styles.modalItemText}>{item.name}</Text>
+                    {paymentMethod === item.name && (
+                      <Check size={20} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                )}
+                ItemSeparatorComponent={() => <View style={styles.modalDivider} />}
+              />
+            </View>
+          </View>
+        </Modal>
+
+        {/* Date Picker */}
+        {showDatePicker && (
+          <DateTimePicker
+            value={date}
+            mode="date"
+            display="default"
+            onChange={handleDateChange}
+          />
+        )}
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoidingView: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: Colors.background.default,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: Colors.background.default,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
   },
   headerButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  formContainer: {
-    padding: 16,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  labelContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#333",
-    marginLeft: 8,
-  },
-  input: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  inputError: {
-    borderColor: "#ea4335",
-  },
-  errorText: {
-    color: "#ea4335",
-    fontSize: 12,
-    marginTop: 4,
-    marginLeft: 4,
-  },
-  pickerInput: {
-    justifyContent: "center",
-  },
-  inputText: {
-    fontSize: 16,
-    color: "#333",
-  },
-  placeholderText: {
-    fontSize: 16,
-    color: "#aaa",
-  },
-  textArea: {
-    minHeight: 100,
-    paddingTop: 12,
-  },
-  pickerContainer: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    marginTop: 4,
-    maxHeight: 200,
-  },
-  pickerItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
+  saveButton: {
+    backgroundColor: Colors.primary,
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  pickerItemText: {
-    fontSize: 16,
-    color: "#333",
+  saveButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  scrollView: {
     flex: 1,
   },
-  categoryDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  buttonContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  content: {
     padding: 16,
     paddingBottom: 32,
   },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginRight: 8,
-    alignItems: "center",
+  section: {
+    marginBottom: 16,
   },
-  cancelButtonText: {
-    color: "#666",
+  sectionTitle: {
     fontSize: 16,
-    fontWeight: "500",
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 8,
   },
-  saveButton: {
-    flex: 1,
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginLeft: 8,
-    alignItems: "center",
+  card: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    overflow: 'hidden',
   },
-  saveButtonText: {
-    color: "#fff",
+  formField: {
+    padding: 16,
+  },
+  fieldLabel: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginBottom: 8,
+  },
+  input: {
     fontSize: 16,
-    fontWeight: "500",
+    color: Colors.text.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 8,
+    backgroundColor: Colors.background.secondary,
+  },
+  textArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.border.light,
+  },
+  selectedItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  fieldValue: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    flex: 1,
+  },
+  placeholderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  placeholder: {
+    fontSize: 16,
+    color: Colors.text.tertiary,
+    flex: 1,
   },
   categoryColorDot: {
     width: 12,
@@ -517,8 +554,70 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginRight: 8,
   },
-  selectedCategoryContainer: {
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: Colors.text.secondary,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    backgroundColor: Colors.background.default,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  modalList: {
+    paddingHorizontal: 16,
+  },
+  modalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+  },
+  categoryItemContent: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+  categoryItemText: {
+    fontSize: 16,
+    color: Colors.text.primary,
+  },
+  modalItemText: {
+    fontSize: 16,
+    color: Colors.text.primary,
+  },
+  modalDivider: {
+    height: 1,
+    backgroundColor: Colors.border.light,
+  }
 });

@@ -26,7 +26,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Colors from "@/constants/colors";
-import { useAuthStore } from "@/stores/auth-store";
 import { formatCurrency } from "@/utils/formatters";
 import { getMetricsData, getRecentTransactions } from "@/mocks/dashboardData";
 
@@ -117,7 +116,6 @@ const FabMenuItem = ({ icon, label, backgroundColor, onPress }) => {
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
   const [metrics, setMetrics] = useState(getMetricsData());
   const [transactions, setTransactions] = useState(getRecentTransactions(5));
@@ -251,23 +249,14 @@ export default function HomeScreen() {
       {/* Header with settings icon */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>
-            Hello, <Text style={styles.userName}>{user?.name || "User"}</Text>
-          </Text>
-          <Text style={styles.headerSubtitle}>
-            {new Date().toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              month: 'short', 
-              day: 'numeric' 
-            })}
-          </Text>
+          <Text style={styles.headerTitle}>Dashboard</Text>
+          <Text style={styles.headerSubtitle}>Welcome back, User</Text>
         </View>
         <TouchableOpacity 
           style={styles.settingsButton}
           onPress={navigateToSettings}
-          activeOpacity={0.8}
         >
-          <Settings size={22} color={Colors.primary} />
+          <Settings size={22} color={Colors.text.primary} />
         </TouchableOpacity>
       </View>
 
@@ -433,19 +422,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    backgroundColor: Colors.background.default,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#333',
-  },
-  userName: {
-    color: Colors.primary,
   },
   headerSubtitle: {
     fontSize: 14,
@@ -454,14 +438,12 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   settingsButton: {
-    height: 40,
     width: 40,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: `${Colors.primary}20`, // Light green border
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.background.tertiary,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   scrollView: {
     flex: 1,

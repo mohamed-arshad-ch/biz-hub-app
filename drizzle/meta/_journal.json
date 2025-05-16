@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1747024133522,
+      "tag": "0000_previous_adam_destine",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1747024847376,
+      "tag": "0001_faulty_sebastian_shaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1747028173094,
+      "tag": "0002_military_absorbing_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1747032841940,
+      "tag": "0003_mean_supernaut",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1747033212194,
+      "tag": "0004_funny_hulk",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1747042488190,
+      "tag": "0005_faithful_shinobi_shaw",
+      "breakpoints": true
+    }
+  ]
+}

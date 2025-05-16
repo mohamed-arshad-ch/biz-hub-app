@@ -22,7 +22,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "app.rork.bizhub-splash-screen"
+      "package": "com.mcodevbytes.bizhubapp"
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
@@ -31,12 +31,36 @@
       [
         "expo-router",
         {
-          "origin": "https://rork.app/"
+          "origin": "https://mcodevbytes.in/"
+        }
+      ],
+      [
+        "expo-sqlite",
+        {
+          "enableFTS": true,
+          "useSQLCipher": true,
+          "android": {
+           
+            "enableFTS": false,
+            "useSQLCipher": false
+          },
+          "ios": {
+            
+            "customBuildFlags": ["-DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_ENABLE_SNAPSHOT=1"]
+          }
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": "https://mcodevbytes.in/"
+      },
+      "eas": {
+        "projectId": "181ccbfc-4e98-427e-8ce9-6a79a94f5186"
+      }
     }
   }
 }

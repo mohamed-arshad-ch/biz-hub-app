@@ -8,13 +8,16 @@ import {
   Image,
   Alert,
   ActivityIndicator,
-  useWindowDimensions
+  useWindowDimensions,
+  StatusBar,
+  Share,
+  Platform
 } from "react-native";
-import { Stack, useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { 
   ArrowLeft, 
   Edit, 
-  Trash, 
+  Trash2, 
   Package, 
   Tag, 
   Truck, 
@@ -27,14 +30,166 @@ import {
   Clock,
   MapPin,
   Info,
-  AlertCircle
+  AlertCircle,
+  DollarSign,
+  Share2,
+  MoreVertical,
+  ShoppingBag,
+  BookOpen,
+  Clipboard,
+  BarChart2,
+  TrendingUp,
+  Box
 } from "lucide-react-native";
 
 import Colors from "@/constants/colors";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import SnackBar from "@/components/SnackBar";
-import { getProductById, updateProduct, deleteProduct } from "@/utils/asyncStorageUtils";
 import { Product } from "@/types/product";
+
+// Mock product data for demonstration
+const mockProducts: { [key: string]: Product } = {
+  '1': {
+    id: '1',
+    name: 'Laptop Computer',
+    sku: 'LAP-10001',
+    barcode: '8901234567890',
+    description: 'High-performance laptop with SSD storage and dedicated graphics',
+    category: 'Electronics',
+    sellingPrice: 1299.99,
+    purchasePrice: 899.99,
+    stockQuantity: 24,
+    reorderLevel: 5,
+    unit: 'piece',
+    status: 'in_stock',
+    taxRate: 10,
+    vendor: 'TechSuppliers Inc.',
+    location: 'Warehouse A',
+    dimensions: {
+      weight: 2.5,
+      length: 35,
+      width: 25,
+      height: 2
+    },
+    tags: ['electronics', 'computer', 'laptop'],
+    images: [],
+    notes: 'Popular item during back-to-school season',
+    createdAt: new Date('2023-06-12'),
+    updatedAt: new Date('2023-10-01')
+  },
+  '2': {
+    id: '2',
+    name: 'Office Desk Chair',
+    sku: 'CHR-20050',
+    barcode: '7890123456789',
+    description: 'Ergonomic office chair with adjustable height and lumbar support',
+    category: 'Furniture',
+    sellingPrice: 249.99,
+    purchasePrice: 149.99,
+    stockQuantity: 15,
+    reorderLevel: 3,
+    unit: 'piece',
+    status: 'in_stock',
+    taxRate: 8,
+    vendor: 'FurniturePlus',
+    location: 'Warehouse B',
+    dimensions: {
+      weight: 15,
+      length: 60,
+      width: 60,
+      height: 120
+    },
+    tags: ['furniture', 'office', 'chair'],
+    images: [],
+    notes: 'Available in black and gray',
+    createdAt: new Date('2023-05-20'),
+    updatedAt: new Date('2023-09-15')
+  },
+  '3': {
+    id: '3',
+    name: 'Smartphone',
+    sku: 'PHN-30200',
+    barcode: '6789012345678',
+    description: '5G smartphone with high-resolution camera and fast charging',
+    category: 'Electronics',
+    sellingPrice: 899.99,
+    purchasePrice: 599.99,
+    stockQuantity: 42,
+    reorderLevel: 10,
+    unit: 'piece',
+    status: 'in_stock',
+    taxRate: 10,
+    vendor: 'MobileTech Distributors',
+    location: 'Warehouse A',
+    dimensions: {
+      weight: 0.18,
+      length: 15,
+      width: 7,
+      height: 0.8
+    },
+    tags: ['electronics', 'phone', 'mobile'],
+    images: [],
+    notes: 'High demand item during holiday season',
+    createdAt: new Date('2023-07-05'),
+    updatedAt: new Date('2023-10-10')
+  },
+  '4': {
+    id: '4',
+    name: 'Wireless Headphones',
+    sku: 'AUD-40075',
+    barcode: '5678901234567',
+    description: 'Noise-cancelling wireless headphones with long battery life',
+    category: 'Audio',
+    sellingPrice: 199.99,
+    purchasePrice: 119.99,
+    stockQuantity: 38,
+    reorderLevel: 8,
+    unit: 'piece',
+    status: 'in_stock',
+    taxRate: 10,
+    vendor: 'AudioPlus Supplies',
+    location: 'Warehouse A',
+    dimensions: {
+      weight: 0.3,
+      length: 18,
+      width: 16,
+      height: 8
+    },
+    tags: ['electronics', 'audio', 'headphones'],
+    images: [],
+    notes: 'Available in multiple colors',
+    createdAt: new Date('2023-04-15'),
+    updatedAt: new Date('2023-08-20')
+  },
+  '5': {
+    id: '5',
+    name: 'Coffee Maker',
+    sku: 'KIT-50100',
+    barcode: '4567890123456',
+    description: 'Programmable coffee maker with thermal carafe',
+    category: 'Kitchen Appliances',
+    sellingPrice: 129.99,
+    purchasePrice: 79.99,
+    stockQuantity: 25,
+    reorderLevel: 5,
+    unit: 'piece',
+    status: 'in_stock',
+    taxRate: 8,
+    vendor: 'HomeGoods Supply',
+    location: 'Warehouse B',
+    dimensions: {
+      weight: 5,
+      length: 25,
+      width: 20,
+      height: 35
+    },
+    tags: ['appliances', 'kitchen', 'coffee'],
+    images: [],
+    notes: 'Bestseller in kitchen category',
+    createdAt: new Date('2023-03-10'),
+    updatedAt: new Date('2023-09-05')
+  }
+};
 
 export default function ProductDetailScreen() {
   const router = useRouter();
@@ -45,6 +200,7 @@ export default function ProductDetailScreen() {
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
   const { width } = useWindowDimensions();
+  const [showOptions, setShowOptions] = useState(false);
   
   // Mock stock movement data - in a real app, this would come from the database
   const stockMovements = [
@@ -112,8 +268,14 @@ export default function ProductDetailScreen() {
     
     setIsLoading(true);
     try {
-      const productData = await getProductById(id);
-      setProduct(productData);
+      // Use mock data instead of AsyncStorage
+      if (mockProducts[id]) {
+        setProduct(mockProducts[id]);
+      } else {
+        console.error("Product not found");
+        setSnackbarMessage("Failed to load product details");
+        setSnackbarVisible(true);
+      }
     } catch (error) {
       console.error("Error loading product:", error);
       setSnackbarMessage("Failed to load product details");
@@ -143,14 +305,16 @@ export default function ProductDetailScreen() {
             setIsDeleting(true);
             
             try {
-              await deleteProduct(id);
-              setSnackbarMessage("Product deleted successfully");
-              setSnackbarVisible(true);
-              
-              // Navigate back after a short delay
+              // Simulate product deletion instead of using AsyncStorage
               setTimeout(() => {
-                router.replace("/products");
-              }, 1000);
+                setSnackbarMessage("Product deleted successfully");
+                setSnackbarVisible(true);
+                
+                // Navigate back after a short delay
+                setTimeout(() => {
+                  router.replace("/products");
+                }, 1000);
+              }, 500);
             } catch (error) {
               console.error("Error deleting product:", error);
               setSnackbarMessage("Failed to delete product");
@@ -197,17 +361,22 @@ export default function ProductDetailScreen() {
                   newStatus = "in_stock";
                 }
                 
-                // Update product in AsyncStorage
-                const updatedProduct = await updateProduct(id, {
+                // Update product in mock data instead of AsyncStorage
+                const updatedProduct = {
+                  ...product,
                   stockQuantity: newStockQuantity,
-                  status: newStatus
-                });
+                  status: newStatus,
+                  updatedAt: new Date()
+                };
                 
-                if (updatedProduct) {
+                // Simulate update
+                setTimeout(() => {
+                  // Update state with the updated product
                   setProduct(updatedProduct);
-                  setSnackbarMessage(`Stock adjusted by ${parsedQuantity > 0 ? '+' : ''}${parsedQuantity}`);
+                  
+                  setSnackbarMessage(`Stock updated by ${parsedQuantity > 0 ? '+' : ''}${parsedQuantity}`);
                   setSnackbarVisible(true);
-                }
+                }, 300);
               }
             } catch (error) {
               console.error("Error adjusting stock:", error);
@@ -216,719 +385,853 @@ export default function ProductDetailScreen() {
             }
           }
         }
-      ],
-      "plain-text",
-      "0"
+      ]
     );
   };
   
   const handlePrintBarcode = () => {
-    setSnackbarMessage("Barcode printing will be available soon");
-    setSnackbarVisible(true);
+    Alert.alert("Print Barcode", "Barcode printing functionality will be available soon.");
+  };
+
+  const handleShare = async () => {
+    if (!product) return;
+    
+    try {
+      const productInfo = `
+Product: ${product.name}
+SKU: ${product.sku}
+Price: ${formatCurrency(product.sellingPrice)}
+Stock: ${product.stockQuantity} ${product.unit || 'units'}
+${product.description ? `Description: ${product.description}` : ''}
+      `.trim();
+      
+      if (Platform.OS === 'android' || Platform.OS === 'ios') {
+        await Share.share({
+          message: productInfo,
+          title: `Product: ${product.name}`
+        });
+      } else {
+        // For web or other platforms
+        Alert.alert(
+          "Share Product",
+          "Copy this information to share:",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                // In a real app, this would copy to clipboard
+                console.log(productInfo);
+              }
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error("Error sharing product:", error);
+      setSnackbarMessage("Failed to share product");
+      setSnackbarVisible(true);
+    }
   };
   
   const getStockStatusColor = (status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'discontinued') => {
     switch (status) {
       case 'in_stock':
-        return '#34a853';
+        return Colors.status.active;
       case 'low_stock':
-        return '#fbbc04';
+        return Colors.status.pending;
       case 'out_of_stock':
-        return '#ea4335';
+        return Colors.status.blocked;
       case 'discontinued':
-        return '#9e9e9e';
+        return Colors.negative;
       default:
-        return '#999';
+        return Colors.text.tertiary;
+    }
+  };
+  
+  const getStockStatusText = (status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'discontinued') => {
+    switch (status) {
+      case 'in_stock':
+        return 'IN STOCK';
+      case 'low_stock':
+        return 'LOW STOCK';
+      case 'out_of_stock':
+        return 'OUT OF STOCK';
+      case 'discontinued':
+        return 'DISCONTINUED';
+      default:
+        return 'UNKNOWN';
     }
   };
 
-  const getStockStatusText = (status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'discontinued') => {
-    // Explicitly handle each possible status value
-    if (status === 'in_stock') return 'IN STOCK';
-    if (status === 'low_stock') return 'LOW STOCK';
-    if (status === 'out_of_stock') return 'OUT OF STOCK';
-    if (status === 'discontinued') return 'DISCONTINUED';
-    
-    // Default fallback - should never happen with the typed parameter
-    return 'UNKNOWN';
-  };
-  
-  // Calculate profit margin only if product exists
-  const profitMargin = product ? ((product.sellingPrice - product.purchasePrice) / product.sellingPrice) * 100 : 0;
-  
-  // Default image if none provided
-  const defaultImage = "https://images.unsplash.com/photo-1523275335684-37898b6baf30";
-  
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <ActivityIndicator size="large" color={Colors.primary} />
         <Text style={styles.loadingText}>Loading product details...</Text>
       </View>
     );
   }
-  
+
   if (!product) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Product not found</Text>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+        <AlertCircle size={48} color={Colors.negative} />
+        <Text style={styles.errorTitle}>Product Not Found</Text>
+        <Text style={styles.errorMessage}>
+          The product you're looking for could not be found or may have been deleted.
+        </Text>
         <TouchableOpacity
-          style={styles.errorButton}
-          onPress={() => router.back()}
+          style={styles.backButton}
+          onPress={() => router.replace("/products")}
         >
-          <Text style={styles.errorButtonText}>Go Back</Text>
+          <Text style={styles.backButtonText}>Back to Products</Text>
         </TouchableOpacity>
       </View>
     );
   }
-  
+
   return (
-    <>
-      <Stack.Screen 
-        options={{
-          title: "Product Details",
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <View style={styles.headerRightContainer}>
-              <TouchableOpacity 
-                onPress={handleEdit}
-                style={styles.headerButton}
-              >
-                <Edit size={20} color="#333" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={handleDelete}
-                style={styles.headerButton}
-              >
-                <Trash size={20} color="#ea4335" />
-              </TouchableOpacity>
-            </View>
-          ),
-        }} 
-      />
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
-      <ScrollView style={styles.container}>
-        {/* Product Image */}
-        <View style={styles.imageContainer}>
-          <Image 
-            source={{ uri: product.images?.[0] || defaultImage }} 
-            style={styles.productImage}
-            resizeMode="cover"
-          />
-          <View style={[
-            styles.statusBadge,
-            { backgroundColor: getStockStatusColor(product.status) }
-          ]}>
-            <Text style={styles.statusText}>
-              {getStockStatusText(product.status)}
-            </Text>
-          </View>
-        </View>
-        
-        {/* Basic Information */}
-        <View style={styles.section}>
-          <Text style={styles.productName}>{product.name}</Text>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>SKU:</Text>
-            <Text style={styles.infoValue}>{product.sku}</Text>
-          </View>
-          {product.barcode && (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Barcode:</Text>
-              <Text style={styles.infoValue}>{product.barcode}</Text>
-            </View>
-          )}
-          {product.category && (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Category:</Text>
-              <View style={styles.categoryBadge}>
-                <Text style={styles.categoryText}>{product.category}</Text>
-              </View>
-            </View>
-          )}
-          {product.vendor && (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Vendor:</Text>
-              <Text style={styles.infoValue}>{product.vendor}</Text>
-            </View>
-          )}
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Created:</Text>
-            <Text style={styles.infoValue}>{formatDate(product.createdAt)}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Last Updated:</Text>
-            <Text style={styles.infoValue}>{formatDate(product.updatedAt)}</Text>
-          </View>
-        </View>
-        
-        {/* Pricing Information */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Tag size={18} color="#333" />
-            <Text style={styles.sectionTitle}>Pricing</Text>
-          </View>
-          
-          <View style={styles.priceContainer}>
-            <View style={styles.priceItem}>
-              <Text style={styles.priceLabel}>Selling Price</Text>
-              <Text style={styles.priceValue}>{formatCurrency(product.sellingPrice)}</Text>
-            </View>
-            <View style={styles.priceItem}>
-              <Text style={styles.priceLabel}>Cost Price</Text>
-              <Text style={styles.priceValue}>{formatCurrency(product.purchasePrice)}</Text>
-            </View>
-            <View style={styles.priceItem}>
-              <Text style={styles.priceLabel}>Profit Margin</Text>
-              <Text style={styles.priceValue}>{profitMargin.toFixed(2)}%</Text>
-            </View>
-          </View>
-          
-          {product.taxRate && (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Tax Rate:</Text>
-              <Text style={styles.infoValue}>{product.taxRate}%</Text>
-            </View>
-          )}
-        </View>
-        
-        {/* Inventory Information */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Package size={18} color="#333" />
-            <Text style={styles.sectionTitle}>Inventory</Text>
-          </View>
-          
-          <View style={styles.inventoryContainer}>
-            <View style={styles.inventoryItem}>
-              <Text style={styles.inventoryLabel}>Current Stock</Text>
-              <Text style={[
-                styles.inventoryValue,
-                { color: getStockStatusColor(product.status) }
-              ]}>
-                {product.stockQuantity} {product.unit}
-              </Text>
-            </View>
-            <View style={styles.inventoryItem}>
-              <Text style={styles.inventoryLabel}>Reorder Level</Text>
-              <Text style={styles.inventoryValue}>{product.reorderLevel} {product.unit}</Text>
-            </View>
-          </View>
-          
-          {product.location && (
-            <View style={styles.infoRow}>
-              <MapPin size={16} color="#666" style={styles.infoIcon} />
-              <Text style={styles.infoValue}>{product.location}</Text>
-            </View>
-          )}
-          
-          {product.expiryDate && (
-            <View style={styles.infoRow}>
-              <Calendar size={16} color="#666" style={styles.infoIcon} />
-              <Text style={styles.infoValue}>Expires: {formatDate(product.expiryDate)}</Text>
-            </View>
-          )}
-        </View>
-        
-        {/* Action Buttons */}
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={handleAdjustStock}
-          >
-            <Plus size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Adjust Stock</Text>
+      {/* Modern Header */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.headerButton} 
+          onPress={() => router.back()}
+        >
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Product Details</Text>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.headerButton} onPress={handleShare}>
+            <Share2 size={22} color={Colors.text.primary} />
           </TouchableOpacity>
-          
           <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={handlePrintBarcode}
+            style={styles.headerButton} 
+            onPress={() => setShowOptions(!showOptions)}
           >
-            <Printer size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Print Barcode</Text>
+            <MoreVertical size={22} color={Colors.text.primary} />
           </TouchableOpacity>
         </View>
         
-        {/* Product Description */}
-        {product.description && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Info size={18} color="#333" />
-              <Text style={styles.sectionTitle}>Description</Text>
-            </View>
-            <Text style={styles.description}>{product.description}</Text>
+        {/* Options Menu */}
+        {showOptions && (
+          <View style={styles.optionsMenu}>
+            <TouchableOpacity 
+              style={styles.optionItem} 
+              onPress={() => {
+                setShowOptions(false);
+                handleEdit();
+              }}
+            >
+              <Edit size={20} color={Colors.text.primary} />
+              <Text style={styles.optionText}>Edit Product</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.optionItem} 
+              onPress={() => {
+                setShowOptions(false);
+                handlePrintBarcode();
+              }}
+            >
+              <Printer size={20} color={Colors.text.primary} />
+              <Text style={styles.optionText}>Print Barcode</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.optionItem} 
+              onPress={() => {
+                setShowOptions(false);
+                handleAdjustStock();
+              }}
+            >
+              <Package size={20} color={Colors.text.primary} />
+              <Text style={styles.optionText}>Adjust Stock</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.optionItem, styles.deleteOption]} 
+              onPress={() => {
+                setShowOptions(false);
+                handleDelete();
+              }}
+            >
+              <Trash2 size={20} color={Colors.negative} />
+              <Text style={[styles.optionText, styles.deleteText]}>Delete Product</Text>
+            </TouchableOpacity>
           </View>
         )}
+      </View>
+      
+      <ScrollView 
+        style={styles.scrollContainer}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Product Overview Card */}
+        <View style={styles.card}>
+          <View style={styles.productHeader}>
+            <View style={styles.productImageContainer}>
+              {product.images && product.images.length > 0 ? (
+                <Image 
+                  source={{ uri: product.images[0] }} 
+                  style={styles.productImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.placeholderImage}>
+                  <Package size={40} color={Colors.text.tertiary} />
+                </View>
+              )}
+            </View>
+            <View style={styles.productInfo}>
+              <Text style={styles.productName}>{product.name}</Text>
+              <View style={styles.productMeta}>
+                <View style={styles.skuContainer}>
+                  <Text style={styles.skuLabel}>SKU:</Text>
+                  <Text style={styles.skuValue}>{product.sku}</Text>
+                </View>
+                {product.barcode && (
+                  <View style={styles.barcodeContainer}>
+                    <Text style={styles.barcodeLabel}>Barcode:</Text>
+                    <Text style={styles.barcodeValue}>{product.barcode}</Text>
+                  </View>
+                )}
+              </View>
+              <View style={styles.priceStockRow}>
+                <View style={styles.priceContainer}>
+                  <DollarSign size={16} color={Colors.primary} />
+                  <Text style={styles.priceValue}>
+                    {formatCurrency(product.sellingPrice)}
+                  </Text>
+                </View>
+                <View style={[
+                  styles.stockBadge, 
+                  { backgroundColor: `${getStockStatusColor(product.status)}15` }
+                ]}>
+                  <Text style={[
+                    styles.stockBadgeText, 
+                    { color: getStockStatusColor(product.status) }
+                  ]}>
+                    {getStockStatusText(product.status)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+          
+          {product.description && (
+            <View style={styles.descriptionContainer}>
+              <Text style={styles.descriptionTitle}>Description</Text>
+              <Text style={styles.descriptionText}>{product.description}</Text>
+            </View>
+          )}
+          
+          {product.category && (
+            <View style={styles.tagContainer}>
+              <Tag size={16} color={Colors.text.secondary} style={styles.tagIcon} />
+              <Text style={styles.tagText}>{product.category}</Text>
+            </View>
+          )}
+        </View>
         
-        {/* Product Dimensions */}
-        {product.dimensions && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Package size={18} color="#333" />
-              <Text style={styles.sectionTitle}>Dimensions</Text>
+        {/* Stock Information Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <ShoppingBag size={20} color={Colors.text.primary} />
+            <Text style={styles.cardTitle}>Stock Information</Text>
+          </View>
+          
+          <View style={styles.cardContent}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Current Stock:</Text>
+              <Text style={styles.infoValue}>
+                {product.stockQuantity} {product.unit || 'units'}
+              </Text>
             </View>
             
-            <View style={styles.dimensionsContainer}>
-              {product.dimensions.length && (
-                <View style={styles.dimensionItem}>
-                  <Text style={styles.dimensionLabel}>Length</Text>
-                  <Text style={styles.dimensionValue}>{product.dimensions.length} cm</Text>
-                </View>
-              )}
-              
-              {product.dimensions.width && (
-                <View style={styles.dimensionItem}>
-                  <Text style={styles.dimensionLabel}>Width</Text>
-                  <Text style={styles.dimensionValue}>{product.dimensions.width} cm</Text>
-                </View>
-              )}
-              
-              {product.dimensions.height && (
-                <View style={styles.dimensionItem}>
-                  <Text style={styles.dimensionLabel}>Height</Text>
-                  <Text style={styles.dimensionValue}>{product.dimensions.height} cm</Text>
-                </View>
-              )}
-              
-              {product.dimensions.weight && (
-                <View style={styles.dimensionItem}>
-                  <Text style={styles.dimensionLabel}>Weight</Text>
-                  <Text style={styles.dimensionValue}>{product.dimensions.weight} kg</Text>
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-        
-        {/* Stock Movement History */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Clock size={18} color="#333" />
-            <Text style={styles.sectionTitle}>Stock Movement History</Text>
-          </View>
-          
-          <View style={styles.tableHeader}>
-            <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Date</Text>
-            <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Type</Text>
-            <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Reference</Text>
-            <Text style={[styles.tableHeaderCell, { flex: 1, textAlign: "right" }]}>Qty</Text>
-            <Text style={[styles.tableHeaderCell, { flex: 1, textAlign: "right" }]}>Balance</Text>
-          </View>
-          
-          {stockMovements.map((movement) => (
-            <View key={movement.id} style={styles.tableRow}>
-              <Text style={[styles.tableCell, { flex: 2 }]}>{formatDate(movement.date)}</Text>
-              <Text style={[styles.tableCell, { flex: 2, textTransform: "capitalize" }]}>{movement.type}</Text>
-              <Text style={[styles.tableCell, { flex: 2 }]}>{movement.reference}</Text>
-              <Text style={[
-                styles.tableCell, 
-                { 
-                  flex: 1, 
-                  textAlign: "right",
-                  color: movement.quantity > 0 ? "#34a853" : "#ea4335"
-                }
-              ]}>
-                {movement.quantity > 0 ? `+${movement.quantity}` : movement.quantity}
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Reorder Level:</Text>
+              <Text style={styles.infoValue}>
+                {product.reorderLevel || 0} {product.unit || 'units'}
               </Text>
-              <Text style={[styles.tableCell, { flex: 1, textAlign: "right" }]}>{movement.balance}</Text>
             </View>
-          ))}
+            
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Measurement Unit:</Text>
+              <Text style={styles.infoValue}>{product.unit || 'N/A'}</Text>
+            </View>
+            
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Location:</Text>
+              <Text style={styles.infoValue}>{product.location || 'N/A'}</Text>
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.adjustStockButton}
+              onPress={handleAdjustStock}
+            >
+              <Plus size={18} color="#fff" />
+              <Text style={styles.adjustStockButtonText}>Adjust Stock</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         
-        {/* Sales Statistics */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <BarChart size={18} color="#333" />
-            <Text style={styles.sectionTitle}>Sales Statistics</Text>
+        {/* Pricing Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <DollarSign size={20} color={Colors.text.primary} />
+            <Text style={styles.cardTitle}>Pricing</Text>
           </View>
           
-          <View style={styles.statsContainer}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>127</Text>
-              <Text style={styles.statLabel}>Total Sold</Text>
+          <View style={styles.cardContent}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Cost Price:</Text>
+              <Text style={styles.infoValue}>{formatCurrency(product.purchasePrice || 0)}</Text>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{formatCurrency(127 * product.sellingPrice)}</Text>
-              <Text style={styles.statLabel}>Revenue</Text>
+            
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Selling Price:</Text>
+              <Text style={[styles.infoValue, styles.sellingPriceValue]}>
+                {formatCurrency(product.sellingPrice)}
+              </Text>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>32</Text>
-              <Text style={styles.statLabel}>Last 30 Days</Text>
-            </View>
-          </View>
-          
-          {/* Simple bar chart visualization */}
-          <View style={styles.chartContainer}>
-            {salesData.map((data, index) => (
-              <View key={index} style={styles.chartColumn}>
-                <View 
-                  style={[
-                    styles.chartBar, 
-                    { height: data.quantity * 3 }
-                  ]} 
-                />
-                <Text style={styles.chartLabel}>{data.month}</Text>
+            
+            {product.purchasePrice && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Profit Margin:</Text>
+                <Text style={[
+                  styles.infoValue,
+                  { color: Colors.status.active }
+                ]}>
+                  {Math.round(((product.sellingPrice - product.purchasePrice) / product.sellingPrice) * 100)}%
+                </Text>
               </View>
-            ))}
+            )}
+            
+            {product.taxRate && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Tax Rate:</Text>
+                <Text style={styles.infoValue}>{product.taxRate}%</Text>
+              </View>
+            )}
           </View>
         </View>
         
-        {/* Notes */}
-        {product.notes && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Info size={18} color="#333" />
-              <Text style={styles.sectionTitle}>Notes</Text>
-            </View>
-            <Text style={styles.notes}>{product.notes}</Text>
+        {/* Stock Movement Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <TrendingUp size={20} color={Colors.text.primary} />
+            <Text style={styles.cardTitle}>Recent Stock Movements</Text>
           </View>
-        )}
-        
-        {/* Tags */}
-        {product.tags && product.tags.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Tag size={18} color="#333" />
-              <Text style={styles.sectionTitle}>Tags</Text>
-            </View>
-            <View style={styles.tagsContainer}>
-              {product.tags.map((tag, index) => (
-                <View key={index} style={styles.tagBadge}>
-                  <Text style={styles.tagText}>{tag}</Text>
+          
+          <View style={styles.cardContent}>
+            {stockMovements.length > 0 ? (
+              <View style={styles.movementsContainer}>
+                <View style={styles.movementsHeader}>
+                  <Text style={styles.movementHeaderDate}>Date</Text>
+                  <Text style={styles.movementHeaderType}>Type</Text>
+                  <Text style={styles.movementHeaderQuantity}>Qty</Text>
+                  <Text style={styles.movementHeaderBalance}>Balance</Text>
                 </View>
-              ))}
+                
+                {stockMovements.map((movement) => (
+                  <View key={movement.id} style={styles.movementRow}>
+                    <Text style={styles.movementDate}>{formatDate(movement.date)}</Text>
+                    <Text style={styles.movementType}>
+                      {movement.type.charAt(0).toUpperCase() + movement.type.slice(1)}
+                    </Text>
+                    <Text style={[
+                      styles.movementQuantity,
+                      { 
+                        color: movement.quantity > 0 
+                          ? Colors.status.active 
+                          : Colors.negative 
+                      }
+                    ]}>
+                      {movement.quantity > 0 ? '+' : ''}{movement.quantity}
+                    </Text>
+                    <Text style={styles.movementBalance}>{movement.balance}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.emptyState}>
+                <Box size={32} color={Colors.text.tertiary} />
+                <Text style={styles.emptyStateText}>No stock movements recorded yet</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        
+        {/* Additional Details Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Info size={20} color={Colors.text.primary} />
+            <Text style={styles.cardTitle}>Additional Details</Text>
+          </View>
+          
+          <View style={styles.cardContent}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Weight:</Text>
+              <Text style={styles.infoValue}>
+                {product.dimensions?.weight ? `${product.dimensions.weight} kg` : 'N/A'}
+              </Text>
+            </View>
+            
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Dimensions:</Text>
+              <Text style={styles.infoValue}>
+                {product.dimensions ? 
+                  `${product.dimensions.length || 0} × ${product.dimensions.width || 0} × ${product.dimensions.height || 0} cm` 
+                  : 'N/A'}
+              </Text>
+            </View>
+            
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Vendor:</Text>
+              <Text style={styles.infoValue}>{product.vendor || 'N/A'}</Text>
+            </View>
+            
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Date Added:</Text>
+              <Text style={styles.infoValue}>
+                {product.createdAt ? formatDate(new Date(product.createdAt)) : 'N/A'}
+              </Text>
+            </View>
+            
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Last Updated:</Text>
+              <Text style={styles.infoValue}>
+                {product.updatedAt ? formatDate(new Date(product.updatedAt)) : 'N/A'}
+              </Text>
             </View>
           </View>
-        )}
-        
-        {/* Bottom padding */}
-        <View style={{ height: 40 }} />
+        </View>
       </ScrollView>
       
-      {isDeleting && (
-        <View style={styles.deletingOverlay}>
-          <ActivityIndicator size="large" color="#fff" />
-          <Text style={styles.deletingText}>Deleting product...</Text>
-        </View>
-      )}
+      {/* Action buttons */}
+      <View style={styles.actionButtonsContainer}>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.editButton]}
+          onPress={handleEdit}
+        >
+          <Edit size={18} color="#fff" />
+          <Text style={styles.actionButtonText}>Edit</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[styles.actionButton, styles.deleteButton]}
+          onPress={handleDelete}
+          disabled={isDeleting}
+        >
+          {isDeleting ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <>
+              <Trash2 size={18} color="#fff" />
+              <Text style={styles.actionButtonText}>Delete</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
       
       <SnackBar
         visible={snackbarVisible}
         message={snackbarMessage}
         onDismiss={() => setSnackbarVisible(false)}
       />
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
-  },
-  headerButton: {
-    padding: 8,
-  },
-  headerRightContainer: {
-    flexDirection: "row",
+    backgroundColor: Colors.background.secondary,
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.text.secondary,
   },
   errorContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: Colors.background.default,
   },
-  errorText: {
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorMessage: {
     fontSize: 16,
-    color: "#666",
-    textAlign: "center",
+    color: Colors.text.secondary,
+    textAlign: 'center',
     marginBottom: 24,
   },
-  errorButton: {
-    backgroundColor: Colors.primary,
+  backButton: {
     paddingVertical: 12,
     paddingHorizontal: 24,
+    backgroundColor: Colors.primary,
     borderRadius: 8,
   },
-  errorButtonText: {
-    color: "#fff",
+  backButtonText: {
+    color: '#fff',
     fontSize: 16,
-    fontWeight: "500",
+    fontWeight: '600',
   },
-  imageContainer: {
-    width: "100%",
-    height: 250,
-    position: "relative",
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+    zIndex: 10,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  headerRight: {
+    flexDirection: 'row',
+  },
+  optionsMenu: {
+    position: 'absolute',
+    top: 70,
+    right: 16,
+    backgroundColor: Colors.background.default,
+    borderRadius: 8,
+    padding: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 20,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  deleteOption: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    marginTop: 8,
+    paddingTop: 12,
+  },
+  optionText: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    marginLeft: 12,
+  },
+  deleteText: {
+    color: Colors.negative,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  contentContainer: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  card: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 12,
+    marginBottom: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  productHeader: {
+    flexDirection: 'row',
+  },
+  productImageContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: Colors.background.tertiary,
   },
   productImage: {
-    width: "100%",
-    height: "100%",
+    width: '100%',
+    height: '100%',
   },
-  statusBadge: {
-    position: "absolute",
-    top: 16,
-    right: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
+  placeholderImage: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  statusText: {
-    fontSize: 12,
-    fontWeight: "bold",
-    color: "#fff",
-  },
-  section: {
-    backgroundColor: "#fff",
-    margin: 16,
-    marginBottom: 0,
-    borderRadius: 8,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+  productInfo: {
+    flex: 1,
+    marginLeft: 16,
   },
   productName: {
-    fontSize: 24,
-    fontWeight: "600",
-    color: "#333",
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  productMeta: {
+    marginBottom: 8,
+  },
+  skuContainer: {
+    flexDirection: 'row',
+    marginBottom: 2,
+  },
+  skuLabel: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginRight: 4,
+  },
+  skuValue: {
+    fontSize: 14,
+    color: Colors.text.primary,
+    fontWeight: '500',
+  },
+  barcodeContainer: {
+    flexDirection: 'row',
+  },
+  barcodeLabel: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginRight: 4,
+  },
+  barcodeValue: {
+    fontSize: 14,
+    color: Colors.text.primary,
+    fontWeight: '500',
+  },
+  priceStockRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  priceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  priceValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginLeft: 4,
+  },
+  stockBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+  },
+  stockBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  descriptionContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+  },
+  descriptionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 8,
+  },
+  descriptionText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    lineHeight: 20,
+  },
+  tagContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  tagIcon: {
+    marginRight: 8,
+  },
+  tagText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 16,
   },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginLeft: 8,
+  },
+  cardContent: {
+    
+  },
   infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
   infoLabel: {
     fontSize: 14,
-    color: "#666",
-    width: 100,
+    color: Colors.text.secondary,
   },
   infoValue: {
     fontSize: 14,
-    color: "#333",
-    flex: 1,
+    color: Colors.text.primary,
+    fontWeight: '500',
   },
-  infoIcon: {
-    marginRight: 8,
+  sellingPriceValue: {
+    color: Colors.primary,
+    fontWeight: '600',
   },
-  categoryBadge: {
-    backgroundColor: "#1a73e810",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "#1a73e8",
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
-    marginLeft: 8,
-  },
-  priceContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  priceItem: {
-    flex: 1,
-    alignItems: "center",
-  },
-  priceLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 4,
-  },
-  priceValue: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-  },
-  inventoryContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 16,
-  },
-  inventoryItem: {
-    alignItems: "center",
-  },
-  inventoryLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 4,
-  },
-  inventoryValue: {
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  actionButtonsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    margin: 16,
-    marginBottom: 0,
-  },
-  actionButton: {
-    flex: 1,
+  adjustStockButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: Colors.primary,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
     borderRadius: 8,
-    marginHorizontal: 4,
+    paddingVertical: 12,
+    marginTop: 8,
   },
-  actionButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "500",
+  adjustStockButtonText: {
+    color: '#fff',
+    fontWeight: '600',
     marginLeft: 8,
   },
-  description: {
-    fontSize: 14,
-    color: "#333",
-    lineHeight: 20,
+  movementsContainer: {
+    marginTop: 8,
   },
-  dimensionsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  dimensionItem: {
-    width: "50%",
-    marginBottom: 12,
-  },
-  dimensionLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 4,
-  },
-  dimensionValue: {
-    fontSize: 14,
-    color: "#333",
-  },
-  tableHeader: {
-    flexDirection: "row",
+  movementsHeader: {
+    flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: Colors.border.light,
     paddingBottom: 8,
     marginBottom: 8,
   },
-  tableHeaderCell: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
+  movementHeaderDate: {
+    flex: 2,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary,
   },
-  tableRow: {
-    flexDirection: "row",
+  movementHeaderType: {
+    flex: 2,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  movementHeaderQuantity: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    textAlign: 'right',
+  },
+  movementHeaderBalance: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    textAlign: 'right',
+  },
+  movementRow: {
+    flexDirection: 'row',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    borderBottomColor: Colors.border.light,
   },
-  tableCell: {
+  movementDate: {
+    flex: 2,
     fontSize: 14,
-    color: "#333",
+    color: Colors.text.secondary,
   },
-  statsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 16,
+  movementType: {
+    flex: 2,
+    fontSize: 14,
+    color: Colors.text.primary,
   },
-  statItem: {
+  movementQuantity: {
     flex: 1,
-    alignItems: "center",
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'right',
   },
-  statValue: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#666",
-  },
-  chartContainer: {
-    height: 150,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    paddingTop: 16,
-  },
-  chartColumn: {
+  movementBalance: {
     flex: 1,
-    alignItems: "center",
+    fontSize: 14,
+    color: Colors.text.primary,
+    fontWeight: '500',
+    textAlign: 'right',
   },
-  chartBar: {
-    width: 20,
+  emptyState: {
+    alignItems: 'center',
+    padding: 24,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: Colors.text.tertiary,
+    marginTop: 8,
+  },
+  actionButtonsContainer: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    flex: 1,
+  },
+  editButton: {
     backgroundColor: Colors.primary,
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-  },
-  chartLabel: {
-    fontSize: 10,
-    color: "#666",
-    marginTop: 4,
-  },
-  notes: {
-    fontSize: 14,
-    color: "#333",
-    lineHeight: 20,
-  },
-  tagsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  tagBadge: {
-    backgroundColor: "#f0f0f0",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
     marginRight: 8,
-    marginBottom: 8,
   },
-  tagText: {
-    fontSize: 12,
-    color: "#666",
+  deleteButton: {
+    backgroundColor: Colors.negative,
+    marginLeft: 8,
   },
-  deletingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  deletingText: {
-    color: "#fff",
+  actionButtonText: {
     fontSize: 16,
-    marginTop: 16,
-  },
-  loadingText: {
-    color: "#666",
-    fontSize: 16,
-    marginTop: 16,
+    fontWeight: '600',
+    color: '#fff',
+    marginLeft: 8,
   },
 });

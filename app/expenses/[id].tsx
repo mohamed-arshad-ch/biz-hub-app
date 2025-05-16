@@ -7,25 +7,25 @@ import {
   TouchableOpacity, 
   Alert,
   ActivityIndicator,
-  Image,
   Share,
   Platform,
-  ToastAndroid
+  StatusBar
 } from "react-native";
-import { Stack, useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { 
   ArrowLeft, 
   Edit, 
-  Trash, 
+  Trash2, 
   Share2, 
-  Copy,
-  Receipt,
-  Calendar,
-  Tag,
-  DollarSign,
-  CreditCard,
+  Calendar, 
+  Tag, 
+  DollarSign, 
+  User, 
+  CreditCard, 
+  Hash, 
   FileText,
-  User
+  Printer,
+  Receipt
 } from "lucide-react-native";
 
 import Colors from "@/constants/colors";
@@ -33,12 +33,12 @@ import { getExpenseById, deleteExpense } from "@/mocks/expensesData";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import { ExpenseRecord } from "@/types/expenses";
 import SnackBar from "@/components/SnackBar";
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export default function ExpenseDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [expense, setExpense] = useState<ExpenseRecord | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [snackBarVisible, setSnackBarVisible] = useState(false);
   const [snackBarMessage, setSnackBarMessage] = useState("");
@@ -52,7 +52,7 @@ export default function ExpenseDetailScreen() {
         if (fetchedExpense) {
           setExpense(fetchedExpense);
         }
-        setIsLoading(false);
+        setLoading(false);
       }, 500);
     }
   }, [id]);
@@ -132,7 +132,7 @@ export default function ExpenseDetailScreen() {
     // In a real app, this would restore the deleted expense in the database
     // For now, we'll just show a message
     if (Platform.OS === "android") {
-      ToastAndroid.show("Expense restored", ToastAndroid.SHORT);
+      Alert.alert("Expense Restored", "The expense has been restored successfully.");
     } else {
       Alert.alert("Expense Restored", "The expense has been restored successfully.");
     }
@@ -149,7 +149,9 @@ export default function ExpenseDetailScreen() {
         message: `Expense: ${expense.description}
 Amount: ${formatCurrency(expense.amount)}
 Date: ${formatDate(expense.date)}
-Category: ${expense.category}`,
+Category: ${expense.category}
+Payment Method: ${expense.paymentMethod || "N/A"}
+Notes: ${expense.notes || "N/A"}`,
         title: "Expense Details"
       });
     } catch (error) {
@@ -157,19 +159,29 @@ Category: ${expense.category}`,
     }
   };
 
-  const handleDuplicate = () => {
-    if (expense) {
-      router.push({
-        pathname: "/expenses/new",
-        params: { duplicate: expense.id }
-      });
-    }
+  const handlePrint = () => {
+    Alert.alert('Print', 'Printing expense record...');
   };
 
-  if (isLoading) {
+  // Helper function to get category color
+  function getCategoryColor(category: string): string {
+    const categoryColors: Record<string, string> = {
+      'food': '#4CAF50',
+      'transportation': '#2196F3',
+      'utilities': '#FBBC04',
+      'entertainment': '#9C27B0',
+      'other': '#757575'
+    };
+    
+    return categoryColors[category.toLowerCase()] || '#757575';
+  }
+
+  if (loading) {
     return (
       <View style={styles.loadingContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading expense details...</Text>
       </View>
     );
   }
@@ -177,8 +189,9 @@ Category: ${expense.category}`,
   if (isDeleting) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ea4335" />
-        <Text style={styles.deletingText}>Deleting...</Text>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+        <ActivityIndicator size="large" color="#FF3B30" />
+        <Text style={styles.loadingText}>Deleting expense record...</Text>
       </View>
     );
   }
@@ -186,7 +199,8 @@ Category: ${expense.category}`,
   if (!expense) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Expense not found</Text>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+        <Text style={styles.errorText}>Expense record not found</Text>
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => router.back()}
@@ -198,358 +212,307 @@ Category: ${expense.category}`,
   }
 
   return (
-    <>
-      <Stack.Screen 
-        options={{
-          title: "Expense Details",
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <View style={styles.headerActions}>
-              <TouchableOpacity 
-                onPress={handleShare}
-                style={styles.headerButton}
-              >
-                <Share2 size={20} color="#333" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={handleEdit}
-                style={styles.headerButton}
-              >
-                <Edit size={20} color="#333" />
-              </TouchableOpacity>
-            </View>
-          ),
-        }} 
-      />
-      
-      <ScrollView style={styles.container}>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.title}>Expense Details</Text>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity onPress={handlePrint} style={styles.headerButton}>
+            <Printer size={22} color={Colors.text.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleShare} style={styles.headerButton}>
+            <Share2 size={22} color={Colors.text.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleEdit} style={styles.headerButton}>
+            <Edit size={22} color={Colors.text.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleDelete} style={styles.headerButton}>
+            <Trash2 size={22} color={Colors.negative || "#FF3B30"} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.amountCard}>
           <Text style={styles.amountLabel}>Amount</Text>
           <Text style={styles.amountValue}>{formatCurrency(expense.amount)}</Text>
-          <View style={styles.categoryBadge}>
-            <Text style={styles.categoryText}>{expense.category}</Text>
+          <View style={[
+            styles.categoryBadge,
+            { backgroundColor: `${getCategoryColor(expense.category)}20` }
+          ]}>
+            <Tag size={16} color={getCategoryColor(expense.category)} style={styles.categoryIcon} />
+            <Text style={[
+              styles.categoryText,
+              { color: getCategoryColor(expense.category) }
+            ]}>
+              {expense.category.toUpperCase()}
+            </Text>
           </View>
         </View>
         
-        <View style={styles.detailsCard}>
-          <View style={styles.detailRow}>
-            <View style={styles.detailIconContainer}>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Expense Information</Text>
+          
+          <View style={styles.infoItem}>
+            <View style={styles.infoIconContainer}>
+              <Receipt size={20} color={Colors.primary} />
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoLabel}>Description</Text>
+              <Text style={styles.infoValue}>{expense.description}</Text>
+            </View>
+          </View>
+          
+          <View style={styles.infoItem}>
+            <View style={styles.infoIconContainer}>
               <Calendar size={20} color={Colors.primary} />
             </View>
-            <View style={styles.detailContent}>
-              <Text style={styles.detailLabel}>Date</Text>
-              <Text style={styles.detailValue}>{formatDate(expense.date)}</Text>
-            </View>
-          </View>
-          
-          <View style={styles.divider} />
-          
-          <View style={styles.detailRow}>
-            <View style={styles.detailIconContainer}>
-              <Tag size={20} color={Colors.primary} />
-            </View>
-            <View style={styles.detailContent}>
-              <Text style={styles.detailLabel}>Category</Text>
-              <Text style={styles.detailValue}>{expense.category}</Text>
-            </View>
-          </View>
-          
-          <View style={styles.divider} />
-          
-          <View style={styles.detailRow}>
-            <View style={styles.detailIconContainer}>
-              <DollarSign size={20} color={Colors.primary} />
-            </View>
-            <View style={styles.detailContent}>
-              <Text style={styles.detailLabel}>Amount</Text>
-              <Text style={styles.detailValue}>{formatCurrency(expense.amount)}</Text>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoLabel}>Expense Date</Text>
+              <Text style={styles.infoValue}>{formatDate(expense.date)}</Text>
             </View>
           </View>
           
           {expense.paymentMethod && (
-            <>
-              <View style={styles.divider} />
-              <View style={styles.detailRow}>
-                <View style={styles.detailIconContainer}>
-                  <CreditCard size={20} color={Colors.primary} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={styles.detailLabel}>Payment Method</Text>
-                  <Text style={styles.detailValue}>{expense.paymentMethod}</Text>
-                </View>
+            <View style={styles.infoItem}>
+              <View style={styles.infoIconContainer}>
+                <CreditCard size={20} color={Colors.primary} />
               </View>
-            </>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Payment Method</Text>
+                <Text style={styles.infoValue}>{expense.paymentMethod}</Text>
+              </View>
+            </View>
           )}
           
           {expense.vendor && (
-            <>
-              <View style={styles.divider} />
-              <View style={styles.detailRow}>
-                <View style={styles.detailIconContainer}>
-                  <User size={20} color={Colors.primary} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={styles.detailLabel}>Vendor</Text>
-                  <Text style={styles.detailValue}>{expense.vendor}</Text>
-                </View>
+            <View style={styles.infoItem}>
+              <View style={styles.infoIconContainer}>
+                <User size={20} color={Colors.primary} />
               </View>
-            </>
-          )}
-          
-          {expense.reference && (
-            <>
-              <View style={styles.divider} />
-              <View style={styles.detailRow}>
-                <View style={styles.detailIconContainer}>
-                  <Receipt size={20} color={Colors.primary} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={styles.detailLabel}>Reference</Text>
-                  <Text style={styles.detailValue}>{expense.reference}</Text>
-                </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Vendor</Text>
+                <Text style={styles.infoValue}>{expense.vendor}</Text>
               </View>
-            </>
-          )}
-          
-          {expense.notes && (
-            <>
-              <View style={styles.divider} />
-              <View style={styles.detailRow}>
-                <View style={styles.detailIconContainer}>
-                  <FileText size={20} color={Colors.primary} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={styles.detailLabel}>Notes</Text>
-                  <Text style={styles.detailValue}>{expense.notes}</Text>
-                </View>
-              </View>
-            </>
+            </View>
           )}
         </View>
         
-        {expense.receipt && (
-          <View style={styles.receiptCard}>
-            <Text style={styles.receiptTitle}>Receipt</Text>
-            <Image 
-              source={{ uri: expense.receipt }}
-              style={styles.receiptImage}
-              resizeMode="contain"
-            />
+        {expense.notes && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Notes</Text>
+            <View style={styles.notesContainer}>
+              <View style={styles.infoIconContainer}>
+                <FileText size={20} color={Colors.primary} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.notesText}>{expense.notes}</Text>
+              </View>
+            </View>
           </View>
         )}
         
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.duplicateButton]}
-            onPress={handleDuplicate}
-          >
-            <Copy size={20} color={Colors.primary} />
-            <Text style={styles.duplicateButtonText}>Duplicate</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.actionButton, styles.deleteButton]}
-            onPress={handleDelete}
-          >
-            <Trash size={20} color="#ea4335" />
-            <Text style={styles.deleteButtonText}>Delete</Text>
-          </TouchableOpacity>
-        </View>
+        {expense.receipt && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Receipt</Text>
+            <View style={styles.receiptContainer}>
+              {/* In a real app, you would display the receipt image here */}
+              <Text style={styles.receiptPlaceholder}>Receipt image available</Text>
+            </View>
+          </View>
+        )}
       </ScrollView>
       
       <SnackBar
         visible={snackBarVisible}
         message={snackBarMessage}
-        actionLabel="UNDO"
+        action="UNDO"
         onAction={handleUndoDelete}
         onDismiss={() => setSnackBarVisible(false)}
-        duration={5000}
       />
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: Colors.background.default,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: Colors.background.default,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  headerButtons: {
+    flexDirection: 'row',
   },
   headerButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  headerActions: {
-    flexDirection: "row",
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+  amountCard: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: Colors.negative ? Colors.negative + '20' : '#FF3B3020',
+  },
+  amountLabel: {
+    fontSize: 16,
+    color: Colors.text.secondary,
+    marginBottom: 8,
+  },
+  amountValue: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: Colors.negative || '#FF3B30',
+    marginBottom: 16,
+  },
+  categoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  categoryIcon: {
+    marginRight: 6,
+  },
+  categoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  section: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 16,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  infoIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.primary + '10',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  infoContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  infoLabel: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginBottom: 4,
+  },
+  infoValue: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    fontWeight: '500',
+  },
+  notesContainer: {
+    flexDirection: 'row',
+  },
+  notesText: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    lineHeight: 24,
+  },
+  receiptContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: Colors.background.secondary,
+    borderRadius: 8,
+  },
+  receiptPlaceholder: {
+    fontSize: 16,
+    color: Colors.text.secondary,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: Colors.background.default,
   },
-  deletingText: {
+  loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: "#ea4335",
+    color: Colors.text.secondary,
   },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: Colors.background.default,
     padding: 16,
   },
   errorText: {
     fontSize: 18,
-    color: "#ea4335",
+    fontWeight: '600',
+    color: Colors.negative || "#FF3B30",
     marginBottom: 16,
-  },
-  backButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
   },
   backButtonText: {
     color: "#fff",
-    fontWeight: "500",
-  },
-  amountCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 24,
-    margin: 16,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  amountLabel: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 8,
-  },
-  amountValue: {
-    fontSize: 32,
     fontWeight: "600",
-    color: "#ea4335",
-    marginBottom: 12,
-  },
-  categoryBadge: {
-    backgroundColor: "#ea433510",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "#ea4335",
-  },
-  detailsCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    margin: 16,
-    marginTop: 0,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  detailRow: {
-    flexDirection: "row",
-    paddingVertical: 12,
-  },
-  detailIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#f0f4ff",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 16,
-  },
-  detailContent: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  detailLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 4,
-  },
-  detailValue: {
     fontSize: 16,
-    color: "#333",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#eee",
-    marginLeft: 56,
-  },
-  receiptCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    margin: 16,
-    marginTop: 0,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  receiptTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 16,
-  },
-  receiptImage: {
-    width: "100%",
-    height: 200,
-    borderRadius: 8,
-    backgroundColor: "#f5f5f5",
-  },
-  actionButtonsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    margin: 16,
-    marginTop: 8,
-    marginBottom: 32,
-  },
-  actionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  duplicateButton: {
-    backgroundColor: "#f0f4ff",
-  },
-  duplicateButtonText: {
-    color: Colors.primary,
-    fontWeight: "500",
-    marginLeft: 8,
-  },
-  deleteButton: {
-    backgroundColor: "#ffebee",
-  },
-  deleteButtonText: {
-    color: "#ea4335",
-    fontWeight: "500",
-    marginLeft: 8,
   },
 });

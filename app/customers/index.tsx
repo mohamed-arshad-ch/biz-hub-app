@@ -1,142 +1,157 @@
-import React, { useState, useCallback, useEffect } from "react";
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  FlatList, 
-  TouchableOpacity, 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
   TextInput,
-  RefreshControl,
+  FlatList,
+  StatusBar,
+  Alert,
   ActivityIndicator,
-  Alert
-} from "react-native";
-import { Stack, useRouter } from "expo-router";
-import { 
-  ArrowLeft, 
-  Plus, 
-  Search, 
+  RefreshControl,
+  Image
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import {
+  Plus,
+  Search,
+  X,
+  ChevronDown,
   ArrowUpDown,
-  Filter,
-  Download,
-  Upload
-} from "lucide-react-native";
+  User,
+  Mail,
+  Phone,
+  Building2,
+  Edit,
+  Trash2,
+  FileText,
+  Check,
+  ArrowLeft
+} from 'lucide-react-native';
+import Colors from '@/constants/colors';
+import { useSQLiteContext } from 'expo-sqlite';
+import { drizzle } from 'drizzle-orm/expo-sqlite';
+import * as dbCustomer from '@/db/customer';
+import * as schema from '@/db/schema';
 
-import Colors from "@/constants/colors";
-import { formatCurrency } from "@/utils/formatters";
-import { Customer } from "@/types/customer";
-import EmptyState from "@/components/EmptyState";
-import FloatingActionButton from "@/components/FloatingActionButton";
-import CustomerItem from "@/components/CustomerItem";
-import { getCustomers, deleteCustomer, searchCustomers } from "@/utils/customerUtils";
+// Type definitions
+type SortOption = 'name-asc' | 'name-desc' | 'type-asc' | 'type-desc' | 'recent';
+type FilterOption = 'all' | 'business' | 'individual';
+type Customer = {
+  id: string;
+  name: string;
+  contactName: string | null;
+  email: string;
+  phone: string;
+  type: 'Business' | 'Individual';
+  address: string;
+  notes: string;
+  avatar: string | null;
+};
 
 export default function CustomersScreen() {
   const router = useRouter();
+  const sqlite = useSQLiteContext();
+  const db = drizzle(sqlite, { schema });
+  const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [sortOrder, setSortOrder] = useState<"name" | "balance" | "recent">("name");
+  
   const [showSortOptions, setShowSortOptions] = useState(false);
   const [showFilterOptions, setShowFilterOptions] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive" | "blocked">("all");
-  const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
+  const [sortBy, setSortBy] = useState<SortOption>('name-asc');
+  const [filterBy, setFilterBy] = useState<FilterOption>('all');
+  
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Load customers on initial render
+  // Load customers data
   useEffect(() => {
-    loadCustomers();
+    fetchCustomers();
   }, []);
 
-  // Load customers from AsyncStorage
-  const loadCustomers = async () => {
-    setIsLoading(true);
+  const fetchCustomers = async () => {
     try {
-      const data = await getCustomers();
-      setCustomers(data);
-      filterAndSortCustomers(data, searchQuery, activeFilter, sortOrder);
+      setLoading(true);
+      const dbCustomers = await dbCustomer.getAllCustomers();
+      // Map DB customers to UI customers
+      const mapped = dbCustomers.map((c) => ({
+        id: c.id.toString(),
+        name: c.name,
+        contactName: c.contactPerson || null,
+        email: c.email || '',
+        phone: c.phone || '',
+        type: c.company && c.company.trim() !== '' ? 'Business' : 'Individual' as 'Business' | 'Individual',
+        address: [c.address, c.city, c.state, c.zipCode, c.country].filter(Boolean).join(', '),
+        notes: c.notes || '',
+        avatar: null, // No avatar in schema
+      }));
+      setCustomers(mapped);
+      setLoading(false);
+      setRefreshing(false);
     } catch (error) {
-      console.error("Error loading customers:", error);
-      Alert.alert("Error", "Failed to load customers");
-    } finally {
-      setIsLoading(false);
+      console.error('Error fetching customers:', error);
+      Alert.alert('Error', 'Failed to load customers');
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // Apply filtering and sorting to customers
-  const filterAndSortCustomers = (
-    data: Customer[],
-    query: string,
-    filter: "all" | "active" | "inactive" | "blocked",
-    order: "name" | "balance" | "recent"
-  ) => {
-    // First filter the customers
-    let result = [...data];
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchCustomers();
+  };
+
+  const handleSort = (option: SortOption) => {
+    setSortBy(option);
+    setShowSortOptions(false);
     
-    if (query) {
-      const searchLower = query.toLowerCase();
-      result = result.filter(customer => 
-        customer.name.toLowerCase().includes(searchLower) ||
-        (customer.email && customer.email.toLowerCase().includes(searchLower)) ||
-        (customer.phone && customer.phone.toLowerCase().includes(searchLower)) ||
-        (customer.company && customer.company.toLowerCase().includes(searchLower))
-      );
-    }
-    
-    if (filter !== "all") {
-      result = result.filter(customer => customer.status === filter);
-    }
-    
-    // Then sort the customers
-    result.sort((a, b) => {
-      switch (order) {
-        case "name":
-          return a.name.localeCompare(b.name);
-        case "balance":
-          return b.outstandingBalance - a.outstandingBalance;
-        case "recent":
-          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-        default:
-          return 0;
+    // Sort the customers based on selected option
+    const sortedCustomers = [...customers].sort((a, b) => {
+      if (option === 'name-asc') {
+        return a.name.localeCompare(b.name);
+      } else if (option === 'name-desc') {
+        return b.name.localeCompare(a.name);
+      } else if (option === 'type-asc') {
+        return a.type.localeCompare(b.type);
+      } else if (option === 'type-desc') {
+        return b.type.localeCompare(a.type);
+      } else {
+        // recent - sort by ID descending (assuming newer records have higher IDs)
+        return b.id.localeCompare(a.id);
       }
     });
     
-    setFilteredCustomers(result);
+    setCustomers(sortedCustomers);
   };
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadCustomers();
-    setRefreshing(false);
-  }, []);
-
-  const handleSearch = (text: string) => {
-    setSearchQuery(text);
-    filterAndSortCustomers(customers, text, activeFilter, sortOrder);
-  };
-
-  const handleSort = (order: "name" | "balance" | "recent") => {
-    setSortOrder(order);
-    filterAndSortCustomers(customers, searchQuery, activeFilter, order);
-    setShowSortOptions(false);
-  };
-
-  const handleFilter = (filter: "all" | "active" | "inactive" | "blocked") => {
-    setActiveFilter(filter);
-    filterAndSortCustomers(customers, searchQuery, filter, sortOrder);
+  const handleFilter = (option: FilterOption) => {
+    setFilterBy(option);
     setShowFilterOptions(false);
+    
+    // Filter the customers based on selected option
+    if (option === 'all') {
+      setCustomers(customers);
+    } else {
+      const filteredCustomers = customers.filter(customer => 
+        customer.type.toLowerCase() === option
+      );
+      setCustomers(filteredCustomers);
+    }
   };
 
-  const handleAddCustomer = () => {
-    router.push("/customers/new");
-  };
-
-  const handleEditCustomer = (id: string) => {
+  const handleEdit = (id: string) => {
     router.push(`/customers/edit/${id}`);
   };
 
-  const handleDeleteCustomer = async (id: string) => {
+  const handleDelete = (id: string) => {
+    const customerToDelete = customers.find(customer => customer.id === id);
+    if (!customerToDelete) return;
+    
     Alert.alert(
       "Delete Customer",
-      "Are you sure you want to delete this customer? This action cannot be undone.",
+      `Are you sure you want to delete ${customerToDelete.name}? This action cannot be undone.`,
       [
         {
           text: "Cancel",
@@ -145,343 +160,611 @@ export default function CustomersScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
-            setIsLoading(true);
-            try {
-              await deleteCustomer(id);
-              // Update the local state to reflect the deletion
-              const updatedCustomers = customers.filter(customer => customer.id !== id);
-              setCustomers(updatedCustomers);
-              filterAndSortCustomers(updatedCustomers, searchQuery, activeFilter, sortOrder);
-              Alert.alert("Success", "Customer deleted successfully");
-            } catch (error) {
-              console.error("Error deleting customer:", error);
-              Alert.alert("Error", "Failed to delete customer");
-            } finally {
-              setIsLoading(false);
-            }
-          }
+          onPress: () => performDelete(id)
         }
       ]
     );
   };
 
-  const handleViewCustomer = (id: string) => {
-    router.push(`/customers/${id}`);
+  const performDelete = async (id: string) => {
+    try {
+      setDeletingId(id);
+      await dbCustomer.deleteCustomer(Number(id));
+      setCustomers((prev) => prev.filter((c) => c.id !== id));
+      setDeletingId(null);
+      Alert.alert('Success', 'Customer deleted successfully');
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      Alert.alert('Error', 'Failed to delete customer');
+      setDeletingId(null);
+    }
   };
 
-  const handleImport = () => {
-    // Implement import functionality
-    Alert.alert("Import", "Import functionality will be available soon.");
-  };
-
-  const handleExport = () => {
-    // Implement export functionality
-    Alert.alert("Export", "Export functionality will be available soon.");
-  };
-
-  // Calculate statistics
-  const totalCustomers = customers.length;
-  const activeCustomers = customers.filter(c => c.status === "active").length;
-  const totalOutstanding = customers.reduce((sum, c) => sum + c.outstandingBalance, 0);
+  const renderCustomerItem = useCallback(({ item }: { item: Customer }) => {
+    const isDeleting = deletingId === item.id;
+    
+    if (isDeleting) {
+      return (
+        <View style={styles.deletingItemContainer}>
+          <ActivityIndicator size="small" color="#FF3B30" />
+          <Text style={styles.deletingText}>Deleting...</Text>
+        </View>
+      );
+    }
+    
+    return (
+      <TouchableOpacity
+        style={styles.customerItem}
+        onPress={() => router.push(`/customers/${item.id}`)}
+      >
+        <View style={styles.customerContent}>
+          <View style={styles.customerMainInfo}>
+            <View style={styles.customerAvatarContainer}>
+              {item.avatar ? (
+                <Image source={{ uri: item.avatar }} style={styles.customerAvatar} />
+              ) : (
+                <View style={[
+                  styles.customerAvatarPlaceholder, 
+                  { backgroundColor: item.type === 'Business' ? '#E3F2FD' : '#E8F5E9' }
+                ]}>
+                  {item.type === 'Business' ? (
+                    <Building2 size={20} color="#2196F3" />
+                  ) : (
+                    <User size={20} color="#4CAF50" />
+                  )}
+                </View>
+              )}
+            </View>
+            
+            <View style={styles.customerInfo}>
+              <Text style={styles.customerName}>{item.name}</Text>
+              <View style={styles.typeBadge}>
+                <Text style={styles.typeText}>{item.type}</Text>
+              </View>
+            </View>
+          </View>
+          
+          <View style={styles.customerDetails}>
+            {item.contactName && (
+              <View style={styles.detailRow}>
+                <User size={16} color={Colors.text.secondary} style={styles.detailIcon} />
+                <Text style={styles.detailText}>{item.contactName}</Text>
+              </View>
+            )}
+            
+            <View style={styles.detailRow}>
+              <Mail size={16} color={Colors.text.secondary} style={styles.detailIcon} />
+              <Text style={styles.detailText}>{item.email}</Text>
+            </View>
+            
+            <View style={styles.detailRow}>
+              <Phone size={16} color={Colors.text.secondary} style={styles.detailIcon} />
+              <Text style={styles.detailText}>{item.phone}</Text>
+            </View>
+          </View>
+          
+          <View style={styles.customerActions}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => handleEdit(item.id)}
+            >
+              <Edit size={16} color={Colors.primary} />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => router.push(`/customers/${item.id}`)}
+            >
+              <FileText size={16} color={Colors.text.secondary} />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => handleDelete(item.id)}
+            >
+              <Trash2 size={16} color="#FF3B30" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [deletingId]);
+  
+  const renderEmptyList = () => (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.emptyText}>No customers found</Text>
+      {searchQuery !== '' && (
+        <Text style={styles.emptySubtext}>
+          Try adjusting your search or filter criteria
+        </Text>
+      )}
+      <TouchableOpacity 
+        style={styles.emptyButton}
+        onPress={() => router.push('/customers/new')}
+      >
+        <Plus size={16} color="#FFF" />
+        <Text style={styles.emptyButtonText}>Add New Customer</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
-    <>
-      <Stack.Screen 
-        options={{
-          title: "Customers",
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <View style={styles.headerRightContainer}>
-              <TouchableOpacity 
-                onPress={() => setShowFilterOptions(!showFilterOptions)}
-                style={styles.headerButton}
-              >
-                <Filter size={20} color="#333" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={() => setShowSortOptions(!showSortOptions)}
-                style={styles.headerButton}
-              >
-                <ArrowUpDown size={20} color="#333" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={handleImport}
-                style={styles.headerButton}
-              >
-                <Upload size={20} color="#333" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={handleExport}
-                style={styles.headerButton}
-              >
-                <Download size={20} color="#333" />
-              </TouchableOpacity>
-            </View>
-          ),
-        }} 
-      />
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
-      <View style={styles.container}>
-        <View style={styles.searchContainer}>
-          <Search size={20} color="#666" style={styles.searchIcon} />
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.title}>Customers</Text>
+        <View style={{width: 40}} />
+      </View>
+      
+      <View style={styles.searchContainer}>
+        <View style={styles.searchInputContainer}>
+          <Search size={18} color={Colors.text.secondary} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search customers..."
+            placeholderTextColor={Colors.text.tertiary}
             value={searchQuery}
-            onChangeText={handleSearch}
+            onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity 
-              onPress={() => handleSearch("")}
-              style={styles.clearButton}
-            >
-              <Text style={styles.clearButtonText}>✕</Text>
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <X size={18} color={Colors.text.secondary} />
             </TouchableOpacity>
           )}
         </View>
-        
-        {showFilterOptions && (
-          <View style={styles.optionsContainer}>
-            <TouchableOpacity 
-              style={[styles.optionButton, activeFilter === "all" && styles.activeOptionButton]}
-              onPress={() => handleFilter("all")}
-            >
-              <Text style={[styles.optionText, activeFilter === "all" && styles.activeOptionText]}>
-                All
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.optionButton, activeFilter === "active" && styles.activeOptionButton]}
-              onPress={() => handleFilter("active")}
-            >
-              <Text style={[styles.optionText, activeFilter === "active" && styles.activeOptionText]}>
-                Active
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.optionButton, activeFilter === "inactive" && styles.activeOptionButton]}
-              onPress={() => handleFilter("inactive")}
-            >
-              <Text style={[styles.optionText, activeFilter === "inactive" && styles.activeOptionText]}>
-                Inactive
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.optionButton, activeFilter === "blocked" && styles.activeOptionButton]}
-              onPress={() => handleFilter("blocked")}
-            >
-              <Text style={[styles.optionText, activeFilter === "blocked" && styles.activeOptionText]}>
-                Blocked
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        
-        {showSortOptions && (
-          <View style={styles.optionsContainer}>
-            <TouchableOpacity 
-              style={[styles.optionButton, sortOrder === "name" && styles.activeOptionButton]}
-              onPress={() => handleSort("name")}
-            >
-              <Text style={[styles.optionText, sortOrder === "name" && styles.activeOptionText]}>
-                Name
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.optionButton, sortOrder === "balance" && styles.activeOptionButton]}
-              onPress={() => handleSort("balance")}
-            >
-              <Text style={[styles.optionText, sortOrder === "balance" && styles.activeOptionText]}>
-                Balance
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.optionButton, sortOrder === "recent" && styles.activeOptionButton]}
-              onPress={() => handleSort("recent")}
-            >
-              <Text style={[styles.optionText, sortOrder === "recent" && styles.activeOptionText]}>
-                Recent
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{totalCustomers}</Text>
-            <Text style={styles.statLabel}>Total</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>
-              {activeCustomers}
+      </View>
+      
+      <View style={styles.filterSortContainer}>
+        <View style={styles.filterSortWrapper}>
+          <TouchableOpacity 
+            style={styles.filterButton}
+            onPress={() => {
+              setShowFilterOptions(!showFilterOptions);
+              setShowSortOptions(false);
+            }}
+          >
+            <Text style={styles.filterSortText}>
+              {filterBy === 'all' ? 'All Customers' : 
+               filterBy === 'business' ? 'Business Customers' : 'Individual Customers'}
             </Text>
-            <Text style={styles.statLabel}>Active</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>
-              {formatCurrency(totalOutstanding)}
+            <ChevronDown size={18} color={Colors.text.secondary} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.sortButton}
+            onPress={() => {
+              setShowSortOptions(!showSortOptions);
+              setShowFilterOptions(false);
+            }}
+          >
+            <ArrowUpDown size={18} color={Colors.text.secondary} />
+            <Text style={styles.filterSortText}>
+              {sortBy === 'name-asc' ? 'Name: A to Z' : 
+               sortBy === 'name-desc' ? 'Name: Z to A' :
+               sortBy === 'type-asc' ? 'Type: A to Z' :
+               sortBy === 'type-desc' ? 'Type: Z to A' : 'Most Recent'}
             </Text>
-            <Text style={styles.statLabel}>Outstanding</Text>
-          </View>
+            <ChevronDown size={18} color={Colors.text.secondary} />
+          </TouchableOpacity>
         </View>
         
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.primary} />
+        {showSortOptions && (
+          <View style={styles.dropdown}>
+            <TouchableOpacity 
+              style={[styles.dropdownItem, sortBy === 'name-asc' && styles.selectedItem]}
+              onPress={() => handleSort('name-asc')}
+            >
+              <Text style={[styles.dropdownText, sortBy === 'name-asc' && styles.selectedText]}>Name: A to Z</Text>
+              {sortBy === 'name-asc' && <Check size={18} color={Colors.primary} />}
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.dropdownItem, sortBy === 'name-desc' && styles.selectedItem]}
+              onPress={() => handleSort('name-desc')}
+            >
+              <Text style={[styles.dropdownText, sortBy === 'name-desc' && styles.selectedText]}>Name: Z to A</Text>
+              {sortBy === 'name-desc' && <Check size={18} color={Colors.primary} />}
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.dropdownItem, sortBy === 'type-asc' && styles.selectedItem]}
+              onPress={() => handleSort('type-asc')}
+            >
+              <Text style={[styles.dropdownText, sortBy === 'type-asc' && styles.selectedText]}>Type: A to Z</Text>
+              {sortBy === 'type-asc' && <Check size={18} color={Colors.primary} />}
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.dropdownItem, sortBy === 'type-desc' && styles.selectedItem]}
+              onPress={() => handleSort('type-desc')}
+            >
+              <Text style={[styles.dropdownText, sortBy === 'type-desc' && styles.selectedText]}>Type: Z to A</Text>
+              {sortBy === 'type-desc' && <Check size={18} color={Colors.primary} />}
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.dropdownItem, sortBy === 'recent' && styles.selectedItem]}
+              onPress={() => handleSort('recent')}
+            >
+              <Text style={[styles.dropdownText, sortBy === 'recent' && styles.selectedText]}>Most Recent</Text>
+              {sortBy === 'recent' && <Check size={18} color={Colors.primary} />}
+            </TouchableOpacity>
           </View>
-        ) : (
-          <FlatList
-            data={filteredCustomers}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <CustomerItem
-                customer={item}
-                onPress={() => handleViewCustomer(item.id)}
-                onEdit={() => handleEditCustomer(item.id)}
-                onDelete={() => handleDeleteCustomer(item.id)}
-              />
-            )}
-            contentContainerStyle={styles.listContent}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
-            ListEmptyComponent={
-              <EmptyState
-                title="No customers found"
-                description="Add your first customer by clicking the + button below"
-                icon="users"
-              />
-            }
-          />
         )}
         
-        <FloatingActionButton
-          icon={<Plus size={24} color="#fff" />}
-          onPress={handleAddCustomer}
-        />
+        {showFilterOptions && (
+          <View style={styles.dropdown}>
+            <TouchableOpacity 
+              style={[styles.dropdownItem, filterBy === 'all' && styles.selectedItem]}
+              onPress={() => handleFilter('all')}
+            >
+              <Text style={[styles.dropdownText, filterBy === 'all' && styles.selectedText]}>All Customers</Text>
+              {filterBy === 'all' && <Check size={18} color={Colors.primary} />}
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.dropdownItem, filterBy === 'business' && styles.selectedItem]}
+              onPress={() => handleFilter('business')}
+            >
+              <Text style={[styles.dropdownText, filterBy === 'business' && styles.selectedText]}>Business Customers</Text>
+              {filterBy === 'business' && <Check size={18} color={Colors.primary} />}
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.dropdownItem, filterBy === 'individual' && styles.selectedItem]}
+              onPress={() => handleFilter('individual')}
+            >
+              <Text style={[styles.dropdownText, filterBy === 'individual' && styles.selectedText]}>Individual Customers</Text>
+              {filterBy === 'individual' && <Check size={18} color={Colors.primary} />}
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
-    </>
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading customers...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={customers.filter(customer => {
+            if (searchQuery) {
+              const query = searchQuery.toLowerCase();
+              return (
+                customer.name.toLowerCase().includes(query) ||
+                (customer.contactName && customer.contactName.toLowerCase().includes(query)) ||
+                customer.email.toLowerCase().includes(query) ||
+                customer.phone.toLowerCase().includes(query) ||
+                customer.type.toLowerCase().includes(query) ||
+                (customer.notes && customer.notes.toLowerCase().includes(query))
+              );
+            }
+            return true;
+          })}
+          keyExtractor={(item) => item.id}
+          renderItem={renderCustomerItem}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[Colors.primary]}
+            />
+          }
+          ListEmptyComponent={renderEmptyList}
+        />
+      )}
+      
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/customers/new')}
+      >
+        <Plus size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: Colors.background.default,
   },
-  headerButton: {
-    padding: 8,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: Colors.background.default,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
   },
-  headerRightContainer: {
-    flexDirection: "row",
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
   },
   searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    margin: 16,
-    paddingHorizontal: 12,
-    height: 48,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  searchIcon: {
-    marginRight: 8,
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background.secondary,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
   },
   searchInput: {
     flex: 1,
-    height: "100%",
+    height: 44,
+    marginLeft: 8,
     fontSize: 16,
+    color: Colors.text.primary,
   },
-  clearButton: {
-    padding: 8,
+  filterSortContainer: {
+    position: 'relative',
+    zIndex: 100,
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
-  clearButtonText: {
-    fontSize: 16,
-    color: "#666",
+  filterSortWrapper: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  optionsContainer: {
-    flexDirection: "row",
-    backgroundColor: "#fff",
-    margin: 16,
-    marginTop: 0,
-    borderRadius: 8,
-    padding: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  optionButton: {
-    flex: 1,
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.background.secondary,
+    borderRadius: 10,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    paddingHorizontal: 4,
-    alignItems: "center",
-    borderRadius: 4,
-  },
-  activeOptionButton: {
-    backgroundColor: "#1a73e810",
-  },
-  optionText: {
-    fontSize: 14,
-    color: "#333",
-  },
-  activeOptionText: {
-    color: Colors.primary,
-    fontWeight: "500",
-  },
-  statsContainer: {
-    flexDirection: "row",
-    backgroundColor: "#fff",
-    margin: 16,
-    marginTop: 0,
-    borderRadius: 8,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  statItem: {
     flex: 1,
-    alignItems: "center",
+    marginRight: 8,
   },
-  statValue: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background.secondary,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flex: 1,
+    marginLeft: 8,
   },
-  statLabel: {
-    fontSize: 12,
-    color: "#666",
+  filterSortText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    flex: 1,
+    marginLeft: 8,
+  },
+  dropdown: {
+    position: 'absolute',
+    top: 45,
+    left: 16,
+    right: 16,
+    backgroundColor: 'white',
+    borderRadius: 10,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 200,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  selectedItem: {
+    backgroundColor: 'rgba(76, 175, 80, 0.08)',
+  },
+  dropdownText: {
+    fontSize: 15,
+    color: Colors.text.secondary,
+  },
+  selectedText: {
+    color: Colors.primary,
+    fontWeight: '500',
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
   },
-  listContent: {
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: Colors.text.secondary,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
+    padding: 20,
+    minHeight: 300,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  emptyButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  listContainer: {
     padding: 16,
-    paddingTop: 0,
+    paddingBottom: 80,
+  },
+  customerItem: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 12,
+    marginBottom: 16,
+    // // shadowColor: "#000",
+    // // shadowOffset: {
+    // //   width: 0,
+    // //   height: 2,
+    // // },
+    // // shadowOpacity: 0.1,
+    // // shadowRadius: 3,
+    // elevation: 2,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+  },
+  customerContent: {
+    padding: 16,
+  },
+  customerMainInfo: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  customerAvatarContainer: {
+    marginRight: 12,
+  },
+  customerAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+  },
+  customerAvatarPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  customerInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  customerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  typeBadge: {
+    backgroundColor: Colors.background.secondary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  typeText: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    fontWeight: '500',
+  },
+  customerDetails: {
+    marginBottom: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  detailIcon: {
+    marginRight: 8,
+  },
+  detailText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  customerActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    paddingTop: 12,
+  },
+  actionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+    elevation: 8,
+  },
+  deletingItemContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background.default,
+    borderRadius: 12,
+    marginBottom: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#FF3B3020',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  deletingText: {
+    fontSize: 14,
+    color: '#FF3B30',
+    marginLeft: 8,
   },
 });

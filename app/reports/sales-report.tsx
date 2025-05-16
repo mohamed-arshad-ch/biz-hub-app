@@ -31,7 +31,7 @@ import {
   CheckSquare,
   Square
 } from 'lucide-react-native';
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { formatCurrency, formatDate, formatDateShort, formatNumber, formatPercentage } from '@/utils/formatters';
 import { getSalesData } from '@/mocks/salesData';

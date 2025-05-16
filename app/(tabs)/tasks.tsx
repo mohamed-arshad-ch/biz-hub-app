@@ -26,7 +26,8 @@ import {
   ArrowDown,
   ArrowUp,
   FileText,
-  DollarSign
+  DollarSign,
+  Settings
 } from "lucide-react-native";
 
 import Colors from "@/constants/colors";
@@ -106,6 +107,10 @@ export default function TasksScreen() {
     router.push(screenPath as any);
   };
 
+  const navigateToSettings = () => {
+    router.push("/settings");
+  };
+
   const toggleFab = () => {
     if (fabOpen) {
       // Close the FAB menu
@@ -170,8 +175,17 @@ export default function TasksScreen() {
       <StatusBar barStyle="dark-content" />
       
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Tasks</Text>
-        <Text style={styles.headerSubtitle}>Manage your business transactions</Text>
+        <View>
+          <Text style={styles.headerTitle}>Tasks</Text>
+          <Text style={styles.headerSubtitle}>Manage your business transactions</Text>
+        </View>
+        <TouchableOpacity 
+          style={styles.settingsButton}
+          onPress={navigateToSettings}
+          activeOpacity={0.7}
+        >
+          <Settings size={22} color={Colors.text.primary} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView 
@@ -186,25 +200,25 @@ export default function TasksScreen() {
             title="Payment In"
             description="Record incoming payments from customers"
             icon={<ArrowDown size={22} color={Colors.primary} />}
-            onPress={() => navigateToScreen("/sales/payment-in")}
+            onPress={() => navigateToScreen("/payment-in/payment-in")}
           />
           <TaskCard 
             title="Sales Order"
             description="Create and manage sales orders"
             icon={<ClipboardList size={22} color={Colors.primary} />}
-            onPress={() => navigateToScreen("/sales/orders")}
+            onPress={() => navigateToScreen("/sales-order/sales-order")}
           />
           <TaskCard 
             title="Sales Invoice"
             description="Generate and send invoices to customers"
             icon={<Receipt size={22} color={Colors.primary} />}
-            onPress={() => navigateToScreen("/sales/sales")}
+            onPress={() => navigateToScreen("/sales-invoice/sales-invoice")}
           />
           <TaskCard 
             title="Sales Return"
             description="Process and track customer returns"
             icon={<RotateCcw size={22} color={Colors.primary} />}
-            onPress={() => navigateToScreen("/sales/returns")}
+            onPress={() => navigateToScreen("/sales-return/sales-return")}
           />
         </View>
         
@@ -215,25 +229,25 @@ export default function TasksScreen() {
             title="Payment Out"
             description="Record outgoing payments to vendors"
             icon={<ArrowUp size={22} color={Colors.primary} />}
-            onPress={() => navigateToScreen("/purchases/payment-out")}
+            onPress={() => navigateToScreen("/payment-out/payment-out")}
           />
           <TaskCard 
             title="Purchase Return"
             description="Process returns to suppliers"
             icon={<RotateCcw size={22} color={Colors.primary} />}
-            onPress={() => navigateToScreen("/purchases/returns")}
+            onPress={() => navigateToScreen("/purchase-return/purchase-return")}
           />
           <TaskCard 
             title="Purchase Invoice"
             description="Manage vendor invoices and bills"
             icon={<FileText size={22} color={Colors.primary} />}
-            onPress={() => navigateToScreen("/purchases/purchases")}
+            onPress={() => navigateToScreen("/purchase-invoice/purchase-invoice")}
           />
           <TaskCard 
             title="Purchase Order"
             description="Create and track purchase orders"
             icon={<ShoppingCart size={22} color={Colors.primary} />}
-            onPress={() => navigateToScreen("/purchases/orders")}
+            onPress={() => navigateToScreen("/purchase-order/purchase-order")}
           />
         </View>
         
@@ -322,11 +336,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8f9fa",
   },
   header: {
-    paddingHorizontal: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    backgroundColor: Colors.background.default,
   },
   headerTitle: {
     fontSize: 28,
@@ -451,5 +466,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 14,
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.background.tertiary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

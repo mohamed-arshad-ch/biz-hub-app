@@ -12,7 +12,7 @@ import { ArrowLeft, ArrowUpRight, ArrowDownLeft } from "lucide-react-native";
 import { getTransactionById } from "@/mocks/dashboardData";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import Colors from "@/constants/colors";
-
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function TransactionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();

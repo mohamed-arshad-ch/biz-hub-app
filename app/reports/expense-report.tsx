@@ -38,7 +38,7 @@ import {
   Trash2,
   Share2
 } from 'lucide-react-native';
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { getExpensesData } from '@/mocks/expensesData';
 import { ExpenseRecord } from '@/types/expenses';

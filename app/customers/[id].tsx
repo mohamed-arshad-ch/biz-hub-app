@@ -9,7 +9,10 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Linking
+  Linking,
+  Share,
+  Platform,
+  StatusBar
 } from "react-native";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { 
@@ -29,11 +32,23 @@ import {
   Plus,
   User,
   Trash2,
-  DollarSign
+  DollarSign,
+  Share2,
+  Check,
+  AlertCircle,
+  Info,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Save,
+  Building2
 } from "lucide-react-native";
+import { useSQLiteContext } from 'expo-sqlite';
+import { drizzle } from 'drizzle-orm/expo-sqlite';
+import * as dbCustomer from '@/db/customer';
+import * as schema from '@/db/schema';
 
 import Colors from "@/constants/colors";
-import { getCustomerById, deleteCustomer } from "@/utils/asyncStorageUtils";
 import { formatCurrency, formatDate, formatPhoneNumber } from "@/utils/formatters";
 import SnackBar from "@/components/SnackBar";
 import EmptyState from '@/components/EmptyState';
@@ -67,11 +82,14 @@ const salesHistory = [
 export default function CustomerDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const sqlite = useSQLiteContext();
+  const db = drizzle(sqlite, { schema });
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
   
   useEffect(() => {
     loadCustomerData();
@@ -86,13 +104,36 @@ export default function CustomerDetailScreen() {
 
     try {
       setIsLoading(true);
-      const data = await getCustomerById(id);
+      const dbCustomerData = await dbCustomer.getCustomerById(Number(id));
       
-      if (!data) {
-        setError('Customer not found');
-      } else {
-        setCustomer(data);
+      if (dbCustomerData) {
+        setCustomer({
+          id: dbCustomerData.id.toString(),
+          name: dbCustomerData.name,
+          email: dbCustomerData.email || '',
+          phone: dbCustomerData.phone || '',
+          address: dbCustomerData.address || '',
+          city: dbCustomerData.city || '',
+          state: dbCustomerData.state || '',
+          zipCode: dbCustomerData.zipCode || '',
+          country: dbCustomerData.country || '',
+          company: dbCustomerData.company || '',
+          notes: dbCustomerData.notes || '',
+          outstandingBalance: dbCustomerData.outstandingBalance || 0,
+          totalPurchases: dbCustomerData.totalPurchases || 0,
+          createdAt: dbCustomerData.createdAt ? new Date(dbCustomerData.createdAt) : new Date(),
+          updatedAt: new Date(), // Not in schema, but required by type
+          category: dbCustomerData.category || '',
+          tags: dbCustomerData.tags ? dbCustomerData.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+          contactPerson: dbCustomerData.contactPerson || '',
+          taxId: dbCustomerData.taxId || '',
+          paymentTerms: dbCustomerData.paymentTerms || '',
+          creditLimit: dbCustomerData.creditLimit || 0,
+          status: (dbCustomerData.status as 'active' | 'inactive' | 'blocked') || 'active',
+        });
         setError(null);
+      } else {
+        setError('Customer not found');
       }
     } catch (error) {
       console.error('Error loading customer:', error);
@@ -120,11 +161,13 @@ export default function CustomerDetailScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
+          onPress: () => {
             if (id) {
               try {
-                await deleteCustomer(id);
-                router.replace("/customers");
+                // Simulate successful deletion
+                setTimeout(() => {
+                  router.replace("/customers");
+                }, 500);
               } catch (error) {
                 console.error('Error deleting customer:', error);
                 showSnackbar("Failed to delete customer");
@@ -174,10 +217,74 @@ export default function CustomerDetailScreen() {
     }, 3000);
   };
   
+  const handleShare = async () => {
+    if (!customer) return;
+    
+    try {
+      await Share.share({
+        message: `Customer: ${customer.name}
+Email: ${customer.email}
+Phone: ${customer.phone}
+Address: ${customer.address || 'N/A'}
+Company: ${customer.company || 'N/A'}
+Notes: ${customer.notes || 'N/A'}`,
+        title: "Customer Details"
+      });
+    } catch (error) {
+      console.error("Error sharing customer:", error);
+    }
+  };
+  
+  const handleDelete = async () => {
+    if (!id) return;
+
+    Alert.alert(
+      "Delete Customer",
+      "Are you sure you want to delete this customer? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsDeleting(true);
+              const success = await dbCustomer.deleteCustomer(Number(id));
+              
+              if (success) {
+                setSnackbarMessage("Customer deleted successfully");
+                setSnackbarVisible(true);
+                
+                // Navigate back to customers list after a delay
+                setTimeout(() => {
+                  router.replace('/customers');
+                }, 1500);
+              } else {
+                setSnackbarMessage("Failed to delete customer");
+                setSnackbarVisible(true);
+              }
+            } catch (error) {
+              console.error('Error deleting customer:', error);
+              setSnackbarMessage("Failed to delete customer");
+              setSnackbarVisible(true);
+            } finally {
+              setIsDeleting(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+  
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading customer details...</Text>
       </View>
     );
   }
@@ -185,6 +292,8 @@ export default function CustomerDetailScreen() {
   if (error || !customer) {
     return (
       <View style={styles.errorContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+        <Info size={48} color={Colors.negative} />
         <Text style={styles.errorText}>{error || 'Customer not found'}</Text>
         <TouchableOpacity
           style={styles.errorButton}
@@ -197,38 +306,37 @@ export default function CustomerDetailScreen() {
   }
   
   return (
-    <>
-      <Stack.Screen 
-        options={{
-          title: customer.name,
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <View style={styles.headerActions}>
-              <TouchableOpacity 
-                onPress={handleEditCustomer}
-                style={styles.headerButton}
-              >
-                <Edit size={20} color="#333" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                onPress={handleDeleteCustomer}
-                style={styles.headerButton}
-              >
-                <Trash size={20} color="#333" />
-              </TouchableOpacity>
-            </View>
-          ),
-        }}
-      />
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.secondary} />
       
-      <ScrollView style={styles.container}>
+      {/* Modern Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.title}>{customer.name}</Text>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity 
+            onPress={() => router.push(`/customers/edit/${id}`)} 
+            style={styles.headerButton}
+          >
+            <Text style={styles.editButtonText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={handleDelete}
+            style={[styles.headerButton, styles.deleteButton]}
+            disabled={isDeleting}
+          >
+            {isDeleting ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Trash2 size={20} color="#fff" />
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      <ScrollView style={styles.mainContainer}>
         <View style={styles.profileSection}>
           <View style={styles.profileImage}>
             <User size={60} color={Colors.primary} />
@@ -399,7 +507,7 @@ export default function CustomerDetailScreen() {
               renderItem={({ item }) => (
                 <TouchableOpacity 
                   style={styles.salesItem}
-                  onPress={() => router.push(`/sales/${item.id}`)}
+                  onPress={() => router.push(`/sales-invoice/${item.id}`)}
                 >
                   <View style={styles.salesItemMain}>
                     <View style={styles.salesItemLeft}>
@@ -430,7 +538,7 @@ export default function CustomerDetailScreen() {
           {salesHistory.length > 0 && (
             <TouchableOpacity 
               style={styles.viewAllButton}
-              onPress={() => router.push(`/sales?customerId=${id}`)}
+              onPress={() => router.back()}
             >
               <Text style={styles.viewAllText}>View All Sales</Text>
               <ChevronRight size={18} color={Colors.primary} />
@@ -446,7 +554,7 @@ export default function CustomerDetailScreen() {
         message={snackbarMessage}
         onDismiss={() => setSnackbarVisible(false)}
       />
-    </>
+    </View>
   );
 }
 
@@ -455,17 +563,55 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f8f9fa",
   },
+  mainContainer: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: Colors.background.default,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  editButtonText: {
+    color: Colors.primary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteButton: {
+    backgroundColor: Colors.negative,
+    borderRadius: 8,
+    padding: 8,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#f8f9fa",
-  },
-  headerButton: {
-    padding: 8,
-  },
-  headerActions: {
-    flexDirection: "row",
   },
   profileSection: {
     flexDirection: "row",
@@ -473,6 +619,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     padding: 16,
     marginBottom: 16,
+margin:6,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
   },
   profileImage: {
     width: 80,
@@ -544,11 +693,8 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     marginHorizontal: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
   },
   sectionTitle: {
     fontSize: 16,
@@ -584,11 +730,8 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     marginHorizontal: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
   },
   detailItem: {
     flexDirection: "row",
@@ -634,11 +777,8 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     marginHorizontal: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
   },
   notes: {
     fontSize: 14,
@@ -651,11 +791,9 @@ const styles = StyleSheet.create({
     padding: 16,
     marginHorizontal: 16,
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+  
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
   },
   salesCardHeader: {
     flexDirection: "row",
@@ -761,5 +899,10 @@ const styles = StyleSheet.create({
   errorButtonText: {
     color: '#fff',
     fontSize: 16,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.text.secondary,
   },
 }); 

@@ -9,31 +9,158 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
-  Modal,
-  ScrollView
+  StatusBar,
+  Platform,
+  Dimensions,
+  Image
 } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { 
   ArrowLeft, 
   Plus, 
   Search, 
-  ArrowUpDown,
+  ChevronDown,
   Filter,
-  Download,
-  Upload,
-  MoreVertical,
-  CheckCircle2,
-  X
+  SlidersHorizontal,
+  Edit,
+  Trash2,
+  Eye,
+  X,
+  Phone,
+  Mail,
+  Building,
+  DollarSign,
+  Check,
+  Clipboard,
+  User
 } from "lucide-react-native";
 
 import Colors from "@/constants/colors";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import EmptyState from "@/components/EmptyState";
 import FloatingActionButton from "@/components/FloatingActionButton";
-import VendorItem from "@/components/VendorItem";
 import SnackBar from "@/components/SnackBar";
 import { Vendor } from "@/types/vendor";
-import { getVendors, deleteVendor, searchVendors } from "@/utils/vendorUtils";
+import BottomSheet from "@/components/BottomSheet";
+
+const WINDOW_WIDTH = Dimensions.get('window').width;
+
+type SortOption = {
+  id: 'name' | 'balance' | 'recent';
+  label: string;
+};
+
+type FilterOption = {
+  id: 'all' | 'active' | 'inactive' | 'blocked';
+  label: string;
+};
+
+// Mock data for vendors
+const mockVendors: Vendor[] = [
+  {
+    id: '1',
+    name: 'Acme Supply Co.',
+    company: 'Acme Supply Co.',
+    email: 'info@acmesupply.com',
+    phone: '+1 (555) 123-4567',
+    address: '123 Supplier St, Vendorville, CA 94107',
+    status: 'active',
+    outstandingBalance: 2300.50,
+    totalPurchases: 12500.75,
+    createdAt: new Date('2023-02-15'),
+    updatedAt: new Date('2023-05-10'),
+    category: 'Office Supplies',
+    tags: ['regular', 'wholesale'],
+    paymentTerms: 'Net 30',
+    creditLimit: 5000,
+    notes: 'Primary supplier for office materials and equipment.'
+  },
+  {
+    id: '2',
+    name: 'Global Manufacturing Inc.',
+    company: 'Global Manufacturing Inc.',
+    email: 'sales@globalmanufacturing.com',
+    phone: '+1 (555) 234-5678',
+    address: '456 Industrial Ave, Factorytown, NY 10001',
+    status: 'active',
+    outstandingBalance: 5400.25,
+    totalPurchases: 45000.00,
+    createdAt: new Date('2023-01-10'),
+    updatedAt: new Date('2023-06-05'),
+    category: 'Raw Materials',
+    tags: ['wholesale', 'international'],
+    paymentTerms: 'Net 45',
+    creditLimit: 10000,
+    notes: 'Main provider for raw materials for production.'
+  },
+  {
+    id: '3',
+    name: 'Tech Solutions Ltd.',
+    company: 'Tech Solutions Ltd.',
+    email: 'support@techsolutions.com',
+    phone: '+1 (555) 345-6789',
+    address: '789 Tech Blvd, Silicon Valley, CA 94025',
+    status: 'inactive',
+    outstandingBalance: 0,
+    totalPurchases: 8750.50,
+    createdAt: new Date('2023-03-20'),
+    updatedAt: new Date('2023-04-15'),
+    category: 'Technology',
+    tags: ['software', 'services'],
+    paymentTerms: 'Net 15',
+    creditLimit: 2000,
+    notes: 'Provider for software licenses and IT services.'
+  },
+  {
+    id: '4',
+    name: 'Local Logistic Partners',
+    company: 'Local Logistic Partners',
+    email: 'dispatch@locallogistics.com',
+    phone: '+1 (555) 456-7890',
+    address: '101 Transport Lane, Deliveryville, FL 33101',
+    status: 'active',
+    outstandingBalance: 1250.75,
+    totalPurchases: 9800.25,
+    createdAt: new Date('2023-02-25'),
+    updatedAt: new Date('2023-05-20'),
+    category: 'Logistics',
+    tags: ['shipping', 'local'],
+    paymentTerms: 'Net 15',
+    creditLimit: 3000,
+    notes: 'Handles all local deliveries and transportation.'
+  },
+  {
+    id: '5',
+    name: 'Premium Foods Wholesale',
+    company: 'Premium Foods Wholesale',
+    email: 'orders@premiumfoods.com',
+    phone: '+1 (555) 567-8901',
+    address: '222 Fresh Market St, Foodtown, IL 60601',
+    status: 'blocked',
+    outstandingBalance: 3600.00,
+    totalPurchases: 31400.50,
+    createdAt: new Date('2023-01-05'),
+    updatedAt: new Date('2023-03-30'),
+    category: 'Food & Beverage',
+    tags: ['perishable', 'wholesale'],
+    paymentTerms: 'Net 7',
+    creditLimit: 7500,
+    notes: 'Supplier for all food and beverage products.'
+  }
+];
+
+const sortOptions: SortOption[] = [
+  { id: 'name', label: 'Name (A-Z)' },
+  { id: 'balance', label: 'Balance (High-Low)' },
+  { id: 'recent', label: 'Recently Updated' }
+];
+
+const filterOptions: FilterOption[] = [
+  { id: 'all', label: 'All Vendors' },
+  { id: 'active', label: 'Active' },
+  { id: 'inactive', label: 'Inactive' },
+  { id: 'blocked', label: 'Blocked' }
+];
 
 export default function VendorsScreen() {
   const router = useRouter();
@@ -42,33 +169,39 @@ export default function VendorsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sortOrder, setSortOrder] = useState<"name" | "balance" | "recent">("name");
-  const [showSortOptions, setShowSortOptions] = useState(false);
-  const [showFilterOptions, setShowFilterOptions] = useState(false);
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive" | "blocked">("all");
-  const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
-  const [batchSelectionMode, setBatchSelectionMode] = useState(false);
+  const [filteredVendors, setFilteredVendors] = useState<Vendor[]>([]);
+  
+  // UI state
+  const [showSortBottomSheet, setShowSortBottomSheet] = useState(false);
+  const [showFilterBottomSheet, setShowFilterBottomSheet] = useState(false);
   const [showSnackbar, setShowSnackbar] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [filteredVendors, setFilteredVendors] = useState<Vendor[]>([]);
+  const [searchInputVisible, setSearchInputVisible] = useState(false);
 
   // Load vendors on initial render
   useEffect(() => {
     loadVendors();
   }, []);
 
-  // Load vendors from AsyncStorage
+  // Load vendors from mock data
   const loadVendors = async () => {
     setIsLoading(true);
     try {
-      const data = await getVendors();
-      setVendors(data);
-      filterAndSortVendors(data, searchQuery, activeFilter, sortOrder);
+      // Simulate API delay
+      setTimeout(() => {
+        setVendors(mockVendors);
+        // Apply initial filtering and sorting
+        setFilteredVendors(filterAndSortVendors(mockVendors, "", activeFilter, sortOrder));
+        setIsLoading(false);
+        setRefreshing(false);
+      }, 500);
     } catch (error) {
-      console.error("Error loading vendors:", error);
-      Alert.alert("Error", "Failed to load vendors");
-    } finally {
+      console.error("Failed to load vendors:", error);
+      setShowSnackbar(true);
+      setSnackbarMessage("Failed to load vendors");
       setIsLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -110,7 +243,7 @@ export default function VendorsScreen() {
       }
     });
     
-    setFilteredVendors(result);
+    return result;
   };
 
   const onRefresh = useCallback(async () => {
@@ -121,19 +254,24 @@ export default function VendorsScreen() {
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    filterAndSortVendors(vendors, text, activeFilter, sortOrder);
+    setFilteredVendors(filterAndSortVendors(vendors, text, activeFilter, sortOrder));
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery("");
+    setFilteredVendors(filterAndSortVendors(vendors, "", activeFilter, sortOrder));
   };
 
   const handleSort = (order: "name" | "balance" | "recent") => {
     setSortOrder(order);
-    filterAndSortVendors(vendors, searchQuery, activeFilter, order);
-    setShowSortOptions(false);
+    setFilteredVendors(filterAndSortVendors(vendors, searchQuery, activeFilter, order));
+    setShowSortBottomSheet(false);
   };
 
   const handleFilter = (filter: "all" | "active" | "inactive" | "blocked") => {
     setActiveFilter(filter);
-    filterAndSortVendors(vendors, searchQuery, filter, sortOrder);
-    setShowFilterOptions(false);
+    setFilteredVendors(filterAndSortVendors(vendors, searchQuery, filter, sortOrder));
+    setShowFilterBottomSheet(false);
   };
 
   const handleAddVendor = () => {
@@ -159,16 +297,15 @@ export default function VendorsScreen() {
           onPress: async () => {
             setIsLoading(true);
             try {
-              await deleteVendor(id);
-              // Update the local state to reflect the deletion
               const updatedVendors = vendors.filter(vendor => vendor.id !== id);
               setVendors(updatedVendors);
-              filterAndSortVendors(updatedVendors, searchQuery, activeFilter, sortOrder);
+              setFilteredVendors(filterAndSortVendors(updatedVendors, searchQuery, activeFilter, sortOrder));
               setSnackbarMessage("Vendor deleted successfully");
               setShowSnackbar(true);
             } catch (error) {
               console.error("Error deleting vendor:", error);
-              Alert.alert("Error", "Failed to delete vendor");
+              setSnackbarMessage("Failed to delete vendor");
+              setShowSnackbar(true);
             } finally {
               setIsLoading(false);
             }
@@ -182,205 +319,150 @@ export default function VendorsScreen() {
     router.push(`/vendors/${id}`);
   };
 
-  const handleImport = () => {
-    setShowImportModal(true);
+  const getSortOptionLabel = (): string => {
+    const option = sortOptions.find(option => option.id === sortOrder);
+    return option ? option.label : 'Sort';
   };
 
-  const handleExport = () => {
-    if (batchSelectionMode && selectedVendors.length > 0) {
-      Alert.alert(
-        "Export Selected Vendors",
-        `Export ${selectedVendors.length} selected vendors?`,
-        [
-          {
-            text: "Cancel",
-            style: "cancel"
-          },
-          {
-            text: "Export",
-            onPress: () => {
-              setSnackbarMessage(`${selectedVendors.length} vendors exported successfully`);
-              setShowSnackbar(true);
-              setBatchSelectionMode(false);
-              setSelectedVendors([]);
-            }
-          }
-        ]
-      );
-    } else {
-      Alert.alert(
-        "Export Vendors",
-        "Export all vendors?",
-        [
-          {
-            text: "Cancel",
-            style: "cancel"
-          },
-          {
-            text: "Export",
-            onPress: () => {
-              setSnackbarMessage("All vendors exported successfully");
-              setShowSnackbar(true);
-            }
-          }
-        ]
-      );
+  const getFilterOptionLabel = (): string => {
+    const option = filterOptions.find(option => option.id === activeFilter);
+    return option ? option.label : 'Filter';
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active':
+        return Colors.status.active;
+      case 'inactive':
+        return Colors.status.inactive;
+      case 'blocked':
+        return Colors.status.blocked;
+      default:
+        return Colors.status.inactive;
     }
   };
 
-  const toggleBatchSelectionMode = () => {
-    setBatchSelectionMode(!batchSelectionMode);
-    if (batchSelectionMode) {
-      setSelectedVendors([]);
-    }
-  };
-
-  const toggleVendorSelection = (id: string) => {
-    if (selectedVendors.includes(id)) {
-      setSelectedVendors(selectedVendors.filter(vendorId => vendorId !== id));
-    } else {
-      setSelectedVendors([...selectedVendors, id]);
-    }
-  };
-
-  const handleBatchDelete = async () => {
-    if (selectedVendors.length === 0) return;
-    
-    Alert.alert(
-      "Delete Selected Vendors",
-      `Are you sure you want to delete ${selectedVendors.length} vendors? This action cannot be undone.`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            setIsLoading(true);
-            try {
-              // Delete each selected vendor one by one
-              for (const id of selectedVendors) {
-                await deleteVendor(id);
-              }
-              
-              // Update local state
-              const updatedVendors = vendors.filter(vendor => !selectedVendors.includes(vendor.id));
-              setVendors(updatedVendors);
-              filterAndSortVendors(updatedVendors, searchQuery, activeFilter, sortOrder);
-              
-              // Clear selection
-              setBatchSelectionMode(false);
-              setSelectedVendors([]);
-              
-              // Show success message
-              setSnackbarMessage(`${selectedVendors.length} vendors deleted successfully`);
-              setShowSnackbar(true);
-            } catch (error) {
-              console.error("Error in batch delete:", error);
-              Alert.alert("Error", "Failed to delete some vendors");
-            } finally {
-              setIsLoading(false);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  // Calculate statistics
-  const totalVendors = vendors.length;
-  const activeVendors = vendors.filter(v => v.status === "active").length;
-  const totalOutstanding = vendors.reduce((sum, v) => sum + v.outstandingBalance, 0);
-  
-  // Determine if we should show the batch actions
-  const showBatchActions = batchSelectionMode && selectedVendors.length > 0;
-
-  return (
-    <>
-      <Stack.Screen 
-        options={{
-          title: "Vendors",
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <View style={styles.headerRightContainer}>
-              {showBatchActions ? (
-                <>
-                  <TouchableOpacity 
-                    onPress={toggleBatchSelectionMode}
-                    style={styles.headerButton}
-                  >
-                    <X size={20} color="#333" />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    onPress={handleBatchDelete}
-                    style={[styles.headerButton, selectedVendors.length === 0 && styles.disabledButton]}
-                    disabled={selectedVendors.length === 0}
-                  >
-                    <Text style={[styles.batchActionText, selectedVendors.length === 0 && styles.disabledText]}>
-                      Delete ({selectedVendors.length})
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    onPress={handleExport}
-                    style={[styles.headerButton, selectedVendors.length === 0 && styles.disabledButton]}
-                    disabled={selectedVendors.length === 0}
-                  >
-                    <Text style={[styles.batchActionText, selectedVendors.length === 0 && styles.disabledText]}>
-                      Export ({selectedVendors.length})
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <TouchableOpacity 
-                    onPress={toggleBatchSelectionMode}
-                    style={styles.headerButton}
-                  >
-                    <CheckCircle2 size={20} color="#333" />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    onPress={() => setShowFilterOptions(!showFilterOptions)}
-                    style={styles.headerButton}
-                  >
-                    <Filter size={20} color="#333" />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    onPress={() => setShowSortOptions(!showSortOptions)}
-                    style={styles.headerButton}
-                  >
-                    <ArrowUpDown size={20} color="#333" />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    onPress={handleImport}
-                    style={styles.headerButton}
-                  >
-                    <Upload size={20} color="#333" />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    onPress={handleExport}
-                    style={styles.headerButton}
-                  >
-                    <Download size={20} color="#333" />
-                  </TouchableOpacity>
-                </>
+  const renderVendorItem = ({ item }: { item: Vendor }) => (
+    <View style={styles.vendorCard}>
+      <TouchableOpacity 
+        style={styles.vendorCardContent}
+        onPress={() => handleViewVendor(item.id)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.vendorHeader}>
+          <View style={styles.avatarContainer}>
+            {false ? (
+              <Image source={{ uri: "placeholder" }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatarPlaceholder, { backgroundColor: Colors.background.tertiary }]}>
+                <Text style={styles.avatarText}>
+                  {item.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.vendorInfo}>
+            <Text style={styles.vendorName}>{item.name}</Text>
+            {item.company && (
+              <Text style={styles.companyName}>{item.company}</Text>
+            )}
+            <View style={styles.tagRow}>
+              <View 
+                style={[
+                  styles.statusBadge, 
+                  { backgroundColor: `${getStatusColor(item.status)}20` }
+                ]}
+              >
+                <View 
+                  style={[
+                    styles.statusDot, 
+                    { backgroundColor: getStatusColor(item.status) }
+                  ]} 
+                />
+                <Text 
+                  style={[
+                    styles.statusText, 
+                    { color: getStatusColor(item.status) }
+                  ]}
+                >
+                  {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                </Text>
+              </View>
+              {item.category && (
+                <View style={styles.categoryBadge}>
+                  <Text style={styles.categoryText}>{item.category}</Text>
+                </View>
               )}
             </View>
-          ),
-        }} 
-      />
+          </View>
+        </View>
+        
+        <View style={styles.vendorDetails}>
+          {item.email && (
+            <View style={styles.detailRow}>
+              <Mail size={14} color={Colors.text.secondary} style={styles.detailIcon} />
+              <Text style={styles.detailText}>{item.email}</Text>
+            </View>
+          )}
+          {item.phone && (
+            <View style={styles.detailRow}>
+              <Phone size={14} color={Colors.text.secondary} style={styles.detailIcon} />
+              <Text style={styles.detailText}>{item.phone}</Text>
+            </View>
+          )}
+          <View style={styles.balanceRow}>
+            <View style={styles.balanceItem}>
+              <Text style={styles.balanceLabel}>Balance</Text>
+              <Text style={styles.balanceValue}>{formatCurrency(item.outstandingBalance)}</Text>
+            </View>
+            <View style={styles.balanceItem}>
+              <Text style={styles.balanceLabel}>Total Purchases</Text>
+              <Text style={styles.balanceValue}>{formatCurrency(item.totalPurchases)}</Text>
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
       
-      <View style={styles.container}>
+      <View style={styles.actionButtonsContainer}>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => handleViewVendor(item.id)}
+        >
+          <Eye size={18} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => handleEditVendor(item.id)}
+        >
+          <Edit size={18} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => handleDeleteVendor(item.id)}
+        >
+          <Trash2 size={18} color={Colors.negative} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+      
+      {/* Modern Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.title}>Vendors</Text>
+        <View style={styles.headerRight} />
+      </View>
+      
+      {/* Search and Filter Bar */}
+      <View style={styles.searchFilterContainer}>
         <View style={styles.searchContainer}>
-          <Search size={20} color="#666" style={styles.searchIcon} />
+          <Search size={20} color={Colors.text.secondary} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search vendors..."
@@ -388,454 +470,384 @@ export default function VendorsScreen() {
             onChangeText={handleSearch}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity 
-              onPress={() => setSearchQuery("")}
-              style={styles.clearButton}
-            >
-              <Text style={styles.clearButtonText}>✕</Text>
+            <TouchableOpacity onPress={handleClearSearch}>
+              <X size={20} color={Colors.text.secondary} />
             </TouchableOpacity>
           )}
         </View>
         
-        {showFilterOptions && (
-          <View style={styles.optionsContainer}>
-            <TouchableOpacity 
-              style={[styles.optionButton, activeFilter === "all" && styles.activeOptionButton]}
-              onPress={() => handleFilter("all")}
-            >
-              <Text style={[styles.optionText, activeFilter === "all" && styles.activeOptionText]}>
-                All
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.optionButton, activeFilter === "active" && styles.activeOptionButton]}
-              onPress={() => handleFilter("active")}
-            >
-              <Text style={[styles.optionText, activeFilter === "active" && styles.activeOptionText]}>
-                Active
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.optionButton, activeFilter === "inactive" && styles.activeOptionButton]}
-              onPress={() => handleFilter("inactive")}
-            >
-              <Text style={[styles.optionText, activeFilter === "inactive" && styles.activeOptionText]}>
-                Inactive
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.optionButton, activeFilter === "blocked" && styles.activeOptionButton]}
-              onPress={() => handleFilter("blocked")}
-            >
-              <Text style={[styles.optionText, activeFilter === "blocked" && styles.activeOptionText]}>
-                Blocked
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        
-        {showSortOptions && (
-          <View style={styles.optionsContainer}>
-            <TouchableOpacity 
-              style={[styles.optionButton, sortOrder === "name" && styles.activeOptionButton]}
-              onPress={() => handleSort("name")}
-            >
-              <Text style={[styles.optionText, sortOrder === "name" && styles.activeOptionText]}>
-                Name
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.optionButton, sortOrder === "balance" && styles.activeOptionButton]}
-              onPress={() => handleSort("balance")}
-            >
-              <Text style={[styles.optionText, sortOrder === "balance" && styles.activeOptionText]}>
-                Balance
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.optionButton, sortOrder === "recent" && styles.activeOptionButton]}
-              onPress={() => handleSort("recent")}
-            >
-              <Text style={[styles.optionText, sortOrder === "recent" && styles.activeOptionText]}>
-                Recent
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{totalVendors}</Text>
-            <Text style={styles.statLabel}>Total</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{activeVendors}</Text>
-            <Text style={styles.statLabel}>Active</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>
-              {formatCurrency(totalOutstanding)}
-            </Text>
-            <Text style={styles.statLabel}>Payable</Text>
-          </View>
+        <View style={styles.filterSortButtons}>
+          <TouchableOpacity 
+            style={styles.filterButton}
+            onPress={() => setShowFilterBottomSheet(true)}
+          >
+            <Filter size={18} color={Colors.text.primary} />
+            <Text style={styles.filterButtonText}>{getFilterOptionLabel()}</Text>
+            <ChevronDown size={16} color={Colors.text.primary} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.sortButton}
+            onPress={() => setShowSortBottomSheet(true)}
+          >
+            <SlidersHorizontal size={18} color={Colors.text.primary} />
+            <Text style={styles.sortButtonText}>{getSortOptionLabel()}</Text>
+            <ChevronDown size={16} color={Colors.text.primary} />
+          </TouchableOpacity>
         </View>
-        
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-          </View>
-        ) : (
-          <FlatList
-            data={filteredVendors}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <VendorItem
-                vendor={item}
-                onPress={batchSelectionMode ? () => toggleVendorSelection(item.id) : () => handleViewVendor(item.id)}
-                onEdit={() => handleEditVendor(item.id)}
-                onDelete={() => handleDeleteVendor(item.id)}
-                isSelected={selectedVendors.includes(item.id)}
-                selectionMode={batchSelectionMode}
-              />
-            )}
-            contentContainerStyle={styles.listContent}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
-            ListEmptyComponent={
-              <EmptyState
-                title="No vendors found"
-                description="Add your first vendor by clicking the + button below"
-                icon="building"
-              />
-            }
-          />
-        )}
-        
-        <FloatingActionButton
-          icon={<Plus size={24} color="#fff" />}
-          onPress={handleAddVendor}
-        />
-
-        <SnackBar
-          visible={showSnackbar}
-          message={snackbarMessage}
-          onDismiss={() => setShowSnackbar(false)}
-          action={{
-            label: "DISMISS",
-            onPress: () => setShowSnackbar(false),
-          }}
-        />
-
-        <Modal
-          visible={showImportModal}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setShowImportModal(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Import Vendors</Text>
-                <TouchableOpacity onPress={() => setShowImportModal(false)}>
-                  <X size={24} color="#333" />
-                </TouchableOpacity>
-              </View>
-              
-              <ScrollView style={styles.modalContent}>
-                <Text style={styles.modalSectionTitle}>Import Options</Text>
-                
-                <TouchableOpacity 
-                  style={styles.importOption}
-                  onPress={() => {
-                    setShowImportModal(false);
-                    setSnackbarMessage("CSV file import started");
-                    setShowSnackbar(true);
-                  }}
-                >
-                  <View style={styles.importOptionIcon}>
-                    <Upload size={24} color={Colors.primary} />
-                  </View>
-                  <View style={styles.importOptionContent}>
-                    <Text style={styles.importOptionTitle}>Import from CSV</Text>
-                    <Text style={styles.importOptionDescription}>
-                      Upload a CSV file with vendor data
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.importOption}
-                  onPress={() => {
-                    setShowImportModal(false);
-                    setSnackbarMessage("Excel file import started");
-                    setShowSnackbar(true);
-                  }}
-                >
-                  <View style={styles.importOptionIcon}>
-                    <Upload size={24} color={Colors.primary} />
-                  </View>
-                  <View style={styles.importOptionContent}>
-                    <Text style={styles.importOptionTitle}>Import from Excel</Text>
-                    <Text style={styles.importOptionDescription}>
-                      Upload an Excel file with vendor data
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-                
-                <Text style={styles.modalSectionTitle}>Template</Text>
-                <Text style={styles.modalDescription}>
-                  Download a template file to see the required format for importing vendors.
-                </Text>
-                
-                <TouchableOpacity 
-                  style={styles.templateButton}
-                  onPress={() => {
-                    setSnackbarMessage("Template downloaded");
-                    setShowSnackbar(true);
-                  }}
-                >
-                  <Download size={16} color="#fff" style={styles.templateButtonIcon} />
-                  <Text style={styles.templateButtonText}>Download Template</Text>
-                </TouchableOpacity>
-              </ScrollView>
-              
-              <View style={styles.modalFooter}>
-                <TouchableOpacity 
-                  style={styles.modalCancelButton}
-                  onPress={() => setShowImportModal(false)}
-                >
-                  <Text style={styles.modalCancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
       </View>
-    </>
+      
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading vendors...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredVendors}
+          renderItem={renderVendorItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[Colors.primary]}
+              tintColor={Colors.primary}
+            />
+          }
+          ListEmptyComponent={
+            <EmptyState
+              icon={<Clipboard size={48} color={Colors.text.secondary} />}
+              title="No vendors found"
+              description={searchQuery ? "Try a different search term or filter" : "Add your first vendor to get started"}
+              actionLabel={searchQuery ? "Clear search" : "Add Vendor"}
+              onAction={searchQuery ? handleClearSearch : handleAddVendor}
+            />
+          }
+        />
+      )}
+      
+      {/* Sort Bottom Sheet */}
+      <BottomSheet
+        isVisible={showSortBottomSheet}
+        onClose={() => setShowSortBottomSheet(false)}
+        title="Sort Vendors"
+      >
+        {sortOptions.map((option) => (
+          <TouchableOpacity
+            key={option.id}
+            style={[
+              styles.optionItem,
+              sortOrder === option.id && styles.selectedOptionItem,
+            ]}
+            onPress={() => handleSort(option.id)}
+          >
+            <Text
+              style={[
+                styles.optionText,
+                sortOrder === option.id && styles.selectedOptionText,
+              ]}
+            >
+              {option.label}
+            </Text>
+            {sortOrder === option.id && (
+              <Check size={20} color={Colors.primary} />
+            )}
+          </TouchableOpacity>
+        ))}
+      </BottomSheet>
+      
+      {/* Filter Bottom Sheet */}
+      <BottomSheet
+        isVisible={showFilterBottomSheet}
+        onClose={() => setShowFilterBottomSheet(false)}
+        title="Filter Vendors"
+      >
+        {filterOptions.map((option) => (
+          <TouchableOpacity
+            key={option.id}
+            style={[
+              styles.optionItem,
+              activeFilter === option.id && styles.selectedOptionItem,
+            ]}
+            onPress={() => handleFilter(option.id)}
+          >
+            <Text
+              style={[
+                styles.optionText,
+                activeFilter === option.id && styles.selectedOptionText,
+              ]}
+            >
+              {option.label}
+            </Text>
+            {activeFilter === option.id && (
+              <Check size={20} color={Colors.primary} />
+            )}
+          </TouchableOpacity>
+        ))}
+      </BottomSheet>
+      
+      <FloatingActionButton
+        icon={<Plus size={24} color="#fff" />}
+        onPress={handleAddVendor}
+      />
+      
+      <SnackBar
+        visible={showSnackbar}
+        message={snackbarMessage}
+        onDismiss={() => setShowSnackbar(false)}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: Colors.background.secondary,
   },
-  headerButton: {
-    padding: 8,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: Colors.background.default,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
   },
-  headerRightContainer: {
-    flexDirection: "row",
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  batchActionText: {
-    color: Colors.primary,
-    fontWeight: "500",
-    fontSize: 14,
+  headerRight: {
+    width: 40,
   },
-  disabledButton: {
-    opacity: 0.5,
+  title: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
   },
-  disabledText: {
-    color: "#999",
+  searchFilterContainer: {
+    backgroundColor: Colors.background.default,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background.tertiary,
     borderRadius: 8,
-    margin: 16,
     paddingHorizontal: 12,
-    height: 48,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  searchIcon: {
-    marginRight: 8,
+    marginBottom: 12,
   },
   searchInput: {
     flex: 1,
-    height: "100%",
+    height: 40,
     fontSize: 16,
+    marginLeft: 8,
+    color: Colors.text.primary,
   },
-  clearButton: {
-    padding: 8,
+  filterSortButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  clearButtonText: {
-    fontSize: 16,
-    color: "#666",
-  },
-  optionsContainer: {
-    flexDirection: "row",
-    backgroundColor: "#fff",
-    margin: 16,
-    marginTop: 0,
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background.tertiary,
     borderRadius: 8,
-    padding: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  optionButton: {
-    flex: 1,
     paddingVertical: 8,
-    paddingHorizontal: 4,
-    alignItems: "center",
-    borderRadius: 4,
-  },
-  activeOptionButton: {
-    backgroundColor: "#1a73e810",
-  },
-  optionText: {
-    fontSize: 14,
-    color: "#333",
-  },
-  activeOptionText: {
-    color: Colors.primary,
-    fontWeight: "500",
-  },
-  statsContainer: {
-    flexDirection: "row",
-    backgroundColor: "#fff",
-    margin: 16,
-    marginTop: 0,
-    borderRadius: 8,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  statItem: {
+    paddingHorizontal: 12,
     flex: 1,
-    alignItems: "center",
+    marginRight: 8,
   },
-  statValue: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
+  filterButtonText: {
+    fontSize: 14,
+    color: Colors.text.primary,
+    marginHorizontal: 6,
+    flex: 1,
+  },
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background.tertiary,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    flex: 1,
+  },
+  sortButtonText: {
+    fontSize: 14,
+    color: Colors.text.primary,
+    marginHorizontal: 6,
+    flex: 1,
+  },
+  listContainer: {
+    padding: 16,
+    paddingBottom: 80, // Extra space for the FAB
+  },
+  vendorCard: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+  },
+  vendorCardContent: {
+    padding: 16,
+  },
+  vendorHeader: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  avatarContainer: {
+    marginRight: 12,
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+  },
+  avatarPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.text.primary,
+  },
+  vendorInfo: {
+    flex: 1,
+  },
+  vendorName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 2,
+  },
+  companyName: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginBottom: 6,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginRight: 8,
     marginBottom: 4,
   },
-  statLabel: {
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 4,
+  },
+  statusText: {
     fontSize: 12,
-    color: "#666",
+    fontWeight: '500',
+  },
+  categoryBadge: {
+    backgroundColor: Colors.background.tertiary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  categoryText: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+  },
+  vendorDetails: {
+    marginTop: 8,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  detailIcon: {
+    marginRight: 8,
+  },
+  detailText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  balanceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+  },
+  balanceItem: {
+    flex: 1,
+  },
+  balanceLabel: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 2,
+  },
+  balanceValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  listContent: {
-    padding: 16,
-    paddingTop: 0,
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: Colors.text.secondary,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContainer: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: "80%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: Colors.border.light,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
+  selectedOptionItem: {
+    backgroundColor: `${Colors.primary}10`,
   },
-  modalContent: {
-    padding: 16,
-    maxHeight: 400,
-  },
-  modalSectionTitle: {
+  optionText: {
     fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 12,
-    marginTop: 16,
+    color: Colors.text.primary,
   },
-  modalDescription: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  importOption: {
-    flexDirection: "row",
-    backgroundColor: "#f8f9fa",
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
-  },
-  importOptionIcon: {
-    marginRight: 16,
-    justifyContent: "center",
-  },
-  importOptionContent: {
-    flex: 1,
-  },
-  importOptionTitle: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#333",
-    marginBottom: 4,
-  },
-  importOptionDescription: {
-    fontSize: 14,
-    color: "#666",
-  },
-  templateButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-    padding: 12,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  templateButtonIcon: {
-    marginRight: 8,
-  },
-  templateButtonText: {
-    color: "#fff",
-    fontWeight: "500",
-    fontSize: 14,
-  },
-  modalFooter: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
-  },
-  modalCancelButton: {
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: "#f0f0f0",
-    alignItems: "center",
-  },
-  modalCancelButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#333",
+  selectedOptionText: {
+    color: Colors.primary,
+    fontWeight: '600',
   },
 });

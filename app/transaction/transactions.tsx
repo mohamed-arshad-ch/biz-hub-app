@@ -13,7 +13,7 @@ import { ArrowLeft } from "lucide-react-native";
 import { TransactionItem } from "@/components/TransactionItem";
 import { getAllTransactions } from "@/mocks/dashboardData";
 import Colors from "@/constants/colors";
-
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function TransactionsScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);

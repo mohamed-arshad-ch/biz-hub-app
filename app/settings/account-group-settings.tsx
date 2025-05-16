@@ -12,23 +12,66 @@ import {
   Modal,
   ActivityIndicator
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { 
   ArrowLeft, 
   Plus, 
   Edit2, 
   Trash2, 
-  X
+  X,
+  Layers,
+  FileText
 } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
-import { 
-  AccountGroup, 
-  getAccountGroups, 
-  addAccountGroup, 
-  updateAccountGroup, 
-  deleteAccountGroup 
-} from '@/utils/accountGroupStorageUtils';
+
+// Define the AccountGroup type
+interface AccountGroup {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Mock data for account groups
+const mockAccountGroups: AccountGroup[] = [
+  {
+    id: '1',
+    name: 'Assets',
+    description: 'Resources owned by the business that have future economic value',
+    createdAt: new Date('2023-01-15'),
+    updatedAt: new Date('2023-03-10')
+  },
+  {
+    id: '2',
+    name: 'Liabilities',
+    description: 'Financial obligations or debts owed to others',
+    createdAt: new Date('2023-01-15'),
+    updatedAt: new Date('2023-02-20')
+  },
+  {
+    id: '3',
+    name: 'Equity',
+    description: 'Residual interest in the assets after deducting liabilities',
+    createdAt: new Date('2023-01-15'),
+    updatedAt: new Date('2023-02-15')
+  },
+  {
+    id: '4',
+    name: 'Revenue',
+    description: 'Income generated from normal business operations',
+    createdAt: new Date('2023-01-20'),
+    updatedAt: new Date('2023-01-20')
+  },
+  {
+    id: '5',
+    name: 'Expenses',
+    description: 'Costs incurred in normal business operations',
+    createdAt: new Date('2023-01-20'),
+    updatedAt: new Date('2023-01-20')
+  }
+];
 
 export default function AccountGroupSettingsScreen() {
   const router = useRouter();
@@ -44,17 +87,13 @@ export default function AccountGroupSettingsScreen() {
     loadGroups();
   }, []);
 
-  const loadGroups = async () => {
+  const loadGroups = () => {
     setIsLoading(true);
-    try {
-      const groupsData = await getAccountGroups();
-      setGroups(groupsData);
-    } catch (error) {
-      console.error('Error loading account groups:', error);
-      Alert.alert('Error', 'Failed to load account groups');
-    } finally {
+    // Simulate API call delay
+    setTimeout(() => {
+      setGroups(mockAccountGroups);
       setIsLoading(false);
-    }
+    }, 500);
   };
 
   const handleAddGroup = () => {
@@ -85,29 +124,21 @@ export default function AccountGroupSettingsScreen() {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: async () => {
+          onPress: () => {
             setIsLoading(true);
-            try {
-              const success = await deleteAccountGroup(id);
-              if (success) {
-                setGroups(groups.filter(group => group.id !== id));
-                Alert.alert('Success', 'Group deleted successfully');
-              } else {
-                Alert.alert('Error', 'Failed to delete group');
-              }
-            } catch (error) {
-              console.error('Error deleting group:', error);
-              Alert.alert('Error', 'An error occurred while deleting the group');
-            } finally {
+            // Simulate API call delay
+            setTimeout(() => {
+              setGroups(groups.filter(group => group.id !== id));
               setIsLoading(false);
-            }
+              Alert.alert('Success', 'Group deleted successfully');
+            }, 500);
           }
         }
       ]
     );
   };
 
-  const handleSaveGroup = async () => {
+  const handleSaveGroup = () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Group name is required');
       return;
@@ -115,47 +146,52 @@ export default function AccountGroupSettingsScreen() {
 
     setIsLoading(true);
     
-    try {
+    // Simulate API call delay
+    setTimeout(() => {
       if (isEditing && currentGroup) {
         // Update existing group
-        const updatedGroup = await updateAccountGroup(currentGroup.id, {
+        const updatedGroup: AccountGroup = {
+          ...currentGroup,
           name,
-          description
-        });
+          description,
+          updatedAt: new Date()
+        };
         
-        if (updatedGroup) {
-          setGroups(groups.map(group => 
-            group.id === currentGroup.id ? updatedGroup : group
-          ));
-          Alert.alert('Success', 'Group updated successfully');
-        } else {
-          Alert.alert('Error', 'Failed to update group');
-        }
+        setGroups(groups.map(group => 
+          group.id === currentGroup.id ? updatedGroup : group
+        ));
+        Alert.alert('Success', 'Group updated successfully');
       } else {
         // Add new group
-        const newGroup = await addAccountGroup({
+        const newGroup: AccountGroup = {
+          id: Date.now().toString(),
           name,
-          description
-        });
+          description,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
         
         setGroups([...groups, newGroup]);
         Alert.alert('Success', 'Group added successfully');
       }
       
       setModalVisible(false);
-    } catch (error) {
-      console.error('Error saving group:', error);
-      Alert.alert('Error', 'An error occurred while saving the group');
-    } finally {
       setIsLoading(false);
-    }
+    }, 500);
   };
 
   const renderGroupItem = ({ item }: { item: AccountGroup }) => (
     <View style={styles.groupItem}>
       <View style={styles.groupInfo}>
-        <Text style={styles.groupName}>{item.name}</Text>
-        <Text style={styles.groupDescription}>{item.description}</Text>
+        <View style={styles.groupIconContainer}>
+          <Layers size={18} color={Colors.primary} />
+        </View>
+        <View style={styles.groupTextContainer}>
+          <Text style={styles.groupName}>{item.name}</Text>
+          {item.description ? (
+            <Text style={styles.groupDescription}>{item.description}</Text>
+          ) : null}
+        </View>
       </View>
       <View style={styles.groupActions}>
         <TouchableOpacity 
@@ -176,108 +212,111 @@ export default function AccountGroupSettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen 
-        options={{
-          title: "Account Group Settings",
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-        }} 
-      />
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.headerDescription}>
-            Manage account groups for better organization of your financial accounts.
+      {/* Modern Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Account Groups</Text>
+        <TouchableOpacity 
+          style={styles.addButton}
+          onPress={handleAddGroup}
+          activeOpacity={0.7}
+        >
+          <Plus size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      {isLoading && groups.length === 0 ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading account groups...</Text>
+        </View>
+      ) : groups.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <FileText size={60} color={`${Colors.primary}80`} />
+          <Text style={styles.emptyTitle}>No Account Groups</Text>
+          <Text style={styles.emptyText}>
+            Create account groups to better organize your financial accounts.
           </Text>
           <TouchableOpacity 
-            style={styles.addButton}
+            style={styles.emptyAddButton}
             onPress={handleAddGroup}
-            disabled={isLoading}
           >
-            <Plus size={20} color="#fff" />
-            <Text style={styles.addButtonText}>Add New Group</Text>
+            <Text style={styles.emptyAddButtonText}>Add Group</Text>
           </TouchableOpacity>
         </View>
-        
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Loading account groups...</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={groups}
-            renderItem={renderGroupItem}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
-      </View>
-      
-      {/* Add/Edit Group Modal */}
+      ) : (
+        <FlatList
+          data={groups}
+          renderItem={renderGroupItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+
+      {/* Group Form Modal */}
       <Modal
         visible={modalVisible}
         transparent={true}
         animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {isEditing ? 'Edit Account Group' : 'Add Account Group'}
               </Text>
-              <TouchableOpacity 
-                onPress={() => setModalVisible(false)}
+              <TouchableOpacity
                 style={styles.closeButton}
-                disabled={isLoading}
+                onPress={() => setModalVisible(false)}
               >
-                <X size={20} color="#666" />
+                <X size={20} color={Colors.text.secondary} />
               </TouchableOpacity>
             </View>
-            
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Group Name</Text>
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholder="Enter group name"
-                editable={!isLoading}
-              />
-            </View>
-            
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Description</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={description}
-                onChangeText={setDescription}
-                placeholder="Enter group description"
-                multiline
-                numberOfLines={3}
-                editable={!isLoading}
-              />
-            </View>
-            
-            <TouchableOpacity 
-              style={[styles.saveButton, isLoading && styles.disabledButton]}
-              onPress={handleSaveGroup}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.saveButtonText}>Save</Text>
-              )}
-            </TouchableOpacity>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Group Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Enter group name"
+                  placeholderTextColor="#999"
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Description (Optional)</Text>
+                <TextInput
+                  style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                  value={description}
+                  onChangeText={setDescription}
+                  placeholder="Enter description"
+                  placeholderTextColor="#999"
+                  multiline
+                />
+              </View>
+
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleSaveGroup}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>
+                    {isEditing ? 'Update Group' : 'Add Group'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -288,129 +327,43 @@ export default function AccountGroupSettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  headerButton: {
-    padding: 8,
-  },
-  content: {
-    flex: 1,
-    padding: 16,
+    backgroundColor: Colors.background.secondary,
   },
   header: {
-    marginBottom: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
-  headerDescription: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 16,
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: Colors.background.tertiary,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
   },
   addButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    borderRadius: 8,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    marginLeft: 8,
-    fontWeight: '500',
-  },
-  listContent: {
-    paddingBottom: 20,
-  },
-  groupItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  groupInfo: {
-    flex: 1,
-  },
-  groupName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  groupDescription: {
-    fontSize: 14,
-    color: '#666',
-  },
-  groupActions: {
-    flexDirection: 'row',
-  },
-  actionButton: {
-    padding: 8,
-    marginLeft: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    width: '90%',
-    maxWidth: 400,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  formGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#f9f9f9',
-  },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  saveButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,
@@ -420,9 +373,150 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#666',
+    color: Colors.text.secondary,
   },
-  disabledButton: {
-    opacity: 0.7,
-  }
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginTop: 16,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  emptyAddButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  emptyAddButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  listContent: {
+    padding: 16,
+  },
+  groupItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  groupInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  groupIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: `${Colors.primary}10`,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  groupTextContainer: {
+    flex: 1,
+  },
+  groupName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  groupDescription: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginTop: 4,
+  },
+  groupActions: {
+    flexDirection: 'row',
+  },
+  actionButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: Colors.background.default,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalBody: {
+    padding: 16,
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: Colors.text.primary,
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: Colors.background.tertiary,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    padding: 12,
+    fontSize: 16,
+    color: Colors.text.primary,
+  },
+  saveButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 }); 

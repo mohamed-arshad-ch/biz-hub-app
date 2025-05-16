@@ -5,7 +5,6 @@ import { Pressable, TouchableOpacity, Text, StyleSheet } from "react-native";
 import { Building2, LogOut, LayoutGrid, FolderOpen, BarChart3 } from "lucide-react-native";
 
 import Colors from "@/constants/colors";
-import { useAuthStore } from "@/stores/auth-store";
 
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof FontAwesome>["name"];
@@ -16,10 +15,8 @@ function TabBarIcon(props: {
 
 export default function TabLayout() {
   const router = useRouter();
-  const { logout } = useAuthStore();
 
   const handleLogout = () => {
-    logout();
     router.replace('/login');
   };
 

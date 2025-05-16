@@ -10,16 +10,18 @@ import {
   FlatList,
   Modal,
   ColorValue,
-  ActivityIndicator
+  ActivityIndicator,
+  ScrollView
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { 
   ArrowLeft, 
   Plus, 
   Edit2, 
   Trash2, 
   X,
-  Circle
+  Circle,
+  ListPlus
 } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
@@ -29,7 +31,7 @@ import {
   addIncomeCategory, 
   updateIncomeCategory, 
   deleteIncomeCategory 
-} from '@/utils/categoryStorageUtils';
+} from '@/mocks/categoryData';
 
 // Color options for categories
 const colorOptions = [
@@ -182,7 +184,9 @@ export default function IncomeCategorySettingsScreen() {
           <Circle size={16} fill={item.color} color={item.color} />
           <Text style={styles.categoryName}>{item.name}</Text>
         </View>
-        <Text style={styles.categoryDescription}>{item.description}</Text>
+        {item.description ? (
+          <Text style={styles.categoryDescription}>{item.description}</Text>
+        ) : null}
       </View>
       <View style={styles.categoryActions}>
         <TouchableOpacity 
@@ -203,115 +207,118 @@ export default function IncomeCategorySettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen 
-        options={{
-          title: "Income Categories",
-          headerLeft: () => (
-            <TouchableOpacity 
-              onPress={() => router.back()}
-              style={styles.headerButton}
-            >
-              <ArrowLeft size={20} color="#333" />
-            </TouchableOpacity>
-          ),
-        }} 
-      />
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.headerDescription}>
-            Manage income categories to categorize your income transactions.
+      {/* Modern Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Income Categories</Text>
+        <TouchableOpacity 
+          style={styles.addButton}
+          onPress={handleAddCategory}
+          activeOpacity={0.7}
+        >
+          <Plus size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      {isLoading && categories.length === 0 ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading categories...</Text>
+        </View>
+      ) : categories.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <ListPlus size={60} color={`${Colors.primary}80`} />
+          <Text style={styles.emptyTitle}>No Categories</Text>
+          <Text style={styles.emptyText}>
+            Add income categories to organize your financial records.
           </Text>
           <TouchableOpacity 
-            style={styles.addButton}
+            style={styles.emptyAddButton}
             onPress={handleAddCategory}
-            disabled={isLoading}
           >
-            <Plus size={20} color="#fff" />
-            <Text style={styles.addButtonText}>Add New Category</Text>
+            <Text style={styles.emptyAddButtonText}>Add Category</Text>
           </TouchableOpacity>
         </View>
-        
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Loading categories...</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={categories}
-            renderItem={renderCategoryItem}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
-      </View>
-      
-      {/* Add/Edit Category Modal */}
+      ) : (
+        <FlatList
+          data={categories}
+          renderItem={renderCategoryItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+
+      {/* Category Form Modal */}
       <Modal
         visible={modalVisible}
         transparent={true}
         animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {isEditing ? 'Edit Income Category' : 'Add Income Category'}
+                {isEditing ? 'Edit Category' : 'Add Category'}
               </Text>
-              <TouchableOpacity 
-                onPress={() => setModalVisible(false)}
+              <TouchableOpacity
                 style={styles.closeButton}
-                disabled={isLoading}
+                onPress={() => setModalVisible(false)}
               >
-                <X size={20} color="#666" />
+                <X size={20} color={Colors.text.secondary} />
               </TouchableOpacity>
             </View>
-            
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Category Name</Text>
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholder="Enter category name"
-                editable={!isLoading}
-              />
-            </View>
-            
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Description</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={description}
-                onChangeText={setDescription}
-                placeholder="Enter category description"
-                multiline
-                numberOfLines={3}
-                editable={!isLoading}
-              />
-            </View>
-            
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Color</Text>
-              <View style={styles.colorOptions}>
-                {colorOptions.map(renderColorOption)}
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Category Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Enter category name"
+                  placeholderTextColor="#999"
+                />
               </View>
-            </View>
-            
-            <TouchableOpacity 
-              style={[styles.saveButton, isLoading && styles.disabledButton]}
-              onPress={handleSaveCategory}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.saveButtonText}>Save</Text>
-              )}
-            </TouchableOpacity>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Description (Optional)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={description}
+                  onChangeText={setDescription}
+                  placeholder="Enter description"
+                  placeholderTextColor="#999"
+                  multiline
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Color</Text>
+                <View style={styles.colorOptions}>
+                  {colorOptions.map(renderColorOption)}
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleSaveCategory}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>
+                    {isEditing ? 'Update Category' : 'Add Category'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -322,150 +329,43 @@ export default function IncomeCategorySettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  headerButton: {
-    padding: 8,
-  },
-  content: {
-    flex: 1,
-    padding: 16,
+    backgroundColor: Colors.background.secondary,
   },
   header: {
-    marginBottom: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
-  headerDescription: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 16,
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: Colors.background.tertiary,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
   },
   addButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    borderRadius: 8,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    marginLeft: 8,
-    fontWeight: '500',
-  },
-  listContent: {
-    paddingBottom: 20,
-  },
-  categoryItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  categoryInfo: {
-    flex: 1,
-  },
-  categoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  categoryName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginLeft: 8,
-  },
-  categoryDescription: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 24,
-  },
-  categoryActions: {
-    flexDirection: 'row',
-  },
-  actionButton: {
-    padding: 8,
-    marginLeft: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    width: '90%',
-    maxWidth: 400,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  formGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#f9f9f9',
-  },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  colorOptions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 8,
-  },
-  colorOption: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    margin: 4,
-  },
-  selectedColorOption: {
-    borderWidth: 2,
-    borderColor: '#333',
-  },
-  saveButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,
@@ -475,9 +375,158 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#666',
+    color: Colors.text.secondary,
   },
-  disabledButton: {
-    opacity: 0.7,
-  }
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginTop: 16,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  emptyAddButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  emptyAddButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  listContent: {
+    padding: 16,
+  },
+  categoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  categoryInfo: {
+    flex: 1,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  categoryName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginLeft: 8,
+  },
+  categoryDescription: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginTop: 4,
+    marginLeft: 24,
+  },
+  categoryActions: {
+    flexDirection: 'row',
+  },
+  actionButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: Colors.background.default,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalBody: {
+    padding: 16,
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: Colors.text.primary,
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: Colors.background.tertiary,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    padding: 12,
+    fontSize: 16,
+    color: Colors.text.primary,
+    minHeight: 48,
+  },
+  colorOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+  },
+  colorOption: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    margin: 8,
+  },
+  selectedColorOption: {
+    borderWidth: 2,
+    borderColor: Colors.text.primary,
+  },
+  saveButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 }); 
