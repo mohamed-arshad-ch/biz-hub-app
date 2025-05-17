@@ -10,7 +10,9 @@ import { ErrorBoundary } from "./error-boundary";
 import CustomSplashScreen from "@/components/SplashScreen";
 import { SQLiteProvider } from 'expo-sqlite';
 import { DATABASE_NAME } from '@/db';
-import { setupDatabase } from '@/db/setup';
+import { setupDatabase, setupDefaultData } from '@/db/setup';
+
+import { initializeAuth } from '../store/auth';
 
 export const unstable_settings = {
   // Ensure that reloading on `/modal` keeps a back button present.
@@ -28,24 +30,31 @@ export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
+  const [authInitialized, setAuthInitialized] = useState(false);
 
-  // Set up database
+  // Set up database and initialize auth
   useEffect(() => {
-    const initDb = async () => {
+    const initApp = async () => {
       try {
         const success = await setupDatabase();
+        await setupDefaultData(1)
         setDbReady(success);
         if (!success) {
           setDbError('Failed to set up database');
+          return;
         }
+
+        // Initialize auth state
+        await initializeAuth();
+        setAuthInitialized(true);
       } catch (error) {
-        console.error('Database initialization error:', error);
-        setDbError('An error occurred setting up the database');
+        console.error('Initialization error:', error);
+        setDbError('An error occurred during initialization');
         setDbReady(false);
       }
     };
 
-    initDb();
+    initApp();
   }, []);
 
   useEffect(() => {
@@ -56,7 +65,7 @@ export default function RootLayout() {
   }, [fontError]);
 
   useEffect(() => {
-    if (loaded && dbReady) {
+    if (loaded && dbReady && authInitialized) {
       // Hide the native splash screen
       SplashScreen.hideAsync();
       
@@ -67,9 +76,9 @@ export default function RootLayout() {
       
       return () => clearTimeout(timer);
     }
-  }, [loaded, dbReady]);
+  }, [loaded, dbReady, authInitialized]);
 
-  if (!loaded || !dbReady || showSplash) {
+  if (!loaded || !dbReady || !authInitialized || showSplash) {
     // Show loading or custom splash screen
     if (dbError) {
       return (
@@ -97,7 +106,9 @@ export default function RootLayout() {
       >
         <GestureHandlerRootView style={{ flex: 1 }}>
           <ErrorBoundary>
-            <RootLayoutNav />
+          
+              <RootLayoutNav />
+           
           </ErrorBoundary>
         </GestureHandlerRootView>
       </SQLiteProvider>

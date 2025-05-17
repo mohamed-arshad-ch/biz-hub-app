@@ -1,5 +1,5 @@
 export interface SalesOrderItem {
-  productId: string;
+  productId: number;
   productName: string;
   quantity: number;
   unitPrice: number;
@@ -7,8 +7,8 @@ export interface SalesOrderItem {
 }
 
 export interface SalesOrder {
-  id: string;
-  customerId: string;
+  id: number;
+  customerId: number;
   customerName: string;
   orderNumber: string;
   orderDate: string;
@@ -23,7 +23,7 @@ export interface SalesOrder {
 }
 
 export interface SalesOrderFormData {
-  customerId: string;
+  customerId: number;
   orderNumber: string;
   orderDate: string;
   items: SalesOrderItem[];

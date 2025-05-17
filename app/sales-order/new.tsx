@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -11,7 +11,8 @@ import {
   KeyboardAvoidingView, 
   Platform,
   Modal,
-  FlatList
+  FlatList,
+  ActivityIndicator
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { 
@@ -30,12 +31,29 @@ import {
   DollarSign
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { SalesOrderFormData, SalesOrderItem } from '@/types/sales-order';
-import { getCustomersData } from '@/mocks/customersData';
-import { getProductsData } from '@/mocks/productsData';
-import { Customer } from '@/types/customer';
-import { Product } from '@/types/product';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuthStore } from '@/store/auth';
+import { createSalesOrder } from '@/db/sales-order';
+import { getAllCustomers } from '@/db/customer';
+import { getAllProducts } from '@/db/product';
+import type { Customer } from '@/db/schema';
+import type { Product } from '@/db/schema';
+import type { NewSalesOrder, NewSalesOrderItem } from '@/db/schema';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSQLiteContext } from 'expo-sqlite';
+import { drizzle } from 'drizzle-orm/expo-sqlite';
+import * as schema from '@/db/schema';
+import { desc } from 'drizzle-orm';
+
+interface OrderItem {
+  productId: number;
+  productName?: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  discount: number;
+  tax: number;
+}
+
 const STATUS_OPTIONS = [
   { value: 'draft', label: 'Draft' },
   { value: 'processing', label: 'Processing' },
@@ -45,118 +63,286 @@ const STATUS_OPTIONS = [
 
 export default function NewSalesOrderScreen() {
   const router = useRouter();
-  const [formData, setFormData] = useState<SalesOrderFormData>({
-    customerId: '',
-    orderNumber: `SO-${Date.now().toString().slice(-4)}`,
-    orderDate: new Date().toISOString().split('T')[0],
-    items: [],
-    subtotal: 0,
-    tax: 0,
-    total: 0,
-    status: 'draft',
-    notes: ''
-  });
-  
+  const { user } = useAuthStore();
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
+  const [orderNumber, setOrderNumber] = useState('');
+  const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
+  const [notes, setNotes] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const sqlite = useSQLiteContext();
+  const db = drizzle(sqlite, { schema });
+
+  useEffect(() => {
+    loadData();
+    autoGenerateOrderNumber();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      if (!user) return;
+      const [fetchedCustomers, fetchedProducts] = await Promise.all([
+        getAllCustomers(),
+        getAllProducts()
+      ]);
+      setCustomers(fetchedCustomers);
+      setProducts(fetchedProducts);
+    } catch (error) {
+      console.error('Error loading data:', error);
+      Alert.alert('Error', 'Failed to load customers and products');
+    }
+  };
+
+  // Auto-generate order number with prefix SO-
+  const autoGenerateOrderNumber = async () => {
+    try {
+      // Get the latest order number
+      const latestOrder = await db.select().from(schema.salesOrders).orderBy(desc(schema.salesOrders.id)).limit(1).get();
+      let nextNumber = 1;
+      if (latestOrder && latestOrder.orderNumber) {
+        const match = latestOrder.orderNumber.match(/SO-(\d+)/);
+        if (match && match[1]) {
+          nextNumber = parseInt(match[1], 10) + 1;
+        }
+      }
+      const nextOrderNumber = `SO-${nextNumber.toString().padStart(4, '0')}`;
+      setOrderNumber((prev) => prev || nextOrderNumber);
+    } catch (err) {
+      setOrderNumber((prev) => prev || 'SO-0001');
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      if (!user || !selectedCustomer) {
+        Alert.alert('Error', 'Please select a customer');
+        return;
+      }
+
+      if (orderItems.length === 0) {
+        Alert.alert('Error', 'Please add at least one item');
+        return;
+      }
+
+      setLoading(true);
+
+      const order: NewSalesOrder = {
+        userId: user.id,
+        customerId: selectedCustomer.id,
+        orderNumber: orderNumber || `SO-${Date.now()}`,
+        orderDate,
+        status: 'draft',
+        total: Math.round(calculateOrderTotal() * 100),
+        subtotal: Math.round(orderItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * 100),
+        tax: Math.round(orderItems.reduce((sum, item) => sum + ((item.quantity * item.unitPrice - (item.quantity * item.unitPrice * item.discount / 100)) * item.tax / 100), 0) * 100),
+        discount: Math.round(orderItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice * item.discount / 100), 0) * 100),
+        notes
+      };
+
+      const items = orderItems.map(item => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: Math.round(item.unitPrice * 100),
+        total: Math.round(item.total * 100),
+        discount: Math.round(item.discount * 100),
+        tax: Math.round(item.tax * 100)
+      }));
+
+      await createSalesOrder(order, items as any);
+      Alert.alert('Success', 'Sales order created successfully', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
+    } catch (error) {
+      console.error('Error creating sales order:', error);
+      Alert.alert('Error', 'Failed to create sales order');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Bottom sheet visibility states
   const [showCustomerSheet, setShowCustomerSheet] = useState(false);
   const [showProductSheet, setShowProductSheet] = useState<number | null>(null);
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   
-  // Search functionality for customers
-  const [customers] = useState<Customer[]>(getCustomersData());
+  // Customer data state
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
+  
+  // Product data state
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+
+  // Filter customers based on search
   const filteredCustomers = customers.filter(customer => 
-    customer.name.toLowerCase().includes(customerSearch.toLowerCase())
+    customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+    (customer.email && customer.email.toLowerCase().includes(customerSearch.toLowerCase())) ||
+    (customer.phone && customer.phone.includes(customerSearch))
   );
   
-  const [products] = useState<Product[]>(getProductsData());
-  // Search functionality for products
-  const [productSearch, setProductSearch] = useState('');
+  // Filter products based on search
   const filteredProducts = products.filter(product => 
-    product.name.toLowerCase().includes(productSearch.toLowerCase())
+    product.productName.toLowerCase().includes(productSearch.toLowerCase()) ||
+    (product.sku && product.sku.toLowerCase().includes(productSearch.toLowerCase()))
   );
 
+  // Load customers when bottom sheet is opened
+  useEffect(() => {
+    if (showCustomerSheet) {
+      loadCustomers();
+    }
+  }, [showCustomerSheet]);
+
+  // Load products when bottom sheet is opened
+  useEffect(() => {
+    if (showProductSheet !== null) {
+      loadProducts();
+    }
+  }, [showProductSheet]);
+
+  const loadCustomers = async () => {
+    if (!user) return;
+    try {
+      setLoadingCustomers(true);
+      const dbCustomers = await getAllCustomers();
+      const mappedCustomers: Customer[] = dbCustomers.map(c => ({
+        id: c.id,
+        userId: c.userId,
+        name: c.name,
+        company: c.company,
+        email: c.email,
+        phone: c.phone,
+        address: c.address,
+        city: c.city,
+        state: c.state,
+        zipCode: c.zipCode,
+        country: c.country,
+        contactPerson: c.contactPerson,
+        category: c.category,
+        status: c.status,
+        notes: c.notes,
+        creditLimit: c.creditLimit,
+        paymentTerms: c.paymentTerms,
+        taxId: c.taxId,
+        tags: c.tags,
+        outstandingBalance: c.outstandingBalance,
+        totalPurchases: c.totalPurchases,
+        createdAt: c.createdAt
+      }));
+      setCustomers(mappedCustomers);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+      Alert.alert('Error', 'Failed to load customers');
+    } finally {
+      setLoadingCustomers(false);
+    }
+  };
+
+  const loadProducts = async () => {
+    if (!user) return;
+    try {
+      setLoadingProducts(true);
+      const dbProducts = await getAllProducts();
+      const mappedProducts: Product[] = dbProducts.map(p => ({
+        id: p.id,
+        userId: p.userId,
+        productName: p.productName,
+        sku: p.sku,
+        barcode: p.barcode,
+        category: p.category,
+        brand: p.brand,
+        isActive: p.isActive ?? true,
+        costPrice: p.costPrice,
+        sellingPrice: p.sellingPrice,
+        taxRate: p.taxRate,
+        stockQuantity: p.stockQuantity,
+        unit: p.unit,
+        reorderLevel: p.reorderLevel,
+        vendor: p.vendor,
+        location: p.location,
+        shortDescription: p.shortDescription,
+        fullDescription: p.fullDescription,
+        weight: p.weight,
+        length: p.length,
+        width: p.width,
+        height: p.height,
+        tags: p.tags,
+        notes: p.notes,
+        images: p.images,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt
+      }));
+      setProducts(mappedProducts);
+    } catch (error) {
+      console.error('Error loading products:', error);
+      Alert.alert('Error', 'Failed to load products');
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
   const handleAddItem = () => {
-    const newItem: SalesOrderItem = {
-      productId: '',
-      productName: '',
-      quantity: 1,
-      unitPrice: 0,
-      total: 0
-    };
-    setFormData({
-      ...formData,
-      items: [...formData.items, newItem]
-    });
+    setOrderItems([
+      ...orderItems,
+      {
+        productId: 0,
+        quantity: 1,
+        unitPrice: 0,
+        total: 0,
+        discount: 0,
+        tax: 0
+      }
+    ]);
   };
   
   const handleRemoveItem = (index: number) => {
-    const newItems = [...formData.items];
-    newItems.splice(index, 1);
-    
-    const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1; // 10% tax rate
-    
-    setFormData({
-      ...formData,
-      items: newItems,
-      subtotal,
-      tax,
-      total: subtotal + tax
-    });
+    setOrderItems(orderItems.filter((_, i) => i !== index));
   };
 
-  const handleItemChange = (index: number, field: keyof SalesOrderItem, value: string | number) => {
-    const newItems = [...formData.items];
-    
-    if (field === 'productId') {
-      const selectedProduct = products.find(p => p.id === value);
-      if (selectedProduct) {
-        newItems[index] = {
-          ...newItems[index],
-          productId: selectedProduct.id,
-          productName: selectedProduct.name,
-          unitPrice: selectedProduct.sellingPrice,
-          total: selectedProduct.sellingPrice * newItems[index].quantity
-        };
-      }
-    } else {
-      newItems[index] = {
-        ...newItems[index],
-        [field]: value,
-        total: field === 'quantity' || field === 'unitPrice'
-          ? (field === 'quantity' ? Number(value) : newItems[index].quantity) *
-            (field === 'unitPrice' ? Number(value) : newItems[index].unitPrice)
-          : newItems[index].total
-      };
+  const handleItemChange = (index: number, field: keyof OrderItem, value: number) => {
+    const newItems = [...orderItems];
+    newItems[index] = {
+      ...newItems[index],
+      [field]: value
+    };
+
+    // Recalculate total
+    if (field === 'quantity' || field === 'unitPrice' || field === 'discount' || field === 'tax') {
+      const item = newItems[index];
+      const subtotal = item.quantity * item.unitPrice;
+      const discountAmount = (subtotal * item.discount) / 100;
+      const taxAmount = ((subtotal - discountAmount) * item.tax) / 100;
+      newItems[index].total = Math.round(subtotal - discountAmount + taxAmount);
     }
 
-    const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1; // 10% tax rate
-
-    setFormData({
-      ...formData,
-      items: newItems,
-      subtotal,
-      tax,
-      total: subtotal + tax
-    });
+    setOrderItems(newItems);
   };
   
   const selectCustomer = (customer: Customer) => {
-    setFormData({ ...formData, customerId: customer.id });
+    setSelectedCustomer(customer);
     setShowCustomerSheet(false);
     setCustomerSearch('');
   };
   
-  const selectProduct = (index: number, product: Product) => {
-    handleItemChange(index, 'productId', product.id);
+  const selectProduct = (index: number, selectedProduct: Product) => {
+    const newItems = [...orderItems];
+    newItems[index] = {
+      ...newItems[index],
+      productId: selectedProduct.id,
+      productName: selectedProduct.productName,
+      unitPrice: selectedProduct.sellingPrice,
+      total: selectedProduct.sellingPrice * newItems[index].quantity
+    };
+    setOrderItems(newItems);
     setShowProductSheet(null);
     setProductSearch('');
   };
   
   const selectStatus = (status: string) => {
-    setFormData({ ...formData, status: status as SalesOrderFormData['status'] });
+    // Implement status selection logic
     setShowStatusSheet(false);
   };
   
@@ -180,72 +366,44 @@ export default function NewSalesOrderScreen() {
       style={styles.sheetItem}
       onPress={() => selectCustomer(item)}
     >
-      <Text style={styles.sheetItemText}>{item.name}</Text>
-      {formData.customerId === item.id && (
-        <Check size={18} color={Colors.primary} />
+      <View style={styles.customerItemContent}>
+        <Text style={styles.customerName}>{item.name}</Text>
+        {item.company && (
+          <Text style={styles.customerCompany}>{item.company}</Text>
+        )}
+      </View>
+      {selectedCustomer?.id === item.id && (
+        <Check size={24} color="#007AFF" />
       )}
     </TouchableOpacity>
   );
   
-  const renderProductItem = ({ item }: { item: Product }, index: number) => (
+  const renderProductItem = ({ item }: { item: Product }) => (
     <TouchableOpacity
       style={styles.sheetItem}
-      onPress={() => selectProduct(index, item)}
+      onPress={() => selectProduct(showProductSheet!, item)}
     >
-      <View style={{flex: 1}}>
-        <Text style={styles.sheetItemText}>{item.name}</Text>
-        <Text style={styles.sheetItemPrice}>${item.sellingPrice.toFixed(2)}</Text>
+      <View style={styles.productItemContent}>
+        <Text style={styles.productName}>{item.productName}</Text>
+        <Text style={styles.productSku}>SKU: {item.sku}</Text>
       </View>
-      {formData.items[index]?.productId === item.id && (
-        <Check size={18} color={Colors.primary} />
-      )}
+      <Text style={styles.productPrice}>${item.sellingPrice.toFixed(2)}</Text>
     </TouchableOpacity>
   );
 
-  const handleSave = () => {
-    // Validate form data
-    if (!formData.customerId) {
-      Alert.alert('Error', 'Please select a customer');
-      return;
-    }
-    
-    if (formData.items.length === 0) {
-      Alert.alert('Error', 'Please add at least one item');
-      return;
-    }
-    
-    const invalidItems = formData.items.filter(item => !item.productId || item.quantity <= 0);
-    if (invalidItems.length > 0) {
-      Alert.alert('Error', 'Please complete all item details');
-      return;
-    }
-
-    // Here you would typically save the data to your backend
-    Alert.alert(
-      'Success',
-      'Sales order saved successfully',
-      [
-        {
-          text: 'OK',
-          onPress: () => router.back()
-        }
-      ]
-    );
+  const calculateOrderTotal = () => {
+    return orderItems.reduce((sum, item) => sum + item.total, 0);
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={100}
-    >
+    <SafeAreaView style={styles.container} edges={['top','left','right','bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>New Sales Order</Text>
-        <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
+        <TouchableOpacity onPress={handleSubmit} style={styles.saveButton}>
           <Text style={styles.saveButtonText}>Save</Text>
         </TouchableOpacity>
       </View>
@@ -267,9 +425,9 @@ export default function NewSalesOrderScreen() {
             >
               <Text style={[
                 styles.selectText, 
-                !formData.customerId && styles.placeholderText
+                !selectedCustomer && styles.placeholderText
               ]}>
-                {customers.find(c => c.id === formData.customerId)?.name || 'Select customer'}
+                {selectedCustomer?.name || 'Select customer'}
               </Text>
               <ChevronDown size={18} color={Colors.text.secondary} />
             </TouchableOpacity>
@@ -283,8 +441,8 @@ export default function NewSalesOrderScreen() {
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
-                value={formData.orderNumber}
-                onChangeText={(value) => setFormData({ ...formData, orderNumber: value })}
+                value={orderNumber}
+                onChangeText={(value) => setOrderNumber(value)}
               />
             </View>
           </View>
@@ -298,8 +456,8 @@ export default function NewSalesOrderScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="YYYY-MM-DD"
-                value={formData.orderDate}
-                onChangeText={(value) => setFormData({ ...formData, orderDate: value })}
+                value={orderDate}
+                onChangeText={(value) => setOrderDate(value)}
               />
             </View>
           </View>
@@ -317,12 +475,12 @@ export default function NewSalesOrderScreen() {
             </TouchableOpacity>
           </View>
           
-          {formData.items.length === 0 ? (
+          {orderItems.length === 0 ? (
             <View style={styles.emptyItems}>
               <Text style={styles.emptyItemsText}>No items added yet</Text>
             </View>
           ) : (
-            formData.items.map((item, index) => (
+            orderItems.map((item, index) => (
               <View key={index} style={styles.itemCard}>
                 <View style={styles.itemFormGroup}>
                   <View style={styles.labelContainer}>
@@ -403,19 +561,19 @@ export default function NewSalesOrderScreen() {
             ))
           )}
           
-          {formData.items.length > 0 && (
+          {orderItems.length > 0 && (
             <View style={styles.summaryContainer}>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Subtotal</Text>
-                <Text style={styles.summaryValue}>${formData.subtotal.toFixed(2)}</Text>
+                <Text style={styles.summaryValue}>${orderItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)}</Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Tax (10%)</Text>
-                <Text style={styles.summaryValue}>${formData.tax.toFixed(2)}</Text>
+                <Text style={styles.summaryValue}>${orderItems.reduce((sum, item) => sum + ((item.quantity * item.unitPrice - (item.quantity * item.unitPrice * item.discount / 100)) * item.tax / 100), 0).toFixed(2)}</Text>
               </View>
               <View style={[styles.summaryRow, styles.totalRow]}>
                 <Text style={styles.totalLabel}>Total</Text>
-                <Text style={styles.totalValue}>${formData.total.toFixed(2)}</Text>
+                <Text style={styles.totalValue}>${orderItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)}</Text>
               </View>
             </View>
           )}
@@ -431,12 +589,12 @@ export default function NewSalesOrderScreen() {
               onPress={() => setShowStatusSheet(true)}
             >
               <View style={[styles.statusIndicator, { 
-                backgroundColor: getStatusColor(formData.status).bg
+                backgroundColor: getStatusColor('draft').bg
               }]}>
                 <Text style={[styles.statusIndicatorText, { 
-                  color: getStatusColor(formData.status).text
+                  color: getStatusColor('draft').text
                 }]}>
-                  {STATUS_OPTIONS.find(option => option.value === formData.status)?.label}
+                  {STATUS_OPTIONS.find(option => option.value === 'draft')?.label}
                 </Text>
               </View>
               <ChevronDown size={18} color={Colors.text.secondary} />
@@ -455,8 +613,8 @@ export default function NewSalesOrderScreen() {
                 multiline={true}
                 numberOfLines={4}
                 textAlignVertical="top"
-                value={formData.notes}
-                onChangeText={(value) => setFormData({ ...formData, notes: value })}
+                value={notes}
+                onChangeText={(value) => setNotes(value)}
               />
             </View>
           </View>
@@ -502,12 +660,23 @@ export default function NewSalesOrderScreen() {
               ) : null}
             </View>
             
-            <FlatList
-              data={filteredCustomers}
-              keyExtractor={(item) => item.id}
-              renderItem={renderCustomerItem}
-              contentContainerStyle={styles.bottomSheetContent}
-            />
+            {loadingCustomers ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={filteredCustomers}
+                keyExtractor={(item) => item.id.toString()}
+                renderItem={renderCustomerItem}
+                contentContainerStyle={styles.bottomSheetContent}
+                ListEmptyComponent={() => (
+                  <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>No customers found</Text>
+                  </View>
+                )}
+              />
+            )}
           </View>
         </View>
       </Modal>
@@ -551,12 +720,23 @@ export default function NewSalesOrderScreen() {
               ) : null}
             </View>
             
-            <FlatList
-              data={filteredProducts}
-              keyExtractor={(item) => item.id}
-              renderItem={(props) => showProductSheet !== null ? renderProductItem(props, showProductSheet) : null}
-              contentContainerStyle={styles.bottomSheetContent}
-            />
+            {loadingProducts ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={filteredProducts}
+                keyExtractor={(item) => item.id.toString()}
+                renderItem={renderProductItem}
+                contentContainerStyle={styles.bottomSheetContent}
+                ListEmptyComponent={() => (
+                  <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>No products found</Text>
+                  </View>
+                )}
+              />
+            )}
           </View>
         </View>
       </Modal>
@@ -590,7 +770,7 @@ export default function NewSalesOrderScreen() {
                     }]} />
                     <Text style={styles.sheetItemText}>{option.label}</Text>
                   </View>
-                  {formData.status === option.value && (
+                  {selectedCustomer?.status === option.value && (
                     <Check size={18} color={Colors.primary} />
                   )}
                 </TouchableOpacity>
@@ -599,7 +779,7 @@ export default function NewSalesOrderScreen() {
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -964,5 +1144,48 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  customerItemContent: {
+    flex: 1,
+  },
+  customerName: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    marginBottom: 2,
+  },
+  customerCompany: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  productItemContent: {
+    flex: 1,
+  },
+  productName: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    marginBottom: 2,
+  },
+  productSku: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  productPrice: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: Colors.text.secondary,
   },
 }); 

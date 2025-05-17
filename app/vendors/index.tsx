@@ -1,291 +1,160 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
+  View,
+  Text,
   StyleSheet, 
-  Text, 
-  View, 
-  FlatList, 
   TouchableOpacity, 
   TextInput,
-  RefreshControl,
-  ActivityIndicator,
-  Alert,
+  FlatList,
   StatusBar,
-  Platform,
-  Dimensions,
+  Alert,
+  ActivityIndicator,
+  RefreshControl,
   Image
-} from "react-native";
-import { useRouter } from "expo-router";
+} from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { 
-  ArrowLeft, 
   Plus, 
   Search, 
+  X,
   ChevronDown,
-  Filter,
-  SlidersHorizontal,
+  ArrowUpDown,
+  User,
+  Mail,
+  Phone,
+  Building2,
   Edit,
   Trash2,
-  Eye,
-  X,
-  Phone,
-  Mail,
-  Building,
-  DollarSign,
+  FileText,
   Check,
-  Clipboard,
-  User
-} from "lucide-react-native";
+  ArrowLeft
+} from 'lucide-react-native';
+import Colors from '@/constants/colors';
+import { useSQLiteContext } from 'expo-sqlite';
+import { drizzle } from 'drizzle-orm/expo-sqlite';
+import * as dbVendor from '@/db/vendor';
+import * as schema from '@/db/schema';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import Colors from "@/constants/colors";
-import { formatCurrency, formatDate } from "@/utils/formatters";
-import EmptyState from "@/components/EmptyState";
-import FloatingActionButton from "@/components/FloatingActionButton";
-import SnackBar from "@/components/SnackBar";
-import { Vendor } from "@/types/vendor";
-import BottomSheet from "@/components/BottomSheet";
-
-const WINDOW_WIDTH = Dimensions.get('window').width;
-
-type SortOption = {
-  id: 'name' | 'balance' | 'recent';
-  label: string;
+// Type definitions
+type SortOption = 'name-asc' | 'name-desc' | 'type-asc' | 'type-desc' | 'recent';
+type FilterOption = 'all' | 'business' | 'individual';
+type Vendor = {
+  id: string;
+  name: string;
+  contactName: string | null;
+  email: string;
+  phone: string;
+  type: 'Business' | 'Individual';
+  address: string;
+  notes: string;
+  avatar: string | null;
 };
-
-type FilterOption = {
-  id: 'all' | 'active' | 'inactive' | 'blocked';
-  label: string;
-};
-
-// Mock data for vendors
-const mockVendors: Vendor[] = [
-  {
-    id: '1',
-    name: 'Acme Supply Co.',
-    company: 'Acme Supply Co.',
-    email: 'info@acmesupply.com',
-    phone: '+1 (555) 123-4567',
-    address: '123 Supplier St, Vendorville, CA 94107',
-    status: 'active',
-    outstandingBalance: 2300.50,
-    totalPurchases: 12500.75,
-    createdAt: new Date('2023-02-15'),
-    updatedAt: new Date('2023-05-10'),
-    category: 'Office Supplies',
-    tags: ['regular', 'wholesale'],
-    paymentTerms: 'Net 30',
-    creditLimit: 5000,
-    notes: 'Primary supplier for office materials and equipment.'
-  },
-  {
-    id: '2',
-    name: 'Global Manufacturing Inc.',
-    company: 'Global Manufacturing Inc.',
-    email: 'sales@globalmanufacturing.com',
-    phone: '+1 (555) 234-5678',
-    address: '456 Industrial Ave, Factorytown, NY 10001',
-    status: 'active',
-    outstandingBalance: 5400.25,
-    totalPurchases: 45000.00,
-    createdAt: new Date('2023-01-10'),
-    updatedAt: new Date('2023-06-05'),
-    category: 'Raw Materials',
-    tags: ['wholesale', 'international'],
-    paymentTerms: 'Net 45',
-    creditLimit: 10000,
-    notes: 'Main provider for raw materials for production.'
-  },
-  {
-    id: '3',
-    name: 'Tech Solutions Ltd.',
-    company: 'Tech Solutions Ltd.',
-    email: 'support@techsolutions.com',
-    phone: '+1 (555) 345-6789',
-    address: '789 Tech Blvd, Silicon Valley, CA 94025',
-    status: 'inactive',
-    outstandingBalance: 0,
-    totalPurchases: 8750.50,
-    createdAt: new Date('2023-03-20'),
-    updatedAt: new Date('2023-04-15'),
-    category: 'Technology',
-    tags: ['software', 'services'],
-    paymentTerms: 'Net 15',
-    creditLimit: 2000,
-    notes: 'Provider for software licenses and IT services.'
-  },
-  {
-    id: '4',
-    name: 'Local Logistic Partners',
-    company: 'Local Logistic Partners',
-    email: 'dispatch@locallogistics.com',
-    phone: '+1 (555) 456-7890',
-    address: '101 Transport Lane, Deliveryville, FL 33101',
-    status: 'active',
-    outstandingBalance: 1250.75,
-    totalPurchases: 9800.25,
-    createdAt: new Date('2023-02-25'),
-    updatedAt: new Date('2023-05-20'),
-    category: 'Logistics',
-    tags: ['shipping', 'local'],
-    paymentTerms: 'Net 15',
-    creditLimit: 3000,
-    notes: 'Handles all local deliveries and transportation.'
-  },
-  {
-    id: '5',
-    name: 'Premium Foods Wholesale',
-    company: 'Premium Foods Wholesale',
-    email: 'orders@premiumfoods.com',
-    phone: '+1 (555) 567-8901',
-    address: '222 Fresh Market St, Foodtown, IL 60601',
-    status: 'blocked',
-    outstandingBalance: 3600.00,
-    totalPurchases: 31400.50,
-    createdAt: new Date('2023-01-05'),
-    updatedAt: new Date('2023-03-30'),
-    category: 'Food & Beverage',
-    tags: ['perishable', 'wholesale'],
-    paymentTerms: 'Net 7',
-    creditLimit: 7500,
-    notes: 'Supplier for all food and beverage products.'
-  }
-];
-
-const sortOptions: SortOption[] = [
-  { id: 'name', label: 'Name (A-Z)' },
-  { id: 'balance', label: 'Balance (High-Low)' },
-  { id: 'recent', label: 'Recently Updated' }
-];
-
-const filterOptions: FilterOption[] = [
-  { id: 'all', label: 'All Vendors' },
-  { id: 'active', label: 'Active' },
-  { id: 'inactive', label: 'Inactive' },
-  { id: 'blocked', label: 'Blocked' }
-];
 
 export default function VendorsScreen() {
   const router = useRouter();
+  const sqlite = useSQLiteContext();
+  const db = drizzle(sqlite, { schema });
+  const [searchQuery, setSearchQuery] = useState('');
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [sortOrder, setSortOrder] = useState<"name" | "balance" | "recent">("name");
-  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive" | "blocked">("all");
-  const [filteredVendors, setFilteredVendors] = useState<Vendor[]>([]);
   
-  // UI state
-  const [showSortBottomSheet, setShowSortBottomSheet] = useState(false);
-  const [showFilterBottomSheet, setShowFilterBottomSheet] = useState(false);
-  const [showSnackbar, setShowSnackbar] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState("");
-  const [searchInputVisible, setSearchInputVisible] = useState(false);
+  const [showSortOptions, setShowSortOptions] = useState(false);
+  const [showFilterOptions, setShowFilterOptions] = useState(false);
+  const [sortBy, setSortBy] = useState<SortOption>('name-asc');
+  const [filterBy, setFilterBy] = useState<FilterOption>('all');
+  
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Load vendors on initial render
-  useEffect(() => {
-    loadVendors();
-  }, []);
+  // Load vendors data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchVendors();
+    }, [])
+  );
 
-  // Load vendors from mock data
-  const loadVendors = async () => {
-    setIsLoading(true);
+  const fetchVendors = async () => {
     try {
-      // Simulate API delay
-      setTimeout(() => {
-        setVendors(mockVendors);
-        // Apply initial filtering and sorting
-        setFilteredVendors(filterAndSortVendors(mockVendors, "", activeFilter, sortOrder));
-        setIsLoading(false);
+      setLoading(true);
+      const dbVendors = await dbVendor.getAllVendors();
+      // Map DB vendors to UI vendors
+      const mapped = dbVendors.map((v) => ({
+        id: v.id.toString(),
+        name: v.name,
+        contactName: v.contactPerson || null,
+        email: v.email || '',
+        phone: v.phone || '',
+        type: v.company && v.company.trim() !== '' ? 'Business' : 'Individual' as 'Business' | 'Individual',
+        address: [v.address, v.city, v.state, v.zipCode, v.country].filter(Boolean).join(', '),
+        notes: v.notes || '',
+        avatar: null, // No avatar in schema
+      }));
+      setVendors(mapped);
+      setLoading(false);
         setRefreshing(false);
-      }, 500);
     } catch (error) {
-      console.error("Failed to load vendors:", error);
-      setShowSnackbar(true);
-      setSnackbarMessage("Failed to load vendors");
-      setIsLoading(false);
+      console.error('Error fetching vendors:', error);
+      Alert.alert('Error', 'Failed to load vendors');
+      setLoading(false);
       setRefreshing(false);
     }
   };
 
-  // Apply filtering and sorting to vendors
-  const filterAndSortVendors = (
-    data: Vendor[],
-    query: string,
-    filter: "all" | "active" | "inactive" | "blocked",
-    order: "name" | "balance" | "recent"
-  ) => {
-    // First filter the vendors
-    let result = [...data];
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchVendors();
+  };
+
+  const handleSort = (option: SortOption) => {
+    setSortBy(option);
+    setShowSortOptions(false);
     
-    if (query) {
-      const searchLower = query.toLowerCase();
-      result = result.filter(vendor => 
-        vendor.name.toLowerCase().includes(searchLower) ||
-        (vendor.email && vendor.email.toLowerCase().includes(searchLower)) ||
-        (vendor.phone && vendor.phone.toLowerCase().includes(searchLower)) ||
-        (vendor.company && vendor.company.toLowerCase().includes(searchLower))
-      );
-    }
-    
-    if (filter !== "all") {
-      result = result.filter(vendor => vendor.status === filter);
-    }
-    
-    // Then sort the vendors
-    result.sort((a, b) => {
-      switch (order) {
-        case "name":
+    // Sort the vendors based on selected option
+    const sortedVendors = [...vendors].sort((a, b) => {
+      if (option === 'name-asc') {
           return a.name.localeCompare(b.name);
-        case "balance":
-          return b.outstandingBalance - a.outstandingBalance;
-        case "recent":
-          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-        default:
-          return 0;
+      } else if (option === 'name-desc') {
+        return b.name.localeCompare(a.name);
+      } else if (option === 'type-asc') {
+        return a.type.localeCompare(b.type);
+      } else if (option === 'type-desc') {
+        return b.type.localeCompare(a.type);
+      } else {
+        // recent - sort by ID descending (assuming newer records have higher IDs)
+        return b.id.localeCompare(a.id);
       }
     });
     
-    return result;
+    setVendors(sortedVendors);
   };
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadVendors();
-    setRefreshing(false);
-  }, []);
-
-  const handleSearch = (text: string) => {
-    setSearchQuery(text);
-    setFilteredVendors(filterAndSortVendors(vendors, text, activeFilter, sortOrder));
+  const handleFilter = (option: FilterOption) => {
+    setFilterBy(option);
+    setShowFilterOptions(false);
+    
+    // Filter the vendors based on selected option
+    if (option === 'all') {
+      setVendors(vendors);
+    } else {
+      const filteredVendors = vendors.filter(vendor => 
+        vendor.type.toLowerCase() === option
+      );
+      setVendors(filteredVendors);
+    }
   };
 
-  const handleClearSearch = () => {
-    setSearchQuery("");
-    setFilteredVendors(filterAndSortVendors(vendors, "", activeFilter, sortOrder));
-  };
-
-  const handleSort = (order: "name" | "balance" | "recent") => {
-    setSortOrder(order);
-    setFilteredVendors(filterAndSortVendors(vendors, searchQuery, activeFilter, order));
-    setShowSortBottomSheet(false);
-  };
-
-  const handleFilter = (filter: "all" | "active" | "inactive" | "blocked") => {
-    setActiveFilter(filter);
-    setFilteredVendors(filterAndSortVendors(vendors, searchQuery, filter, sortOrder));
-    setShowFilterBottomSheet(false);
-  };
-
-  const handleAddVendor = () => {
-    router.push("/vendors/new");
-  };
-
-  const handleEditVendor = (id: string) => {
+  const handleEdit = (id: string) => {
     router.push(`/vendors/edit/${id}`);
   };
 
-  const handleDeleteVendor = async (id: string) => {
+  const handleDelete = (id: string) => {
+    const vendorToDelete = vendors.find(vendor => vendor.id === id);
+    if (!vendorToDelete) return;
+    
     Alert.alert(
       "Delete Vendor",
-      "Are you sure you want to delete this vendor? This action cannot be undone.",
+      `Are you sure you want to delete ${vendorToDelete.name}? This action cannot be undone.`,
       [
         {
           text: "Cancel",
@@ -294,213 +163,235 @@ export default function VendorsScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
-            setIsLoading(true);
-            try {
-              const updatedVendors = vendors.filter(vendor => vendor.id !== id);
-              setVendors(updatedVendors);
-              setFilteredVendors(filterAndSortVendors(updatedVendors, searchQuery, activeFilter, sortOrder));
-              setSnackbarMessage("Vendor deleted successfully");
-              setShowSnackbar(true);
-            } catch (error) {
-              console.error("Error deleting vendor:", error);
-              setSnackbarMessage("Failed to delete vendor");
-              setShowSnackbar(true);
-            } finally {
-              setIsLoading(false);
-            }
-          }
+          onPress: () => performDelete(id)
         }
       ]
     );
   };
 
-  const handleViewVendor = (id: string) => {
-    router.push(`/vendors/${id}`);
-  };
-
-  const getSortOptionLabel = (): string => {
-    const option = sortOptions.find(option => option.id === sortOrder);
-    return option ? option.label : 'Sort';
-  };
-
-  const getFilterOptionLabel = (): string => {
-    const option = filterOptions.find(option => option.id === activeFilter);
-    return option ? option.label : 'Filter';
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active':
-        return Colors.status.active;
-      case 'inactive':
-        return Colors.status.inactive;
-      case 'blocked':
-        return Colors.status.blocked;
-      default:
-        return Colors.status.inactive;
+  const performDelete = async (id: string) => {
+    try {
+      setDeletingId(id);
+      await dbVendor.deleteVendor(Number(id));
+      setVendors((prev) => prev.filter((v) => v.id !== id));
+      setDeletingId(null);
+      Alert.alert('Success', 'Vendor deleted successfully');
+    } catch (error) {
+      console.error('Error deleting vendor:', error);
+      Alert.alert('Error', 'Failed to delete vendor');
+      setDeletingId(null);
     }
   };
 
-  const renderVendorItem = ({ item }: { item: Vendor }) => (
-    <View style={styles.vendorCard}>
+  const renderVendorItem = useCallback(({ item }: { item: Vendor }) => {
+    const isDeleting = deletingId === item.id;
+    
+    if (isDeleting) {
+      return (
+        <View style={styles.deletingItemContainer}>
+          <ActivityIndicator size="small" color="#FF3B30" />
+          <Text style={styles.deletingText}>Deleting...</Text>
+        </View>
+      );
+    }
+    
+    return (
       <TouchableOpacity 
-        style={styles.vendorCardContent}
-        onPress={() => handleViewVendor(item.id)}
-        activeOpacity={0.7}
+        style={styles.vendorItem}
+        onPress={() => router.push(`/vendors/${item.id}`)}
       >
-        <View style={styles.vendorHeader}>
-          <View style={styles.avatarContainer}>
-            {false ? (
-              <Image source={{ uri: "placeholder" }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatarPlaceholder, { backgroundColor: Colors.background.tertiary }]}>
-                <Text style={styles.avatarText}>
-                  {item.name.charAt(0).toUpperCase()}
-                </Text>
+        <View style={styles.vendorContent}>
+          <View style={styles.vendorMainInfo}>
+            <View style={styles.vendorAvatarContainer}>
+              {item.avatar ? (
+                <Image source={{ uri: item.avatar }} style={styles.vendorAvatar} />
+              ) : (
+                <View style={[
+                  styles.vendorAvatarPlaceholder, 
+                  { backgroundColor: item.type === 'Business' ? '#E3F2FD' : '#E8F5E9' }
+                ]}>
+                  {item.type === 'Business' ? (
+                    <Building2 size={20} color="#2196F3" />
+                  ) : (
+                    <User size={20} color="#4CAF50" />
+                  )}
               </View>
             )}
           </View>
+            
           <View style={styles.vendorInfo}>
             <Text style={styles.vendorName}>{item.name}</Text>
-            {item.company && (
-              <Text style={styles.companyName}>{item.company}</Text>
-            )}
-            <View style={styles.tagRow}>
-              <View 
-                style={[
-                  styles.statusBadge, 
-                  { backgroundColor: `${getStatusColor(item.status)}20` }
-                ]}
-              >
-                <View 
-                  style={[
-                    styles.statusDot, 
-                    { backgroundColor: getStatusColor(item.status) }
-                  ]} 
-                />
-                <Text 
-                  style={[
-                    styles.statusText, 
-                    { color: getStatusColor(item.status) }
-                  ]}
-                >
-                  {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                </Text>
-              </View>
-              {item.category && (
-                <View style={styles.categoryBadge}>
-                  <Text style={styles.categoryText}>{item.category}</Text>
-                </View>
-              )}
+              <View style={styles.typeBadge}>
+                <Text style={styles.typeText}>{item.type}</Text>
             </View>
           </View>
         </View>
         
         <View style={styles.vendorDetails}>
-          {item.email && (
+            {item.contactName && (
+              <View style={styles.detailRow}>
+                <User size={16} color={Colors.text.secondary} style={styles.detailIcon} />
+                <Text style={styles.detailText}>{item.contactName}</Text>
+              </View>
+            )}
+            
             <View style={styles.detailRow}>
-              <Mail size={14} color={Colors.text.secondary} style={styles.detailIcon} />
+              <Mail size={16} color={Colors.text.secondary} style={styles.detailIcon} />
               <Text style={styles.detailText}>{item.email}</Text>
             </View>
-          )}
-          {item.phone && (
+            
             <View style={styles.detailRow}>
-              <Phone size={14} color={Colors.text.secondary} style={styles.detailIcon} />
+              <Phone size={16} color={Colors.text.secondary} style={styles.detailIcon} />
               <Text style={styles.detailText}>{item.phone}</Text>
             </View>
-          )}
-          <View style={styles.balanceRow}>
-            <View style={styles.balanceItem}>
-              <Text style={styles.balanceLabel}>Balance</Text>
-              <Text style={styles.balanceValue}>{formatCurrency(item.outstandingBalance)}</Text>
             </View>
-            <View style={styles.balanceItem}>
-              <Text style={styles.balanceLabel}>Total Purchases</Text>
-              <Text style={styles.balanceValue}>{formatCurrency(item.totalPurchases)}</Text>
-            </View>
+          
+          <View style={styles.vendorActions}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => handleEdit(item.id)}
+            >
+              <Edit size={20} color={Colors.text.secondary} />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.deleteButton]}
+              onPress={() => handleDelete(item.id)}
+            >
+              <Trash2 size={20} color="#FF3B30" />
+            </TouchableOpacity>
           </View>
         </View>
       </TouchableOpacity>
-      
-      <View style={styles.actionButtonsContainer}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => handleViewVendor(item.id)}
-        >
-          <Eye size={18} color={Colors.text.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => handleEditVendor(item.id)}
-        >
-          <Edit size={18} color={Colors.text.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => handleDeleteVendor(item.id)}
-        >
-          <Trash2 size={18} color={Colors.negative} />
-        </TouchableOpacity>
-      </View>
+    );
+  }, [deletingId]);
+
+  const renderEmptyList = () => (
+    <View style={styles.emptyContainer}>
+      <Building2 size={48} color={Colors.text.secondary} />
+      <Text style={styles.emptyTitle}>No Vendors Found</Text>
+      <Text style={styles.emptyText}>
+        Add your first vendor to start managing your business relationships
+      </Text>
     </View>
   );
 
+  const filteredVendors = vendors.filter(vendor =>
+    vendor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    vendor.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    vendor.phone.includes(searchQuery) ||
+    (vendor.contactName && vendor.contactName.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
-      {/* Modern Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Vendors</Text>
-        <View style={styles.headerRight} />
+        <View style={{width: 40}} />
       </View>
       
-      {/* Search and Filter Bar */}
-      <View style={styles.searchFilterContainer}>
-        <View style={styles.searchContainer}>
-          <Search size={20} color={Colors.text.secondary} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search vendors..."
-            value={searchQuery}
-            onChangeText={handleSearch}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={handleClearSearch}>
-              <X size={20} color={Colors.text.secondary} />
-            </TouchableOpacity>
-          )}
-        </View>
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <Search size={20} color={Colors.text.secondary} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search vendors..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholderTextColor={Colors.text.secondary}
+        />
+        {searchQuery ? (
+          <TouchableOpacity
+            onPress={() => setSearchQuery('')}
+            style={styles.clearButton}
+          >
+            <X size={20} color={Colors.text.secondary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      
+      {/* Filter and Sort */}
+      <View style={styles.filterSortContainer}>
+        <TouchableOpacity 
+          style={styles.filterButton}
+          onPress={() => setShowFilterOptions(!showFilterOptions)}
+        >
+          <Text style={styles.filterButtonText}>
+            {filterBy === 'all' ? 'All Types' : filterBy === 'business' ? 'Business' : 'Individual'}
+          </Text>
+          <ChevronDown size={20} color={Colors.text.primary} />
+        </TouchableOpacity>
         
-        <View style={styles.filterSortButtons}>
-          <TouchableOpacity 
-            style={styles.filterButton}
-            onPress={() => setShowFilterBottomSheet(true)}
-          >
-            <Filter size={18} color={Colors.text.primary} />
-            <Text style={styles.filterButtonText}>{getFilterOptionLabel()}</Text>
-            <ChevronDown size={16} color={Colors.text.primary} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.sortButton}
-            onPress={() => setShowSortBottomSheet(true)}
-          >
-            <SlidersHorizontal size={18} color={Colors.text.primary} />
-            <Text style={styles.sortButtonText}>{getSortOptionLabel()}</Text>
-            <ChevronDown size={16} color={Colors.text.primary} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity 
+          style={styles.sortButton}
+          onPress={() => setShowSortOptions(!showSortOptions)}
+        >
+          <ArrowUpDown size={20} color={Colors.text.primary} />
+          <Text style={styles.sortButtonText}>Sort</Text>
+        </TouchableOpacity>
       </View>
       
-      {isLoading ? (
+      {/* Sort Options Modal */}
+      {showSortOptions && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Sort By</Text>
+            {[
+              { label: 'Name (A-Z)', value: 'name-asc' },
+              { label: 'Name (Z-A)', value: 'name-desc' },
+              { label: 'Type (A-Z)', value: 'type-asc' },
+              { label: 'Type (Z-A)', value: 'type-desc' },
+              { label: 'Most Recent', value: 'recent' },
+            ].map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={styles.modalOption}
+                onPress={() => handleSort(option.value as SortOption)}
+              >
+                <Text style={styles.modalOptionText}>{option.label}</Text>
+                {sortBy === option.value && (
+                  <Check size={20} color={Colors.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+      
+      {/* Filter Options Modal */}
+      {showFilterOptions && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Filter By</Text>
+            {[
+              { label: 'All Types', value: 'all' },
+              { label: 'Business', value: 'business' },
+              { label: 'Individual', value: 'individual' },
+            ].map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={styles.modalOption}
+                onPress={() => handleFilter(option.value as FilterOption)}
+              >
+                <Text style={styles.modalOptionText}>{option.label}</Text>
+                {filterBy === option.value && (
+                  <Check size={20} color={Colors.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+      
+      {/* Vendors List */}
+      {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading vendors...</Text>
         </View>
       ) : (
         <FlatList
@@ -508,104 +399,32 @@ export default function VendorsScreen() {
           renderItem={renderVendorItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContainer}
+          ListEmptyComponent={renderEmptyList}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
               colors={[Colors.primary]}
-              tintColor={Colors.primary}
-            />
-          }
-          ListEmptyComponent={
-            <EmptyState
-              icon={<Clipboard size={48} color={Colors.text.secondary} />}
-              title="No vendors found"
-              description={searchQuery ? "Try a different search term or filter" : "Add your first vendor to get started"}
-              actionLabel={searchQuery ? "Clear search" : "Add Vendor"}
-              onAction={searchQuery ? handleClearSearch : handleAddVendor}
             />
           }
         />
       )}
       
-      {/* Sort Bottom Sheet */}
-      <BottomSheet
-        isVisible={showSortBottomSheet}
-        onClose={() => setShowSortBottomSheet(false)}
-        title="Sort Vendors"
+      {/* FAB Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/vendors/new')}
       >
-        {sortOptions.map((option) => (
-          <TouchableOpacity
-            key={option.id}
-            style={[
-              styles.optionItem,
-              sortOrder === option.id && styles.selectedOptionItem,
-            ]}
-            onPress={() => handleSort(option.id)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                sortOrder === option.id && styles.selectedOptionText,
-              ]}
-            >
-              {option.label}
-            </Text>
-            {sortOrder === option.id && (
-              <Check size={20} color={Colors.primary} />
-            )}
-          </TouchableOpacity>
-        ))}
-      </BottomSheet>
-      
-      {/* Filter Bottom Sheet */}
-      <BottomSheet
-        isVisible={showFilterBottomSheet}
-        onClose={() => setShowFilterBottomSheet(false)}
-        title="Filter Vendors"
-      >
-        {filterOptions.map((option) => (
-          <TouchableOpacity
-            key={option.id}
-            style={[
-              styles.optionItem,
-              activeFilter === option.id && styles.selectedOptionItem,
-            ]}
-            onPress={() => handleFilter(option.id)}
-          >
-            <Text
-              style={[
-                styles.optionText,
-                activeFilter === option.id && styles.selectedOptionText,
-              ]}
-            >
-              {option.label}
-            </Text>
-            {activeFilter === option.id && (
-              <Check size={20} color={Colors.primary} />
-            )}
-          </TouchableOpacity>
-        ))}
-      </BottomSheet>
-      
-      <FloatingActionButton
-        icon={<Plus size={24} color="#fff" />}
-        onPress={handleAddVendor}
-      />
-      
-      <SnackBar
-        visible={showSnackbar}
-        message={snackbarMessage}
-        onDismiss={() => setShowSnackbar(false)}
-      />
-    </View>
+        <Plus size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background.secondary,
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
@@ -623,163 +442,156 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerRight: {
-    width: 40,
-  },
   title: {
     fontSize: 20,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  searchFilterContainer: {
-    backgroundColor: Colors.background.default,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background.tertiary,
+    backgroundColor: '#F5F5F5',
     borderRadius: 8,
     paddingHorizontal: 12,
-    marginBottom: 12,
+    marginBottom: 16,
   },
   searchInput: {
     flex: 1,
     height: 40,
-    fontSize: 16,
     marginLeft: 8,
     color: Colors.text.primary,
   },
-  filterSortButtons: {
+  clearButton: {
+    padding: 4,
+  },
+  filterSortContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   filterButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background.tertiary,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    flex: 1,
-    marginRight: 8,
+    padding: 8,
   },
   filterButtonText: {
-    fontSize: 14,
+    marginRight: 4,
     color: Colors.text.primary,
-    marginHorizontal: 6,
-    flex: 1,
   },
   sortButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background.tertiary,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    flex: 1,
+    padding: 8,
   },
   sortButtonText: {
-    fontSize: 14,
+    marginLeft: 4,
     color: Colors.text.primary,
-    marginHorizontal: 6,
-    flex: 1,
   },
-  listContainer: {
-    padding: 16,
-    paddingBottom: 80, // Extra space for the FAB
-  },
-  vendorCard: {
-    backgroundColor: Colors.background.default,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
-  },
-  vendorCardContent: {
-    padding: 16,
-  },
-  vendorHeader: {
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  avatarContainer: {
-    marginRight: 12,
-  },
-  avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
-  avatarPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarText: {
-    fontSize: 20,
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    width: '80%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 16,
     color: Colors.text.primary,
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
+  },
+  modalOptionText: {
+    fontSize: 16,
+    color: Colors.text.primary,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listContainer: {
+    padding: 16,
+  },
+  vendorItem: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  vendorContent: {
+    padding: 16,
+  },
+  vendorMainInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  vendorAvatarContainer: {
+    marginRight: 12,
+  },
+  vendorAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  vendorAvatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   vendorInfo: {
     flex: 1,
   },
   vendorName: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: Colors.text.primary,
-    marginBottom: 2,
-  },
-  companyName: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    marginBottom: 6,
-  },
-  tagRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginRight: 8,
     marginBottom: 4,
   },
-  statusDot: {
-    width: 8,
-    height: 8,
+  typeBadge: {
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 4,
-    marginRight: 4,
+    alignSelf: 'flex-start',
   },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  categoryBadge: {
-    backgroundColor: Colors.background.tertiary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: 4,
-  },
-  categoryText: {
+  typeText: {
     fontSize: 12,
     color: Colors.text.secondary,
   },
   vendorDetails: {
-    marginTop: 8,
+    marginBottom: 12,
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   detailIcon: {
     marginRight: 8,
@@ -788,66 +600,73 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.text.secondary,
   },
-  balanceRow: {
+  vendorActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
-  },
-  balanceItem: {
-    flex: 1,
-  },
-  balanceLabel: {
-    fontSize: 12,
-    color: Colors.text.secondary,
-    marginBottom: 2,
-  },
-  balanceValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text.primary,
-  },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
+    justifyContent: 'flex-end',
   },
   actionButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 8,
+    marginLeft: 8,
   },
-  loadingContainer: {
+  deleteButton: {
+    backgroundColor: '#FFE5E5',
+    borderRadius: 8,
+  },
+  emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 32,
   },
-  loadingText: {
-    marginTop: 12,
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.text.primary,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyText: {
     fontSize: 16,
     color: Colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 24,
   },
-  optionItem: {
+  deletingItemContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
+    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: '#FFE5E5',
+    borderRadius: 12,
+    marginBottom: 16,
   },
-  selectedOptionItem: {
-    backgroundColor: `${Colors.primary}10`,
+  deletingText: {
+    marginLeft: 8,
+    color: '#FF3B30',
   },
-  optionText: {
+  addButtonText: {
+    color: '#FFFFFF',
+    marginLeft: 8,
     fontSize: 16,
-    color: Colors.text.primary,
-  },
-  selectedOptionText: {
-    color: Colors.primary,
     fontWeight: '600',
+  },
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
 });

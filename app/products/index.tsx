@@ -40,6 +40,7 @@ import {
   Tag,
   Check
 } from "lucide-react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import Colors from "@/constants/colors";
 import { formatCurrency } from "@/utils/formatters";
@@ -47,74 +48,7 @@ import EmptyState from "@/components/EmptyState";
 import FloatingActionButton from "@/components/FloatingActionButton";
 import SnackBar from "@/components/SnackBar";
 import { Product } from "@/types/product";
-
-// Mock Products data
-const mockProducts: Product[] = [
-  {
-    id: '1',
-    name: 'Premium Widget Pro',
-    sku: 'WID-12345',
-    barcode: '123456789012',
-    description: 'High-quality widget for professional use.',
-    category: 'Electronics',
-    tags: ['premium', 'bestseller'],
-    purchasePrice: 120,
-    sellingPrice: 199.99,
-    stockQuantity: 45,
-    reorderLevel: 10,
-    unit: 'piece',
-    taxRate: 10,
-    images: ['https://images.unsplash.com/photo-1523275335684-37898b6baf30'],
-    vendor: 'Global Supplies Inc.',
-    location: 'Warehouse A',
-    dimensions: {
-      length: 15,
-      width: 10,
-      height: 5,
-      weight: 2
-    },
-    status: 'in_stock',
-    createdAt: new Date('2023-03-15T10:00:00Z'),
-    updatedAt: new Date('2023-05-20T14:30:00Z')
-  },
-  {
-    id: '2',
-    name: 'Standard Gadget X100',
-    sku: 'GAD-54321',
-    barcode: '098765432109',
-    description: 'Versatile gadget suitable for various applications.',
-    category: 'Office Supplies',
-    tags: ['sale'],
-    purchasePrice: 50,
-    sellingPrice: 89.99,
-    stockQuantity: 8,
-    reorderLevel: 15,
-    unit: 'piece',
-    taxRate: 8,
-    vendor: 'Premium Distributors',
-    status: 'low_stock',
-    createdAt: new Date('2023-04-10T09:15:00Z'),
-    updatedAt: new Date('2023-05-18T11:45:00Z')
-  },
-  {
-    id: '3',
-    name: 'Deluxe Tool Elite',
-    sku: 'TOO-98765',
-    description: 'Reliable tool with extended durability.',
-    category: 'Hardware',
-    purchasePrice: 75,
-    sellingPrice: 129.99,
-    stockQuantity: 0,
-    reorderLevel: 5,
-    unit: 'set',
-    taxRate: 10,
-    images: ['https://images.unsplash.com/photo-1572635196237-14b3f281503f'],
-    location: 'Warehouse B',
-    status: 'out_of_stock',
-    createdAt: new Date('2023-02-20T15:30:00Z'),
-    updatedAt: new Date('2023-05-05T10:20:00Z')
-  }
-];
+import * as dbProduct from '@/db/product';
 
 type SortOption = "name" | "price" | "stock";
 type FilterOption = "all" | "in_stock" | "low_stock" | "out_of_stock";
@@ -147,25 +81,52 @@ export default function ProductsScreen() {
     loadProducts();
   }, []);
 
-  // Load products from mock data
+  // Load products from database
   const loadProducts = async () => {
     try {
       setIsLoading(true);
-      // Simulate API call with timeout
-      setTimeout(() => {
-        setProducts(mockProducts);
-        
-        // Extract unique categories
-        const uniqueCategories = Array.from(
-          new Set(
-            mockProducts
-              .filter(product => product.category)
-              .map(product => product.category as string)
-          )
-        );
-        setCategories(uniqueCategories);
-        setIsLoading(false);
-      }, 500);
+      const dbProducts = await dbProduct.getAllProducts();
+      // Map DB products to UI Product type
+      const mappedProducts: Product[] = dbProducts.map((p) => ({
+        id: p.id.toString(),
+        name: p.productName,
+        sku: p.sku,
+        barcode: p.barcode || undefined,
+        description: p.shortDescription || p.fullDescription || '',
+        category: p.category || undefined,
+        tags: p.tags ? p.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+        purchasePrice: typeof p.costPrice === 'number' ? p.costPrice : parseFloat(p.costPrice || '0'),
+        sellingPrice: typeof p.sellingPrice === 'number' ? p.sellingPrice : parseFloat(p.sellingPrice || '0'),
+        stockQuantity: typeof p.stockQuantity === 'number' ? p.stockQuantity : parseInt(p.stockQuantity || '0'),
+        reorderLevel: typeof p.reorderLevel === 'number' ? p.reorderLevel : parseInt(p.reorderLevel || '0'),
+        unit: p.unit || 'piece',
+        taxRate: typeof p.taxRate === 'number' ? p.taxRate : parseFloat(p.taxRate || '0'),
+        images: p.images ? p.images.split(',').map(i => i.trim()).filter(Boolean) : [],
+        vendor: p.vendor || undefined,
+        location: p.location || undefined,
+        dimensions: {
+          length: p.length ?? undefined,
+          width: p.width ?? undefined,
+          height: p.height ?? undefined,
+          weight: p.weight ?? undefined,
+        },
+        status: (p.stockQuantity === 0 ? 'out_of_stock' : (p.stockQuantity <= (p.reorderLevel || 0) ? 'low_stock' : 'in_stock')),
+        createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+        updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date(),
+        expiryDate: undefined,
+        notes: p.notes || undefined,
+      }));
+      setProducts(mappedProducts);
+      // Extract unique categories
+      const uniqueCategories = Array.from(
+        new Set(
+          mappedProducts
+            .filter(product => product.category)
+            .map(product => product.category as string)
+        )
+      );
+      setCategories(uniqueCategories);
+      setIsLoading(false);
     } catch (error) {
       console.error("Error loading products:", error);
       setSnackbarMessage("Failed to load products");
@@ -183,26 +144,22 @@ export default function ProductsScreen() {
   const handleSearch = async (text: string) => {
     setSearchQuery(text);
     try {
-      // Filter products based on search text
       const searchLower = text.toLowerCase();
-      let filteredProducts = mockProducts.filter(product => 
-        product.name.toLowerCase().includes(searchLower) ||
+      let filteredProducts = products.filter(product =>
+        (product.name && product.name.toLowerCase().includes(searchLower)) ||
         (product.sku && product.sku.toLowerCase().includes(searchLower)) ||
         (product.description && product.description.toLowerCase().includes(searchLower))
       );
-      
       // Apply filters
       if (activeFilter !== 'all') {
         filteredProducts = filteredProducts.filter(product => product.status === activeFilter);
       }
-      
       // Apply category filter
       if (activeCategory !== 'all') {
         filteredProducts = filteredProducts.filter(
           product => product.category === activeCategory
         );
       }
-      
       // Apply sorting
       const sortedProducts = sortProducts(filteredProducts, sortOrder);
       setProducts(sortedProducts);
@@ -241,7 +198,7 @@ export default function ProductsScreen() {
     
     try {
       // Filter products
-      let filteredProducts = mockProducts;
+      let filteredProducts = products;
       
       // Apply search filter
       if (searchQuery) {
@@ -279,7 +236,7 @@ export default function ProductsScreen() {
     
     try {
       // Filter products
-      let filteredProducts = mockProducts;
+      let filteredProducts = products;
       
       // Apply search filter
       if (searchQuery) {
@@ -593,7 +550,7 @@ export default function ProductsScreen() {
   const filterAndSortProducts = async () => {
     try {
       // Filter products
-      let filteredProducts = mockProducts;
+      let filteredProducts = products;
       
       // Apply search filter
       if (searchQuery) {
@@ -743,7 +700,7 @@ export default function ProductsScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
       {/* Modern Header */}
@@ -1029,7 +986,7 @@ export default function ProductsScreen() {
         action={deletedProduct ? "UNDO" : undefined}
         onAction={deletedProduct ? handleUndoDelete : undefined}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 

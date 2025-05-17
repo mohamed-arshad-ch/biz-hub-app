@@ -1,6 +1,6 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, StatusBar } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useState, useCallback, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, StatusBar, RefreshControl } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { 
   Plus, 
   Search, 
@@ -14,41 +14,93 @@ import {
   Printer,
   X
 } from 'lucide-react-native';
-import { salesOrderData } from '@/mocks/salesOrderData';
-import { SalesOrder } from '@/types/sales-order';
 import Colors from '@/constants/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuthStore } from '@/store/auth';
+import { getSalesOrders } from '@/db/sales-order';
+import type { SalesOrder } from '@/db/schema';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { getAllCustomers } from '@/db/customer';
+import type { Customer } from '@/db/schema';
 
 type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc';
 type FilterOption = 'all' | 'completed' | 'processing' | 'draft' | 'cancelled';
 
 export default function SalesOrderScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
-  const [orders, setOrders] = useState<SalesOrder[]>(salesOrderData);
+  const [orders, setOrders] = useState<SalesOrder[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [showSortOptions, setShowSortOptions] = useState(false);
   const [showFilterOptions, setShowFilterOptions] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('date-desc');
   const [filterBy, setFilterBy] = useState<FilterOption>('all');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [allOrders, setAllOrders] = useState<SalesOrder[]>([]);
+
+  useEffect(() => {
+    loadOrders();
+    loadCustomers();
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadOrders();
+      loadCustomers();
+    }, [])
+  );
+
+  const loadOrders = async (sortOverride?: SortOption) => {
+    try {
+      if (!user) return;
+      let sortParam: 'newest' | 'oldest' = 'newest';
+      const sortValue = sortOverride || sortBy;
+      if (sortValue === 'date-desc') sortParam = 'newest';
+      else if (sortValue === 'date-asc') sortParam = 'oldest';
+      const fetchedOrders = await getSalesOrders(user.id, sortParam);
+      setAllOrders(fetchedOrders);
+      setOrders(fetchedOrders);
+    } catch (error) {
+      console.error('Error loading orders:', error);
+      Alert.alert('Error', 'Failed to load sales orders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadCustomers = async () => {
+    try {
+      const fetchedCustomers = await getAllCustomers();
+      setCustomers(fetchedCustomers);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+    }
+  };
+
+  const refreshOrders = async () => {
+    setRefreshing(true);
+    await loadOrders();
+    setRefreshing(false);
+  };
 
   const handleSort = (option: SortOption) => {
     setSortBy(option);
     setShowSortOptions(false);
-    
-    // Sort the orders based on selected option
-    const sortedOrders = [...orders].sort((a, b) => {
-      if (option === 'date-desc') {
-        return new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime();
-      } else if (option === 'date-asc') {
-        return new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime();
-      } else if (option === 'amount-desc') {
-        return b.total - a.total;
-      } else {
-        return a.total - b.total;
-      }
-    });
-    
-    setOrders(sortedOrders);
+    if (option === 'date-desc' || option === 'date-asc') {
+      loadOrders(option);
+    } else {
+      // For amount sort, do client-side sort
+      const sortedOrders = [...orders].sort((a, b) => {
+        if (option === 'amount-desc') {
+          return b.total - a.total;
+        } else {
+          return a.total - b.total;
+        }
+      });
+      setOrders(sortedOrders);
+    }
   };
 
   const handleFilter = (option: FilterOption) => {
@@ -57,18 +109,18 @@ export default function SalesOrderScreen() {
     
     // Filter the orders based on selected option
     if (option === 'all') {
-      setOrders(salesOrderData);
+      loadOrders();
     } else {
-      const filteredOrders = salesOrderData.filter(order => order.status === option);
+      const filteredOrders = orders.filter(order => order.status === option);
       setOrders(filteredOrders);
     }
   };
   
-  const handlePrint = (id: string) => {
+  const handlePrint = (id: number) => {
     Alert.alert('Print', 'Printing sales order...');
   };
   
-  const handleShare = (id: string) => {
+  const handleShare = (id: number) => {
     Alert.alert('Share', 'Sharing sales order...');
   };
 
@@ -87,73 +139,106 @@ export default function SalesOrderScreen() {
     }
   };
 
-  const renderOrderItem = useCallback(({ item }: { item: SalesOrder }) => (
-    <TouchableOpacity
-      style={styles.orderItem}
-      onPress={() => router.push({
-        pathname: '/sales-order/[id]',
-        params: { id: item.id }
-      })}
-    >
-      <View style={styles.orderContent}>
-        <View style={styles.orderMainInfo}>
-          <Text style={styles.customerName}>{item.customerName}</Text>
-          <Text style={styles.amount}>${item.total.toFixed(2)}</Text>
-        </View>
-        
-        <View style={styles.orderDetails}>
-          <View style={styles.detailRow}>
-            <Calendar size={16} color={Colors.text.secondary} style={styles.detailIcon} />
-            <Text style={styles.detailText}>
-              {new Date(item.orderDate).toLocaleDateString()}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <User size={16} color={Colors.text.secondary} style={styles.detailIcon} />
-            <Text style={styles.detailText}>
-              Order #{item.orderNumber}
-            </Text>
-          </View>
-        </View>
-        
-        <View style={styles.orderFooter}>
-          <View style={[
-            styles.statusBadge,
-            { 
-              backgroundColor: getStatusColor(item.status).bg
-            }
-          ]}>
-            <Text style={[
-              styles.statusText,
-              { 
-                color: getStatusColor(item.status).text
-              }
-            ]}>
-              {item.status.toUpperCase()}
-            </Text>
+  // Helper to get customer name by id
+  const getCustomerName = (customerId: number) => {
+    const customer = customers.find(c => c.id === customerId);
+    return customer ? customer.name : `Customer #${customerId}`;
+  };
+
+  // Apply search, filter, and sort
+  useEffect(() => {
+    let filtered = [...allOrders];
+    // Filter by status
+    if (filterBy !== 'all') {
+      filtered = filtered.filter(order => order.status === filterBy);
+    }
+    // Search by order number or customer name
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter(order =>
+        order.orderNumber.toLowerCase().includes(q) ||
+        getCustomerName(order.customerId).toLowerCase().includes(q)
+      );
+    }
+    // Only sort by amount here; date sort is handled in DB
+    if (sortBy === 'amount-desc') {
+      filtered.sort((a, b) => b.total - a.total);
+    } else if (sortBy === 'amount-asc') {
+      filtered.sort((a, b) => a.total - b.total);
+    }
+    setOrders(filtered);
+  }, [allOrders, customers, searchQuery, filterBy, sortBy]);
+
+  const renderOrderItem = useCallback(({ item }: { item: SalesOrder }) => {
+    const customer = customers.find(c => c.id === item.customerId);
+    return (
+      <TouchableOpacity
+        style={styles.orderItem}
+        onPress={() => router.push({
+          pathname: '/sales-order/[id]',
+          params: { id: item.id.toString() }
+        })}
+      >
+        <View style={styles.orderContent}>
+          <View style={styles.orderMainInfo}>
+            <Text style={styles.customerName}>{customer ? customer.name : `Customer #${item.customerId}`}</Text>
+            <Text style={styles.amount}>${(item.total / 100).toFixed(2)}</Text>
           </View>
           
-          <View style={styles.actionIcons}>
-            <TouchableOpacity 
-              style={styles.actionBtn}
-              onPress={() => handleShare(item.id)}
-            >
-              <Share2 size={18} color={Colors.text.secondary} />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.actionBtn}
-              onPress={() => handlePrint(item.id)}
-            >
-              <Printer size={18} color={Colors.text.secondary} />
-            </TouchableOpacity>
+          <View style={styles.orderDetails}>
+            <View style={styles.detailRow}>
+              <Calendar size={16} color={Colors.text.secondary} style={styles.detailIcon} />
+              <Text style={styles.detailText}>
+                {new Date(item.orderDate).toLocaleDateString()}
+              </Text>
+            </View>
+            <View style={styles.detailRow}>
+              <User size={16} color={Colors.text.secondary} style={styles.detailIcon} />
+              <Text style={styles.detailText}>
+                Order #{item.orderNumber}
+              </Text>
+            </View>
+          </View>
+          
+          <View style={styles.orderFooter}>
+            <View style={[
+              styles.statusBadge,
+              { 
+                backgroundColor: getStatusColor(item.status || 'draft').bg
+              }
+            ]}>
+              <Text style={[
+                styles.statusText,
+                { 
+                  color: getStatusColor(item.status || 'draft').text
+                }
+              ]}>
+                {(item.status || 'draft').toUpperCase()}
+              </Text>
+            </View>
+            
+            <View style={styles.actionIcons}>
+              <TouchableOpacity 
+                style={styles.actionBtn}
+                onPress={() => handleShare(item.id)}
+              >
+                <Share2 size={18} color={Colors.text.secondary} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.actionBtn}
+                onPress={() => handlePrint(item.id)}
+              >
+                <Printer size={18} color={Colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  ), []);
+      </TouchableOpacity>
+    );
+  }, [customers]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top','left','right','bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
@@ -168,13 +253,13 @@ export default function SalesOrderScreen() {
           <Search size={18} color={Colors.text.secondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search orders..."
+            placeholder="Search by invoice number or customer name"
             placeholderTextColor={Colors.text.tertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
+            <TouchableOpacity onPress={() => setSearchQuery("")}> 
               <X size={18} color={Colors.text.secondary} />
             </TouchableOpacity>
           )}
@@ -286,21 +371,14 @@ export default function SalesOrderScreen() {
       </View>
 
       <FlatList
-        data={orders.filter(order => {
-          if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            return (
-              order.customerName.toLowerCase().includes(query) ||
-              order.orderNumber.toLowerCase().includes(query) ||
-              String(order.total).includes(query)
-            );
-          }
-          return true;
-        })}
-        keyExtractor={(item) => item.id}
+        data={orders}
+        keyExtractor={(item) => item.id.toString()}
         renderItem={renderOrderItem}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refreshOrders} />
+        }
       />
       
       <TouchableOpacity
@@ -309,7 +387,7 @@ export default function SalesOrderScreen() {
       >
         <Plus size={24} color="#FFFFFF" />
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 

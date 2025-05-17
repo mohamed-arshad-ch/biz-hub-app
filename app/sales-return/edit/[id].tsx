@@ -1,619 +1,307 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
-  Alert, 
-  TextInput, 
-  ActivityIndicator,
-  StatusBar,
-  Modal,
-  FlatList,
-  Platform
-} from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, StatusBar, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { 
-  ArrowLeft, 
-  Save, 
-  Plus, 
-  Trash2, 
-  ChevronRight, 
-  X,
-  Search,
-  Check, 
-  Package
-} from 'lucide-react-native';
+import { ArrowLeft, Plus, X, FileText, Calendar, Hash, Package, DollarSign, ChevronDown } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { SalesReturnFormData, SalesReturnItem } from '@/types/sales-return';
-import { getCustomersData } from '@/mocks/customersData';
-import { getProductsData } from '@/mocks/productsData';
-import { Customer } from '@/types/customer';
-import { Product } from '@/types/product';
-import { salesReturnData } from '@/mocks/salesReturnData';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-const RETURN_REASONS = [
-  'Damaged Product',
-  'Wrong Item Delivered',
-  'Defective Product',
-  'Customer Changed Mind',
-  'Sizing Issue',
-  'Other'
-];
+import { useAuthStore } from '@/store/auth';
+import { getSalesReturnById, updateSalesReturn } from '@/db/sales-return';
+import * as dbInvoice from '@/db/sales-invoice';
+import * as dbProduct from '@/db/product';
 
 export default function EditSalesReturnScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const [loading, setLoading] = useState(false);
-  const [isLoadingData, setIsLoadingData] = useState(true);
-  
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
-  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
-  
-  const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-  const [productSearchQuery, setProductSearchQuery] = useState('');
-  
-  // Modal visibility states
-  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const { user } = useAuthStore();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [returnData, setReturnData] = useState<any>(null);
+  const [invoice, setInvoice] = useState<any>(null);
+  const [products, setProducts] = useState<any[]>([]);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
-  const [showReasonModal, setShowReasonModal] = useState(false);
-  const [selectedItemIndex, setSelectedItemIndex] = useState(-1);
-  
-  const [formData, setFormData] = useState<SalesReturnFormData>({
-    customerId: '',
-    returnNumber: '',
-    returnDate: '',
-    originalOrderId: '',
-    originalOrderNumber: '',
-    items: [],
-    subtotal: 0,
-    tax: 0,
-    total: 0,
-    status: 'pending',
-    notes: ''
-  });
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
 
   useEffect(() => {
-    // Load customers and products data
-    const customersData = getCustomersData();
-    const productsData = getProductsData();
-    setCustomers(customersData);
-    setFilteredCustomers(customersData);
-    setProducts(productsData);
-    setFilteredProducts(productsData);
-    
-    // Load the sales return data
+    if (!user || !id) return;
     const fetchData = async () => {
-      setIsLoadingData(true);
       try {
-        // Simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const returnRecord = salesReturnData.find(r => r.id === id);
-        if (returnRecord) {
-          setFormData({
-            customerId: returnRecord.customerId,
-            returnNumber: returnRecord.returnNumber,
-            returnDate: returnRecord.returnDate,
-            originalOrderId: returnRecord.originalOrderId,
-            originalOrderNumber: returnRecord.originalOrderNumber,
-            items: returnRecord.items,
-            subtotal: returnRecord.subtotal,
-            tax: returnRecord.tax,
-            total: returnRecord.total,
-            status: returnRecord.status,
-            notes: returnRecord.notes
-          });
-        } else {
-          Alert.alert('Error', 'Sales return not found');
-          router.back();
+        setLoading(true);
+        const ret = await getSalesReturnById(Number(id), user.id);
+        if (!ret) throw new Error('Return not found');
+        setReturnData(ret);
+        if (ret?.invoiceId) {
+          const inv = await dbInvoice.getSalesInvoiceById(ret.invoiceId, user.id);
+          setInvoice(inv);
         }
+        const prods = await dbProduct.getAllProducts();
+        setProducts(prods);
       } catch (error) {
-        Alert.alert('Error', 'Failed to load sales return data');
+        console.error('Error fetching data:', error);
+        Alert.alert('Error', 'Failed to load return data');
         router.back();
       } finally {
-        setIsLoadingData(false);
+        setLoading(false);
       }
     };
-
     fetchData();
-  }, [id]);
+  }, [user, id]);
+
+  const handleSave = async () => {
+    if (!user || !returnData) return;
+    try {
+      setSaving(true);
+      await updateSalesReturn(returnData.id, user.id, {
+        returnNumber: returnData.returnNumber,
+        invoiceId: returnData.invoiceId,
+        returnDate: returnData.returnDate,
+        status: returnData.status,
+        subtotal: returnData.subtotal,
+        tax: returnData.tax,
+        total: returnData.total,
+        notes: returnData.notes,
+      }, returnData.items);
+      Alert.alert('Success', 'Return updated successfully');
+      router.back();
+    } catch (error) {
+      console.error('Error updating return:', error);
+      Alert.alert('Error', 'Failed to update return');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleAddItem = () => {
-    const newItem: SalesReturnItem = {
-      productId: '',
-      productName: '',
+    if (!selectedProduct) return;
+    const newItem = {
+      productId: selectedProduct.id,
+      productName: selectedProduct.productName,
       quantity: 1,
-      unitPrice: 0,
-      total: 0,
-      reason: ''
+      unitPrice: selectedProduct.sellingPrice,
+      total: selectedProduct.sellingPrice,
+      notes: '',
     };
-    setFormData({
-      ...formData,
-      items: [...formData.items, newItem]
+    setReturnData({
+      ...returnData,
+      items: [...(returnData.items || []), newItem],
+      subtotal: (returnData.subtotal || 0) + selectedProduct.sellingPrice,
+      total: (returnData.total || 0) + selectedProduct.sellingPrice,
     });
-  };
-
-  const handleRemoveItem = (index: number) => {
-    const newItems = [...formData.items];
-    newItems.splice(index, 1);
-    
-    // Recalculate totals
-    const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1; // 10% tax rate
-    
-    setFormData({
-      ...formData,
-      items: newItems,
-      subtotal,
-      tax,
-      total: subtotal + tax
-    });
-  };
-
-  const handleItemChange = (index: number, field: keyof SalesReturnItem, value: string | number) => {
-    const newItems = [...formData.items];
-    newItems[index] = {
-      ...newItems[index],
-      [field]: value,
-      total: field === 'quantity' || field === 'unitPrice'
-        ? (field === 'quantity' ? Number(value) : newItems[index].quantity) *
-          (field === 'unitPrice' ? Number(value) : newItems[index].unitPrice)
-        : newItems[index].total
-    };
-
-    const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1; // 10% tax rate
-
-    setFormData({
-      ...formData,
-      items: newItems,
-      subtotal,
-      tax,
-      total: subtotal + tax
-    });
-  };
-
-  const handleSelectCustomer = (customer: Customer) => {
-    setFormData({
-      ...formData,
-      customerId: customer.id,
-    });
-    setShowCustomerModal(false);
-    setCustomerSearchQuery('');
-  };
-
-  const handleOpenProductModal = (index: number) => {
-    setSelectedItemIndex(index);
-    setProductSearchQuery('');
-    setFilteredProducts(products);
-    setShowProductModal(true);
-  };
-
-  const handleSelectProduct = (product: Product) => {
-    if (selectedItemIndex === -1) return;
-    
-    const newItems = [...formData.items];
-    newItems[selectedItemIndex] = {
-      ...newItems[selectedItemIndex],
-      productId: product.id,
-      productName: product.name,
-      unitPrice: product.sellingPrice,
-      total: product.sellingPrice * newItems[selectedItemIndex].quantity
-    };
-
-    const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1; // 10% tax rate
-
-    setFormData({
-      ...formData,
-      items: newItems,
-      subtotal,
-      tax,
-      total: subtotal + tax
-    });
-    
+    setSelectedProduct(null);
     setShowProductModal(false);
   };
 
-  const handleOpenReasonModal = (index: number) => {
-    setSelectedItemIndex(index);
-    setShowReasonModal(true);
-  };
-
-  const handleSelectReason = (reason: string) => {
-    if (selectedItemIndex === -1) return;
-    
-    const newItems = [...formData.items];
-    newItems[selectedItemIndex] = {
-      ...newItems[selectedItemIndex],
-      reason
-    };
-
-    setFormData({
-      ...formData,
-      items: newItems
+  const handleRemoveItem = (index: number) => {
+    const item = returnData.items[index];
+    setReturnData({
+      ...returnData,
+      items: returnData.items.filter((_: any, i: number) => i !== index),
+      subtotal: returnData.subtotal - item.total,
+      total: returnData.total - item.total,
     });
-    
-    setShowReasonModal(false);
   };
 
-  const handleCustomerSearch = (text: string) => {
-    setCustomerSearchQuery(text);
-    if (text) {
-      const filtered = customers.filter(customer => 
-        customer.name.toLowerCase().includes(text.toLowerCase())
-      );
-      setFilteredCustomers(filtered);
-    } else {
-      setFilteredCustomers(customers);
+  const handleUpdateItem = (index: number, field: string, value: any) => {
+    const newItems = [...returnData.items];
+    const item = { ...newItems[index] };
+    item[field] = value;
+    if (field === 'quantity' || field === 'unitPrice') {
+      item.total = item.quantity * item.unitPrice;
     }
+    newItems[index] = item;
+    
+    const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
+    const tax = Math.round(subtotal * 0.1); // 10% tax
+    const total = subtotal + tax;
+
+    setReturnData({
+      ...returnData,
+      items: newItems,
+      subtotal,
+      tax,
+      total,
+    });
   };
 
-  const handleProductSearch = (text: string) => {
-    setProductSearchQuery(text);
-    if (text) {
-      const filtered = products.filter(product => 
-        product.name.toLowerCase().includes(text.toLowerCase())
-      );
-      setFilteredProducts(filtered);
-    } else {
-      setFilteredProducts(products);
-    }
-  };
-
-  const handleSave = () => {
-    // Validate form data
-    if (!formData.customerId) {
-      Alert.alert('Error', 'Please select a customer');
-      return;
-    }
-    
-    if (formData.items.length === 0) {
-      Alert.alert('Error', 'Please add at least one item');
-      return;
-    }
-    
-    for (const item of formData.items) {
-      if (!item.productId) {
-        Alert.alert('Error', 'Please select a product for all items');
-        return;
-      }
-      
-      if (!item.reason) {
-        Alert.alert('Error', 'Please provide a return reason for all items');
-        return;
-      }
-    }
-    
-    if (!formData.originalOrderNumber) {
-      Alert.alert('Error', 'Please enter the original order number');
-      return;
-    }
-    
-    // If validation passes, proceed with saving
-    setLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
-      Alert.alert('Success', 'Sales return updated successfully', [
-        {
-          text: 'OK',
-          onPress: () => router.back(),
-        },
-      ]);
-    }, 1500);
-  };
-
-  const renderCustomerItem = ({ item }: { item: Customer }) => (
-    <TouchableOpacity
-      style={[
-        styles.modalItem, 
-        formData.customerId === item.id && styles.selectedModalItem
-      ]}
-      onPress={() => handleSelectCustomer(item)}
-    >
-      <View style={styles.modalItemContent}>
-        <Text style={styles.modalItemTitle}>{item.name}</Text>
-        <Text style={styles.modalItemSubtitle}>{item.email || item.phone}</Text>
-      </View>
-      {formData.customerId === item.id && (
-        <Check size={20} color={Colors.primary} />
-      )}
-    </TouchableOpacity>
-  );
-
-  const renderProductItem = ({ item }: { item: Product }) => (
-    <TouchableOpacity
-      style={styles.modalItem}
-      onPress={() => handleSelectProduct(item)}
-    >
-      <View style={styles.modalItemContent}>
-        <Text style={styles.modalItemTitle}>{item.name}</Text>
-        <Text style={styles.modalItemSubtitle}>${item.sellingPrice.toFixed(2)}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const renderReasonItem = ({ item }: { item: string }) => (
-    <TouchableOpacity
-      style={styles.modalItem}
-      onPress={() => handleSelectReason(item)}
-    >
-      <Text style={styles.modalItemTitle}>{item}</Text>
-    </TouchableOpacity>
-  );
-
-  if (isLoadingData) {
-    return (
-      <View style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
+  if (loading || !returnData) {
+    return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color={Colors.primary} /></View>;
   }
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-      
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Edit Sales Return</Text>
-        <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
-          {loading ? (
-            <ActivityIndicator size="small" color={Colors.text.primary} />
-          ) : (
-            <Save size={24} color={Colors.text.primary} />
-          )}
+        <Text style={styles.title}>Edit Return</Text>
+        <TouchableOpacity 
+          style={styles.saveButton}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Customer <Text style={styles.required}>*</Text></Text>
-          <TouchableOpacity
-            style={styles.selectButton}
-            onPress={() => {
-              setCustomerSearchQuery('');
-              setFilteredCustomers(customers);
-              setShowCustomerModal(true);
-            }}
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.section}>
+          <Text style={styles.label}>Invoice</Text>
+          <TouchableOpacity 
+            style={styles.input}
+            onPress={() => setShowInvoiceModal(true)}
           >
-            <Text style={[
-              styles.selectButtonText,
-              !formData.customerId && styles.placeholderText
-            ]}>
-              {customers.find(c => c.id === formData.customerId)?.name || 'Select customer'}
-            </Text>
-            <ChevronRight size={20} color={Colors.text.secondary} />
+            <FileText size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <Text style={styles.inputText}>#{invoice?.invoiceNumber || 'Select Invoice'}</Text>
+            <ChevronDown size={16} color={Colors.text.secondary} />
           </TouchableOpacity>
-        </View>
 
-        <View style={styles.formGroup}>
           <Text style={styles.label}>Return Number</Text>
-          <View style={styles.disabledInput}>
-            <Text style={styles.disabledInputText}>{formData.returnNumber}</Text>
+          <View style={styles.input}>
+            <Hash size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.textInput}
+              value={returnData.returnNumber}
+              onChangeText={(text) => setReturnData({ ...returnData, returnNumber: text })}
+              placeholder="Enter return number"
+            />
           </View>
-        </View>
 
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Original Order Number <Text style={styles.required}>*</Text></Text>
-          <TextInput
+          <Text style={styles.label}>Status</Text>
+          <TouchableOpacity 
             style={styles.input}
-            placeholder="Enter original order number"
-            placeholderTextColor={Colors.text.tertiary}
-            value={formData.originalOrderNumber}
-            onChangeText={(value) => setFormData({ ...formData, originalOrderNumber: value })}
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Return Date <Text style={styles.required}>*</Text></Text>
-          <TextInput
-            style={styles.input}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={Colors.text.tertiary}
-            value={formData.returnDate}
-            onChangeText={(value) => setFormData({ ...formData, returnDate: value })}
-          />
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Return Items</Text>
-          <TouchableOpacity onPress={handleAddItem} style={styles.addButton}>
-            <Plus size={20} color="white" />
+            onPress={() => setShowStatusModal(true)}
+          >
+            <FileText size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <Text style={styles.inputText}>{returnData.status.charAt(0).toUpperCase() + returnData.status.slice(1)}</Text>
+            <ChevronDown size={16} color={Colors.text.secondary} />
           </TouchableOpacity>
+
+          <Text style={styles.label}>Return Date</Text>
+          <View style={styles.input}>
+            <Calendar size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.textInput}
+              value={returnData.returnDate}
+              onChangeText={(text) => setReturnData({ ...returnData, returnDate: text })}
+              placeholder="YYYY-MM-DD"
+            />
+          </View>
         </View>
 
-        {formData.items.length === 0 ? (
-          <View style={styles.emptyItemsContainer}>
-            <Package size={40} color={Colors.text.tertiary} />
-            <Text style={styles.emptyItemsText}>No items added yet</Text>
-            <Text style={styles.emptyItemsSubtext}>Tap the + button to add return items</Text>
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Items</Text>
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => setShowProductModal(true)}
+            >
+              <Plus size={20} color={Colors.primary} />
+              <Text style={styles.addButtonText}>Add Item</Text>
+            </TouchableOpacity>
           </View>
-        ) : (
-          formData.items.map((item, index) => (
+
+          {returnData.items && returnData.items.length > 0 ? returnData.items.map((item: any, index: number) => (
             <View key={index} style={styles.itemCard}>
               <View style={styles.itemHeader}>
-                <Text style={styles.itemIndexText}>Item {index + 1}</Text>
+                <View style={styles.itemInfo}>
+                  <Package size={16} color={Colors.text.secondary} />
+                  <Text style={styles.itemName}>{item.productName}</Text>
+                </View>
                 <TouchableOpacity 
+                  style={styles.removeButton}
                   onPress={() => handleRemoveItem(index)}
-                  style={styles.removeItemButton}
                 >
-                  <Trash2 size={18} color="#FF3B30" />
+                  <X size={16} color={Colors.negative} />
                 </TouchableOpacity>
               </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Product <Text style={styles.required}>*</Text></Text>
-                <TouchableOpacity
-                  style={styles.selectButton}
-                  onPress={() => handleOpenProductModal(index)}
-                >
-                  <Text style={[
-                    styles.selectButtonText,
-                    !item.productId && styles.placeholderText
-                  ]}>
-                    {item.productName || 'Select product'}
-                  </Text>
-                  <ChevronRight size={20} color={Colors.text.secondary} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.row}>
-                <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                  <Text style={styles.label}>Quantity <Text style={styles.required}>*</Text></Text>
+              <View style={styles.itemDetails}>
+                <View style={styles.itemInput}>
+                  <Text style={styles.itemLabel}>Quantity</Text>
                   <TextInput
-                    style={styles.input}
-                    placeholder="1"
-                    placeholderTextColor={Colors.text.tertiary}
-                    keyboardType="numeric"
+                    style={styles.itemTextInput}
                     value={item.quantity.toString()}
-                    onChangeText={(value) => handleItemChange(index, 'quantity', Number(value) || 0)}
-                  />
-                </View>
-
-                <View style={[styles.formGroup, { flex: 1 }]}>
-                  <Text style={styles.label}>Unit Price <Text style={styles.required}>*</Text></Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0.00"
-                    placeholderTextColor={Colors.text.tertiary}
+                    onChangeText={(text) => handleUpdateItem(index, 'quantity', parseInt(text) || 0)}
                     keyboardType="numeric"
-                    value={item.unitPrice.toString()}
-                    onChangeText={(value) => handleItemChange(index, 'unitPrice', Number(value) || 0)}
                   />
                 </View>
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Return Reason <Text style={styles.required}>*</Text></Text>
-                <TouchableOpacity
-                  style={styles.selectButton}
-                  onPress={() => handleOpenReasonModal(index)}
-                >
-                  <Text style={[
-                    styles.selectButtonText,
-                    !item.reason && styles.placeholderText
-                  ]}>
-                    {item.reason || 'Select reason'}
-                  </Text>
-                  <ChevronRight size={20} color={Colors.text.secondary} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Total</Text>
-                <View style={styles.disabledInput}>
-                  <Text style={styles.totalText}>${item.total.toFixed(2)}</Text>
+                <View style={styles.itemInput}>
+                  <Text style={styles.itemLabel}>Unit Price</Text>
+                  <TextInput
+                    style={styles.itemTextInput}
+                    value={(item.unitPrice / 100).toFixed(2)}
+                    onChangeText={(text) => handleUpdateItem(index, 'unitPrice', Math.round(parseFloat(text) * 100) || 0)}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={styles.itemTotal}>
+                  <Text style={styles.itemLabel}>Total</Text>
+                  <Text style={styles.itemTotalText}>${(item.total / 100).toFixed(2)}</Text>
                 </View>
               </View>
             </View>
-          ))
-        )}
+          )) : (
+            <Text style={styles.emptyText}>No items added</Text>
+          )}
+        </View>
 
-        {formData.items.length > 0 && (
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>${formData.subtotal.toFixed(2)}</Text>
-            </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Tax (10%)</Text>
-              <Text style={styles.summaryValue}>${formData.tax.toFixed(2)}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryTotal}>Total</Text>
-              <Text style={styles.summaryTotalValue}>${formData.total.toFixed(2)}</Text>
-            </View>
-          </View>
-        )}
-
-        <View style={styles.formGroup}>
+        <View style={styles.section}>
           <Text style={styles.label}>Notes</Text>
           <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Enter additional notes or details"
-            placeholderTextColor={Colors.text.tertiary}
+            style={styles.notesInput}
+            value={returnData.notes}
+            onChangeText={(text) => setReturnData({ ...returnData, notes: text })}
+            placeholder="Add notes..."
             multiline
             numberOfLines={4}
-            textAlignVertical="top"
-            value={formData.notes}
-            onChangeText={(value) => setFormData({ ...formData, notes: value })}
           />
         </View>
 
-        <TouchableOpacity
-          style={styles.saveFullButton}
-          onPress={handleSave}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color="white" />
-          ) : (
-            <>
-              <Save size={20} color="white" style={styles.saveButtonIcon} />
-              <Text style={styles.saveButtonText}>Save Changes</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Summary</Text>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Subtotal</Text>
+            <Text style={styles.summaryValue}>${(returnData.subtotal / 100).toFixed(2)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Tax</Text>
+            <Text style={styles.summaryValue}>${(returnData.tax / 100).toFixed(2)}</Text>
+          </View>
+          <View style={[styles.summaryRow, styles.totalRow]}>
+            <Text style={styles.totalRowLabel}>Total</Text>
+            <Text style={styles.totalRowValue}>${(returnData.total / 100).toFixed(2)}</Text>
+          </View>
+        </View>
       </ScrollView>
 
-      {/* Customer Selection Modal */}
+      {/* Invoice Selection Modal */}
       <Modal
-        visible={showCustomerModal}
+        visible={showInvoiceModal}
+        transparent
         animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowCustomerModal(false)}
+        onRequestClose={() => setShowInvoiceModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Customer</Text>
-              <TouchableOpacity onPress={() => setShowCustomerModal(false)}>
+              <Text style={styles.modalTitle}>Select Invoice</Text>
+              <TouchableOpacity onPress={() => setShowInvoiceModal(false)}>
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
-            
-            <View style={styles.searchContainer}>
-              <Search size={20} color={Colors.text.tertiary} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search customers..."
-                placeholderTextColor={Colors.text.tertiary}
-                value={customerSearchQuery}
-                onChangeText={handleCustomerSearch}
-              />
-              {customerSearchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => handleCustomerSearch('')}>
-                  <X size={20} color={Colors.text.tertiary} />
+            <ScrollView>
+              {invoice && (
+                <TouchableOpacity 
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setReturnData({ ...returnData, invoiceId: invoice.id });
+                    setShowInvoiceModal(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>#{invoice.invoiceNumber}</Text>
                 </TouchableOpacity>
               )}
-            </View>
-            
-            <FlatList
-              data={filteredCustomers}
-              renderItem={renderCustomerItem}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.modalList}
-              showsVerticalScrollIndicator={false}
-              ListEmptyComponent={
-                <View style={styles.emptyList}>
-                  <Text style={styles.emptyListText}>No customers found</Text>
-                </View>
-              }
-            />
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -621,11 +309,11 @@ export default function EditSalesReturnScreen() {
       {/* Product Selection Modal */}
       <Modal
         visible={showProductModal}
+        transparent
         animationType="slide"
-        transparent={true}
         onRequestClose={() => setShowProductModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Product</Text>
@@ -633,62 +321,54 @@ export default function EditSalesReturnScreen() {
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
-            
-            <View style={styles.searchContainer}>
-              <Search size={20} color={Colors.text.tertiary} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search products..."
-                placeholderTextColor={Colors.text.tertiary}
-                value={productSearchQuery}
-                onChangeText={handleProductSearch}
-              />
-              {productSearchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => handleProductSearch('')}>
-                  <X size={20} color={Colors.text.tertiary} />
+            <ScrollView>
+              {products.map((product) => (
+                <TouchableOpacity 
+                  key={product.id}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSelectedProduct(product);
+                    handleAddItem();
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{product.productName}</Text>
+                  <Text style={styles.modalItemSubtext}>${(product.sellingPrice / 100).toFixed(2)}</Text>
                 </TouchableOpacity>
-              )}
-            </View>
-            
-            <FlatList
-              data={filteredProducts}
-              renderItem={renderProductItem}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.modalList}
-              showsVerticalScrollIndicator={false}
-              ListEmptyComponent={
-                <View style={styles.emptyList}>
-                  <Text style={styles.emptyListText}>No products found</Text>
-                </View>
-              }
-            />
+              ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* Reason Selection Modal */}
+      {/* Status Selection Modal */}
       <Modal
-        visible={showReasonModal}
+        visible={showStatusModal}
+        transparent
         animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowReasonModal(false)}
+        onRequestClose={() => setShowStatusModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Return Reason</Text>
-              <TouchableOpacity onPress={() => setShowReasonModal(false)}>
+              <Text style={styles.modalTitle}>Select Status</Text>
+              <TouchableOpacity onPress={() => setShowStatusModal(false)}>
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
-            
-            <FlatList
-              data={RETURN_REASONS}
-              renderItem={renderReasonItem}
-              keyExtractor={(item) => item}
-              contentContainerStyle={styles.modalList}
-              showsVerticalScrollIndicator={false}
-            />
+            <ScrollView>
+              {['draft', 'pending', 'approved', 'rejected', 'completed'].map((status) => (
+                <TouchableOpacity 
+                  key={status}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setReturnData({ ...returnData, status });
+                    setShowStatusModal(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{status.charAt(0).toUpperCase() + status.slice(1)}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -703,8 +383,8 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
     backgroundColor: Colors.background.default,
@@ -723,241 +403,191 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
   },
   saveButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.background.default,
-  },
-  loadingText: {
-    marginTop: 12,
+  saveButtonText: {
+    color: Colors.background.default,
     fontSize: 16,
-    color: Colors.text.secondary,
+    fontWeight: '500',
   },
   content: {
     flex: 1,
+  },
+  section: {
     padding: 16,
-  },
-  formGroup: {
-    marginBottom: 16,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: Colors.text.secondary,
-    marginBottom: 8,
-  },
-  required: {
-    color: '#FF3B30',
-  },
-  input: {
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: Colors.text.primary,
-  },
-  disabledInput: {
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  disabledInputText: {
-    fontSize: 16,
-    color: Colors.text.secondary,
-  },
-  totalText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  selectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  selectButtonText: {
-    fontSize: 16,
-    color: Colors.text.primary,
-  },
-  placeholderText: {
-    color: Colors.text.tertiary,
-  },
-  textArea: {
-    minHeight: 100,
-    paddingTop: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
-    marginTop: 8,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  addButton: {
-    backgroundColor: Colors.primary,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  emptyItemsContainer: {
-    padding: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  emptyItemsText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  emptyItemsSubtext: {
+  label: {
     fontSize: 14,
     color: Colors.text.secondary,
-    textAlign: 'center',
+    marginBottom: 4,
+  },
+  input: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+  },
+  inputIcon: {
+    marginRight: 8,
+  },
+  inputText: {
+    flex: 1,
+    fontSize: 16,
+    color: Colors.text.primary,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 16,
+    color: Colors.text.primary,
+    padding: 0,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary + '20',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  addButtonText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 4,
   },
   itemCard: {
-    backgroundColor: Colors.background.default,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: Colors.primary + '20',
+    backgroundColor: Colors.background.secondary,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
   },
   itemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  itemIndexText: {
-    fontSize: 16,
-    fontWeight: '600',
+  itemInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  itemName: {
+    fontSize: 14,
     color: Colors.text.primary,
+    fontWeight: '500',
   },
-  removeItemButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  removeButton: {
+    width: 24,
+    height: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.background.secondary,
   },
-  summaryCard: {
-    backgroundColor: Colors.background.default,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 8,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+  itemDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  itemInput: {
+    flex: 1,
+    marginRight: 8,
+  },
+  itemLabel: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 4,
+  },
+  itemTextInput: {
     borderWidth: 1,
-    borderColor: Colors.primary + '20',
+    borderColor: Colors.border.light,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
+  itemTotal: {
+    alignItems: 'flex-end',
+  },
+  itemTotalText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: Colors.text.primary,
+    textAlignVertical: 'top',
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'center',
+    paddingVertical: 8,
   },
   summaryLabel: {
-    fontSize: 15,
+    fontSize: 16,
     color: Colors.text.secondary,
   },
   summaryValue: {
-    fontSize: 15,
-    color: Colors.text.primary,
-    fontWeight: '500',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border.light,
-    marginVertical: 8,
-  },
-  summaryTotal: {
     fontSize: 16,
+    color: Colors.text.primary,
+  },
+  totalRow: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    marginTop: 8,
+    paddingTop: 16,
+  },
+  totalRowLabel: {
+    fontSize: 18,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  summaryTotalValue: {
+  totalRowValue: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '600',
     color: Colors.primary,
   },
-  saveFullButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    marginBottom: 32,
-  },
-  saveButtonIcon: {
-    marginRight: 8,
-  },
-  saveButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  modalOverlay: {
+  modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: Colors.background.default,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 16,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     maxHeight: '80%',
   },
   modalHeader: {
@@ -973,55 +603,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.background.secondary,
-    margin: 16,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: Colors.text.primary,
-    marginLeft: 8,
-  },
-  modalList: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
   modalItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
+    padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
-  selectedModalItem: {
-    backgroundColor: Colors.primary + '10',
-  },
-  modalItemContent: {
-    flex: 1,
-  },
-  modalItemTitle: {
+  modalItemText: {
     fontSize: 16,
     color: Colors.text.primary,
-    fontWeight: '500',
   },
-  modalItemSubtitle: {
+  modalItemSubtext: {
     fontSize: 14,
     color: Colors.text.secondary,
     marginTop: 4,
   },
-  emptyList: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  emptyListText: {
-    fontSize: 16,
-    color: Colors.text.secondary,
-  }
 }); 

@@ -15,4 +15,4 @@ export const db = drizzle(expoDb, { schema });
 export * from './schema';
 
 // Export the setup function
-export { setupDatabase } from './setup'; 
+export { setupDatabase,setupDefaultData } from './setup'; 

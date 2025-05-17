@@ -1,156 +1,148 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
   Alert,
   ActivityIndicator,
-  StatusBar
+  StatusBar,
+  Share
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { 
-  ArrowLeft, 
-  Printer, 
-  Trash, 
-  Pencil,
-  Calendar, 
-  User, 
-  FileText, 
-  DollarSign,
+import {
+  ArrowLeft,
+  Calendar,
+  Printer,
+  Share2,
+  Edit,
+  Trash,
+  FileText,
   Package,
-  Truck
+  DollarSign,
+  User,
+  MapPin,
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertCircle
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// Mock data for purchase orders
-const purchaseOrderData = [
-  {
-    id: 'po-001',
-    orderNumber: 'PO-2023-001',
-    vendorId: 'v-001',
-    vendorName: 'ABC Suppliers',
-    orderDate: '2023-08-15',
-    deliveryDate: '2023-09-15',
-    subtotal: 750.00,
-    tax: 75.00,
-    total: 825.00,
-    status: 'completed',
-    items: [
-      { id: 'item-001', productName: 'Office Chair', quantity: 3, unitPrice: 150.00, total: 450.00 },
-      { id: 'item-002', productName: 'Desk Lamp', quantity: 6, unitPrice: 50.00, total: 300.00 }
-    ]
-  },
-  {
-    id: 'po-002',
-    orderNumber: 'PO-2023-002',
-    vendorId: 'v-002',
-    vendorName: 'XYZ Electronics',
-    orderDate: '2023-08-20',
-    deliveryDate: '2023-09-20',
-    subtotal: 1200.00,
-    tax: 120.00,
-    total: 1320.00,
-    status: 'pending',
-    items: [
-      { id: 'item-003', productName: 'Laptop', quantity: 1, unitPrice: 1200.00, total: 1200.00 }
-    ]
-  },
-  {
-    id: 'po-003',
-    orderNumber: 'PO-2023-003',
-    vendorId: 'v-003',
-    vendorName: 'Office Supplies Co.',
-    orderDate: '2023-08-10',
-    deliveryDate: '2023-09-10',
-    subtotal: 480.00,
-    tax: 48.00,
-    total: 528.00,
-    status: 'processing',
-    items: [
-      { id: 'item-004', productName: 'Printer Paper', quantity: 20, unitPrice: 10.00, total: 200.00 },
-      { id: 'item-005', productName: 'Ink Cartridges', quantity: 4, unitPrice: 70.00, total: 280.00 }
-    ]
-  },
-  {
-    id: 'po-004',
-    orderNumber: 'PO-2023-004',
-    vendorId: 'v-004',
-    vendorName: 'Tech Gadgets Inc.',
-    orderDate: '2023-08-25',
-    deliveryDate: '2023-09-25',
-    subtotal: 900.00,
-    tax: 90.00,
-    total: 990.00,
-    status: 'pending',
-    items: [
-      { id: 'item-006', productName: 'Wireless Headphones', quantity: 3, unitPrice: 150.00, total: 450.00 },
-      { id: 'item-007', productName: 'Smart Speaker', quantity: 3, unitPrice: 150.00, total: 450.00 }
-    ]
-  },
-  {
-    id: 'po-005',
-    orderNumber: 'PO-2023-005',
-    vendorId: 'v-005',
-    vendorName: 'Furniture Warehouse',
-    orderDate: '2023-07-30',
-    deliveryDate: '2023-08-30',
-    subtotal: 2500.00,
-    tax: 250.00,
-    total: 2750.00,
-    status: 'cancelled',
-    items: [
-      { id: 'item-008', productName: 'Conference Table', quantity: 1, unitPrice: 1500.00, total: 1500.00 },
-      { id: 'item-009', productName: 'Office Chair', quantity: 5, unitPrice: 200.00, total: 1000.00 }
-    ]
-  }
-];
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { db } from '../../db';
+import { purchaseOrders, purchaseOrderItems, vendors, products } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { useAuthStore } from '@/store/auth';
+import { formatCurrency } from '../../utils/format';
+import { format } from 'date-fns';
 
-// Interface for PurchaseOrder
+interface PurchaseOrderItem {
+  id: number;
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  discount: number;
+  tax: number;
+}
+
 interface PurchaseOrder {
-  id: string;
+  id: number;
   orderNumber: string;
-  vendorId: string;
+  vendorId: number;
   vendorName: string;
   orderDate: string;
-  deliveryDate: string;
+  status: string;
+  total: number;
   subtotal: number;
   tax: number;
-  total: number;
-  status: string;
-  items: {
-    id: string;
-    productName: string;
-    quantity: number;
-    unitPrice: number;
-    total: number;
-  }[];
+  discount: number;
+  notes: string;
+  shippingAddress: string;
+  billingAddress: string;
+  paymentTerms: string;
+  dueDate: string;
+  items: PurchaseOrderItem[];
 }
 
 export default function PurchaseOrderDetailsScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const [order, setOrder] = useState<PurchaseOrder | null>(null);
+  const { id } = useLocalSearchParams();
+  const { user } = useAuthStore();
   const [loading, setLoading] = useState(true);
+  const [order, setOrder] = useState<PurchaseOrder | null>(null);
 
   useEffect(() => {
-    // Simulate API fetch
-    const fetchOrder = () => {
-      setLoading(true);
-      setTimeout(() => {
-        const foundOrder = purchaseOrderData.find(o => o.id === id);
-        setOrder(foundOrder || null);
-        setLoading(false);
-      }, 500);
-    };
-
-    fetchOrder();
+    loadPurchaseOrder();
   }, [id]);
+
+  const loadPurchaseOrder = async () => {
+    if (!user || !id) return;
+
+    try {
+      // Load purchase order details
+      const [orderResult] = await db
+        .select({
+          id: purchaseOrders.id,
+          orderNumber: purchaseOrders.orderNumber,
+          orderDate: purchaseOrders.orderDate,
+          status: purchaseOrders.status,
+          total: purchaseOrders.total,
+          subtotal: purchaseOrders.subtotal,
+          tax: purchaseOrders.tax,
+          discount: purchaseOrders.discount,
+          notes: purchaseOrders.notes,
+          shippingAddress: purchaseOrders.shippingAddress,
+          billingAddress: purchaseOrders.billingAddress,
+          paymentTerms: purchaseOrders.paymentTerms,
+          dueDate: purchaseOrders.dueDate,
+          vendorId: purchaseOrders.vendorId,
+          vendorName: vendors.name,
+        })
+        .from(purchaseOrders)
+        .leftJoin(vendors, eq(purchaseOrders.vendorId, vendors.id))
+        .where(eq(purchaseOrders.id, parseInt(id as string)))
+        .limit(1);
+
+      if (!orderResult) {
+        Alert.alert('Error', 'Purchase order not found');
+        router.back();
+        return;
+      }
+
+      // Load purchase order items
+      const itemsResult = await db
+        .select({
+          id: purchaseOrderItems.id,
+          productId: purchaseOrderItems.productId,
+          quantity: purchaseOrderItems.quantity,
+          unitPrice: purchaseOrderItems.unitPrice,
+          total: purchaseOrderItems.total,
+          discount: purchaseOrderItems.discount,
+          tax: purchaseOrderItems.tax,
+          productName: products.productName,
+        })
+        .from(purchaseOrderItems)
+        .leftJoin(products, eq(purchaseOrderItems.productId, products.id))
+        .where(eq(purchaseOrderItems.orderId, parseInt(id as string)));
+
+      setOrder({
+        ...orderResult,
+        items: itemsResult,
+      });
+    } catch (error) {
+      console.error('Error loading purchase order:', error);
+      Alert.alert('Error', 'Failed to load purchase order details');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDelete = () => {
     Alert.alert(
-      'Delete Order',
+      'Delete Purchase Order',
       'Are you sure you want to delete this purchase order?',
       [
         {
@@ -160,10 +152,16 @@ export default function PurchaseOrderDetailsScreen() {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            // Here you would typically call an API to delete the order
-            Alert.alert('Success', 'Purchase order deleted successfully');
-            router.back();
+          onPress: async () => {
+            try {
+              await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, parseInt(id as string)));
+              await db.delete(purchaseOrders).where(eq(purchaseOrders.id, parseInt(id as string)));
+              Alert.alert('Success', 'Purchase order deleted successfully');
+              router.back();
+            } catch (error) {
+              console.error('Error deleting purchase order:', error);
+              Alert.alert('Error', 'Failed to delete purchase order');
+            }
           },
         },
       ]
@@ -172,6 +170,16 @@ export default function PurchaseOrderDetailsScreen() {
 
   const handlePrint = () => {
     Alert.alert('Print', 'Printing purchase order...');
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `Purchase Order #${order?.orderNumber}\nVendor: ${order?.vendorName}\nTotal: ${formatCurrency(order?.total || 0)}`,
+      });
+    } catch (error) {
+      console.error('Error sharing purchase order:', error);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -192,9 +200,7 @@ export default function PurchaseOrderDetailsScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading order details...</Text>
       </View>
     );
   }
@@ -202,200 +208,164 @@ export default function PurchaseOrderDetailsScreen() {
   if (!order) {
     return (
       <View style={styles.errorContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-        <Text style={styles.errorText}>Order not found</Text>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backButtonText}>Go Back</Text>
-        </TouchableOpacity>
+        <Text style={styles.errorText}>Purchase order not found</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+      
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Order Details</Text>
+        <Text style={styles.title}>Purchase Order Details</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity 
-            style={styles.headerButton}
-            onPress={() => router.push(`/purchase-order/edit/${id}`)}
-          >
-            <Pencil size={22} color={Colors.primary} />
+          <TouchableOpacity onPress={handlePrint} style={styles.actionButton}>
+            <Printer size={20} color={Colors.primary} />
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.headerButton}
-            onPress={handlePrint}
-          >
-            <Printer size={22} color={Colors.text.secondary} />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.headerButton}
-            onPress={handleDelete}
-          >
-            <Trash size={22} color="#FF3B30" />
+          <TouchableOpacity onPress={handleShare} style={styles.actionButton}>
+            <Share2 size={20} color={Colors.primary} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Amount Card */}
-        <View style={styles.amountCard}>
-          <Text style={styles.amountLabel}>Total Amount</Text>
-          <Text style={styles.amountValue}>${order.total.toFixed(2)}</Text>
-          <View style={[
-            styles.statusBadge, 
-            { backgroundColor: getStatusColor(order.status).bg }
-          ]}>
-            <Text style={[
-              styles.statusText, 
-              { color: getStatusColor(order.status).text }
-            ]}>
-              {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+      <ScrollView style={styles.content}>
+        {/* Order Status */}
+        <View style={styles.statusSection}>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status).bg }]}>
+            <Text style={[styles.statusText, { color: getStatusColor(order.status).text }]}>
+              {order.status.toUpperCase()}
             </Text>
           </View>
         </View>
 
-        {/* Order Information */}
+        {/* Order Info */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Order Information</Text>
-          <View style={styles.card}>
-            <View style={styles.infoRow}>
-              <View style={styles.infoItem}>
-                <FileText size={18} color={Colors.text.secondary} style={styles.infoIcon} />
-                <View>
-                  <Text style={styles.infoLabel}>Order Number</Text>
-                  <Text style={styles.infoValue}>{order.orderNumber}</Text>
-                </View>
-              </View>
+          <View style={styles.sectionHeader}>
+            <FileText size={20} color={Colors.primary} />
+            <Text style={styles.sectionTitle}>Order Information</Text>
+          </View>
+          <View style={styles.infoGrid}>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Order Number</Text>
+              <Text style={styles.infoValue}>{order.orderNumber}</Text>
             </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.infoItem}>
-                <Calendar size={18} color={Colors.text.secondary} style={styles.infoIcon} />
-                <View>
-                  <Text style={styles.infoLabel}>Order Date</Text>
-                  <Text style={styles.infoValue}>{new Date(order.orderDate).toLocaleDateString()}</Text>
-                </View>
-              </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Order Date</Text>
+              <Text style={styles.infoValue}>{format(new Date(order.orderDate), 'MMM dd, yyyy')}</Text>
             </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.infoItem}>
-                <Truck size={18} color={Colors.text.secondary} style={styles.infoIcon} />
-                <View>
-                  <Text style={styles.infoLabel}>Delivery Date</Text>
-                  <Text style={styles.infoValue}>{new Date(order.deliveryDate).toLocaleDateString()}</Text>
-                </View>
-              </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Due Date</Text>
+              <Text style={styles.infoValue}>{order.dueDate ? format(new Date(order.dueDate), 'MMM dd, yyyy') : 'N/A'}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Payment Terms</Text>
+              <Text style={styles.infoValue}>{order.paymentTerms || 'N/A'}</Text>
             </View>
           </View>
         </View>
 
-        {/* Vendor Information */}
+        {/* Vendor Info */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Vendor Information</Text>
-          <View style={styles.card}>
-            <View style={styles.infoRow}>
-              <View style={styles.infoItem}>
-                <User size={18} color={Colors.text.secondary} style={styles.infoIcon} />
-                <View>
-                  <Text style={styles.infoLabel}>Vendor Name</Text>
-                  <Text style={styles.infoValue}>{order.vendorName}</Text>
-                </View>
+          <View style={styles.sectionHeader}>
+            <User size={20} color={Colors.primary} />
+            <Text style={styles.sectionTitle}>Vendor Information</Text>
+          </View>
+          <View style={styles.infoGrid}>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Vendor Name</Text>
+              <Text style={styles.infoValue}>{order.vendorName}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Shipping Address</Text>
+              <Text style={styles.infoValue}>{order.shippingAddress || 'N/A'}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Billing Address</Text>
+              <Text style={styles.infoValue}>{order.billingAddress || 'N/A'}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Items */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Package size={20} color={Colors.primary} />
+            <Text style={styles.sectionTitle}>Items</Text>
+          </View>
+          {order.items.map((item) => (
+            <View key={item.id} style={styles.itemRow}>
+              <View style={styles.itemInfo}>
+                <Text style={styles.itemName}>{item.productName}</Text>
+                <Text style={styles.itemDetails}>
+                  {item.quantity} x {formatCurrency(item.unitPrice)}
+                </Text>
               </View>
+              <Text style={styles.itemTotal}>{formatCurrency(item.total)}</Text>
             </View>
-          </View>
+          ))}
         </View>
 
-        {/* Order Items */}
+        {/* Totals */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Order Items</Text>
-          <View style={styles.card}>
-            {order.items.map((item, index) => (
-              <React.Fragment key={item.id}>
-                {index > 0 && <View style={styles.divider} />}
-                <View style={styles.itemContainer}>
-                  <View style={styles.itemHeader}>
-                    <Text style={styles.itemName}>{item.productName}</Text>
-                    <Text style={styles.itemPrice}>${item.unitPrice.toFixed(2)} × {item.quantity}</Text>
-                  </View>
-                  <View style={styles.itemFooter}>
-                    <Text style={styles.itemTotal}>${item.total.toFixed(2)}</Text>
-                  </View>
-                </View>
-              </React.Fragment>
-            ))}
+          <View style={styles.sectionHeader}>
+            <DollarSign size={20} color={Colors.primary} />
+            <Text style={styles.sectionTitle}>Totals</Text>
           </View>
-        </View>
-
-        {/* Summary */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Summary</Text>
-          <View style={styles.card}>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>${order.subtotal.toFixed(2)}</Text>
+          <View style={styles.totalsGrid}>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Subtotal</Text>
+              <Text style={styles.totalValue}>{formatCurrency(order.subtotal)}</Text>
             </View>
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Tax</Text>
-              <Text style={styles.summaryValue}>${order.tax.toFixed(2)}</Text>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Tax</Text>
+              <Text style={styles.totalValue}>{formatCurrency(order.tax)}</Text>
             </View>
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.summaryRowTotal}>
-              <Text style={styles.summaryLabelTotal}>Total</Text>
-              <Text style={styles.summaryValueTotal}>${order.total.toFixed(2)}</Text>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Discount</Text>
+              <Text style={styles.totalValue}>{formatCurrency(order.discount)}</Text>
+            </View>
+            <View style={[styles.totalRow, styles.grandTotal]}>
+              <Text style={styles.grandTotalLabel}>Total</Text>
+              <Text style={styles.grandTotalValue}>{formatCurrency(order.total)}</Text>
             </View>
           </View>
         </View>
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.deleteButton]}
-            onPress={handleDelete}
-          >
-            <Trash size={20} color="#FFF" />
-            <Text style={styles.actionButtonText}>Delete</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionButton, styles.printButton]}
-            onPress={handlePrint}
-          >
-            <Printer size={20} color="#FFF" />
-            <Text style={styles.actionButtonText}>Print</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionButton, styles.editButton]}
-            onPress={() => router.push(`/purchase-order/edit/${order.id}`)}
-          >
-            <Pencil size={20} color="#FFF" />
-            <Text style={styles.actionButtonText}>Edit</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Notes */}
+        {order.notes && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <FileText size={20} color={Colors.primary} />
+              <Text style={styles.sectionTitle}>Notes</Text>
+            </View>
+            <Text style={styles.notes}>{order.notes}</Text>
+          </View>
+        )}
       </ScrollView>
-    </View>
+
+      {/* Action Buttons */}
+      <View style={styles.footer}>
+        <TouchableOpacity
+          style={[styles.footerButton, styles.editButton]}
+          onPress={() => router.push(`/purchase-order/edit/${id}`)}
+        >
+          <Edit size={20} color="#fff" />
+          <Text style={styles.footerButtonText}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.footerButton, styles.deleteButton]}
+          onPress={handleDelete}
+        >
+          <Trash size={20} color="#fff" />
+          <Text style={styles.footerButtonText}>Delete</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -410,50 +380,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.background.default,
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: Colors.text.secondary,
-  },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: Colors.background.default,
-    padding: 20,
   },
   errorText: {
-    fontSize: 18,
-    color: Colors.text.primary,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  backButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: '#FFF',
     fontSize: 16,
-    fontWeight: '600',
+    color: Colors.text.secondary,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    padding: 16,
     backgroundColor: Colors.background.default,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
-  headerButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+  backButton: {
+    padding: 8,
   },
   title: {
     fontSize: 20,
@@ -464,191 +411,157 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  scrollView: {
-    flex: 1,
+  actionButton: {
+    padding: 8,
+    marginLeft: 8,
   },
   content: {
+    flex: 1,
     padding: 16,
-    paddingBottom: 32,
   },
-  amountCard: {
-    backgroundColor: Colors.background.default,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: Colors.primary + '30',
-  },
-  amountLabel: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    marginBottom: 8,
-  },
-  amountValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
-    marginBottom: 12,
+  statusSection: {
+    marginBottom: 24,
   },
   statusBadge: {
+    alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
   },
   statusText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
   },
   section: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
-    marginBottom: 8,
-    marginLeft: 4,
+    marginLeft: 8,
   },
-  card: {
-    backgroundColor: Colors.background.default,
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
-  },
-  infoRow: {
+  infoGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    marginHorizontal: -8,
   },
   infoItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    flex: 1,
-  },
-  infoIcon: {
-    marginRight: 12,
-    marginTop: 2,
+    width: '50%',
+    paddingHorizontal: 8,
+    marginBottom: 16,
   },
   infoLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: Colors.text.secondary,
     marginBottom: 4,
   },
   infoValue: {
-    fontSize: 16,
+    fontSize: 14,
     color: Colors.text.primary,
-    fontWeight: '500',
   },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border.light,
-    marginVertical: 12,
-  },
-  itemContainer: {
-    paddingVertical: 4,
-  },
-  itemHeader: {
+  itemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  itemInfo: {
+    flex: 1,
   },
   itemName: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
-    color: Colors.text.primary,
-  },
-  itemPrice: {
     fontSize: 14,
-    color: Colors.text.secondary,
-    marginLeft: 8,
+    color: Colors.text.primary,
+    marginBottom: 4,
   },
-  itemFooter: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
+  itemDetails: {
+    fontSize: 12,
+    color: Colors.text.secondary,
   },
   itemTotal: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: Colors.primary,
+    color: Colors.text.primary,
   },
-  summaryRow: {
+  totalsGrid: {
+    marginTop: 8,
+  },
+  totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
-  summaryLabel: {
+  totalLabel: {
     fontSize: 14,
     color: Colors.text.secondary,
   },
-  summaryValue: {
+  totalValue: {
     fontSize: 14,
     color: Colors.text.primary,
-    fontWeight: '500',
   },
-  summaryRowTotal: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  grandTotal: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
   },
-  summaryLabelTotal: {
+  grandTotalLabel: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  summaryValueTotal: {
-    fontSize: 18,
-    fontWeight: '700',
+  grandTotalValue: {
+    fontSize: 16,
+    fontWeight: '600',
     color: Colors.primary,
   },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
+  notes: {
+    fontSize: 14,
+    color: Colors.text.primary,
+    lineHeight: 20,
   },
-  actionButton: {
+  footer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    padding: 16,
+    backgroundColor: Colors.background.default,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+  },
+  footerButton: {
     flex: 1,
-    marginHorizontal: 4,
-  },
-  deleteButton: {
-    backgroundColor: '#FF3B30',
-  },
-  printButton: {
-    backgroundColor: Colors.text.secondary,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginHorizontal: 8,
   },
   editButton: {
     backgroundColor: Colors.primary,
   },
-  actionButtonText: {
-    color: '#FFF',
+  deleteButton: {
+    backgroundColor: Colors.negative,
+  },
+  footerButtonText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '600',
-    fontSize: 14,
-    marginLeft: 6,
+    marginLeft: 8,
   },
 }); 

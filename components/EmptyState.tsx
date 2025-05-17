@@ -19,10 +19,33 @@ type IconName = "shopping-cart" | "trending-up" | "arrow-down-left" | "arrow-up-
 interface EmptyStateProps {
   title: string;
   description: string;
-  icon: React.ReactNode;
+  icon: IconName | React.ReactNode;
   actionLabel?: string;
   onAction?: () => void;
 }
+
+const getIconComponent = (iconName: IconName) => {
+  switch (iconName) {
+    case "shopping-cart":
+      return <ShoppingCart size={48} color={Colors.primary} />;
+    case "trending-up":
+      return <TrendingUp size={48} color={Colors.primary} />;
+    case "arrow-down-left":
+      return <ArrowDownLeft size={48} color={Colors.primary} />;
+    case "arrow-up-right":
+      return <ArrowUpRight size={48} color={Colors.primary} />;
+    case "bar-chart":
+      return <BarChart size={48} color={Colors.primary} />;
+    case "users":
+      return <Users size={48} color={Colors.primary} />;
+    case "building":
+      return <Building size={48} color={Colors.primary} />;
+    case "package":
+      return <Package size={48} color={Colors.primary} />;
+    default:
+      return null;
+  }
+};
 
 export default function EmptyState({ 
   title, 
@@ -31,10 +54,12 @@ export default function EmptyState({
   actionLabel,
   onAction
 }: EmptyStateProps) {
+  const iconComponent = typeof icon === 'string' ? getIconComponent(icon as IconName) : icon;
+
   return (
     <View style={styles.container}>
       <View style={styles.iconContainer}>
-        {icon}
+        {iconComponent}
       </View>
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.description}>{description}</Text>

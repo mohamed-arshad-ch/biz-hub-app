@@ -9,7 +9,6 @@ import {
   Alert,
   FlatList,
   Modal,
-  ColorValue,
   ActivityIndicator,
   ScrollView
 } from 'react-native';
@@ -25,13 +24,14 @@ import {
 } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
-import { IncomeCategory } from '@/types/category';
+import { useAuthStore } from '@/store/auth';
 import { 
-  getIncomeCategories, 
-  addIncomeCategory, 
-  updateIncomeCategory, 
-  deleteIncomeCategory 
-} from '@/mocks/categoryData';
+  IncomeCategory,
+  createIncomeCategory,
+  getAllIncomeCategories,
+  updateIncomeCategory,
+  deleteIncomeCategory
+} from '@/db/income-category';
 
 // Color options for categories
 const colorOptions = [
@@ -41,6 +41,7 @@ const colorOptions = [
 
 export default function IncomeCategorySettingsScreen() {
   const router = useRouter();
+  const user = useAuthStore(state => state.user);
   const [categories, setCategories] = useState<IncomeCategory[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [currentCategory, setCurrentCategory] = useState<IncomeCategory | null>(null);
@@ -51,13 +52,17 @@ export default function IncomeCategorySettingsScreen() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadCategories();
-  }, []);
+    if (user) {
+      loadCategories();
+    }
+  }, [user]);
 
   const loadCategories = async () => {
+    if (!user) return;
+    
     setIsLoading(true);
     try {
-      const categoriesData = await getIncomeCategories();
+      const categoriesData = await getAllIncomeCategories(user.id);
       setCategories(categoriesData);
     } catch (error) {
       console.error('Error loading income categories:', error);
@@ -80,12 +85,12 @@ export default function IncomeCategorySettingsScreen() {
     setIsEditing(true);
     setCurrentCategory(category);
     setName(category.name);
-    setDescription(category.description);
+    setDescription(category.description || '');
     setSelectedColor(category.color);
     setModalVisible(true);
   };
 
-  const handleDeleteCategory = (id: string) => {
+  const handleDeleteCategory = (id: number) => {
     Alert.alert(
       'Delete Category',
       'Are you sure you want to delete this income category?',
@@ -98,15 +103,13 @@ export default function IncomeCategorySettingsScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            if (!user) return;
+            
             setIsLoading(true);
             try {
-              const success = await deleteIncomeCategory(id);
-              if (success) {
-                setCategories(categories.filter(category => category.id !== id));
-                Alert.alert('Success', 'Category deleted successfully');
-              } else {
-                Alert.alert('Error', 'Failed to delete category');
-              }
+              await deleteIncomeCategory(id, user.id);
+              setCategories(categories.filter(category => category.id !== id));
+              Alert.alert('Success', 'Category deleted successfully');
             } catch (error) {
               console.error('Error deleting category:', error);
               Alert.alert('Error', 'An error occurred while deleting the category');
@@ -120,6 +123,8 @@ export default function IncomeCategorySettingsScreen() {
   };
 
   const handleSaveCategory = async () => {
+    if (!user) return;
+    
     if (!name.trim()) {
       Alert.alert('Error', 'Category name is required');
       return;
@@ -130,7 +135,7 @@ export default function IncomeCategorySettingsScreen() {
     try {
       if (isEditing && currentCategory) {
         // Update existing category
-        const updatedCategory = await updateIncomeCategory(currentCategory.id, {
+        const updatedCategory = await updateIncomeCategory(currentCategory.id, user.id, {
           name,
           description,
           color: selectedColor
@@ -146,7 +151,8 @@ export default function IncomeCategorySettingsScreen() {
         }
       } else {
         // Add new category
-        const newCategory = await addIncomeCategory({
+        const newCategory = await createIncomeCategory({
+          userId: user.id,
           name,
           description,
           color: selectedColor
@@ -247,7 +253,7 @@ export default function IncomeCategorySettingsScreen() {
         <FlatList
           data={categories}
           renderItem={renderCategoryItem}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />

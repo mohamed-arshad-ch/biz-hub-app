@@ -1,384 +1,384 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, StatusBar, KeyboardAvoidingView, Platform, Modal, TextInput, FlatList } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, StatusBar, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Save, User, Calendar, CreditCard, Hash, FileText, ChevronDown, Check, DollarSign, X, Search } from 'lucide-react-native';
+import { ArrowLeft, Plus, X, FileText, Calendar, Hash, Package, DollarSign, ChevronDown } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { PaymentInFormData } from '@/types/payment-in';
-import { getCustomersData } from '@/mocks/customersData';
-import { Customer } from '@/types/customer';
+import { useAuthStore } from '@/store/auth';
+import { createPaymentIn } from '@/db/payment-in';
+import * as dbCustomer from '@/db/customer';
+import * as dbInvoice from '@/db/sales-invoice';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-const PAYMENT_METHODS = [
-  'Bank Transfer',
-  'Cash',
-  'Credit Card',
-  'Check',
-  'PayPal',
-  'Other'
-];
-
-const STATUS_OPTIONS = [
-  { value: 'pending', label: 'Pending' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled', label: 'Cancelled' }
-];
 
 export default function NewPaymentInScreen() {
   const router = useRouter();
-  const [formData, setFormData] = useState<PaymentInFormData>({
-    customerId: '',
-    amount: 0,
+  const { user } = useAuthStore();
+  const insets = useSafeAreaInsets();
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+
+  const [paymentData, setPaymentData] = useState({
+    paymentNumber: '',
+    customerId: 0,
     paymentDate: new Date().toISOString().split('T')[0],
     paymentMethod: '',
     referenceNumber: '',
+    status: 'pending',
+    amount: 0,
     notes: '',
-    status: 'pending'
   });
-  
-  // Bottom sheet visibility states
-  const [showCustomerSheet, setShowCustomerSheet] = useState(false);
-  const [showPaymentMethodSheet, setShowPaymentMethodSheet] = useState(false);
-  const [showStatusSheet, setShowStatusSheet] = useState(false);
-  
-  // Search functionality for customers
-  const [customers] = useState<Customer[]>(getCustomersData());
-  const [customerSearch, setCustomerSearch] = useState('');
-  const filteredCustomers = customers.filter(customer => 
-    customer.name.toLowerCase().includes(customerSearch.toLowerCase())
-  );
 
-  const handleSave = () => {
-    // Validate form data
-    if (!formData.customerId || !formData.amount || !formData.paymentMethod) {
+  const [items, setItems] = useState<{
+    invoiceId: number;
+    amount: number;
+    notes?: string;
+  }[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const custs = await dbCustomer.getAllCustomers(user.id);
+        setCustomers(custs);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        Alert.alert('Error', 'Failed to load data');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [user]);
+
+  useEffect(() => {
+    if (!selectedCustomer || !user) return;
+    const fetchInvoices = async () => {
+      try {
+        const invs = await dbInvoice.getSalesInvoices(user.id);
+        setInvoices(invs.filter(inv => inv.customerId === selectedCustomer.id && inv.status === 'unpaid'));
+      } catch (error) {
+        console.error('Error fetching invoices:', error);
+        Alert.alert('Error', 'Failed to load invoices');
+      }
+    };
+    fetchInvoices();
+  }, [selectedCustomer, user]);
+
+  const handleSave = async () => {
+    if (!user) return;
+    if (!paymentData.paymentNumber || !paymentData.customerId || !paymentData.paymentMethod || !paymentData.amount) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
+    if (items.length === 0) {
+      Alert.alert('Error', 'Please add at least one invoice');
+      return;
+    }
 
-    // Here you would typically save the data to your backend
-    Alert.alert(
-      'Success',
-      'Payment saved successfully',
-      [
-        {
-          text: 'OK',
-          onPress: () => router.back()
-        }
-      ]
-    );
-  };
-  
-  const selectCustomer = (customer: Customer) => {
-    setFormData({ ...formData, customerId: customer.id });
-    setShowCustomerSheet(false);
-    setCustomerSearch('');
-  };
-  
-  const selectPaymentMethod = (method: string) => {
-    setFormData({ ...formData, paymentMethod: method });
-    setShowPaymentMethodSheet(false);
-  };
-  
-  const selectStatus = (status: string) => {
-    setFormData({ ...formData, status: status as PaymentInFormData['status'] });
-    setShowStatusSheet(false);
-  };
-  
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return { bg: 'rgba(76, 175, 80, 0.1)', text: Colors.status.completed };
-      case 'pending':
-        return { bg: 'rgba(251, 188, 4, 0.1)', text: Colors.status.pending };
-      case 'cancelled':
-        return { bg: 'rgba(209, 209, 214, 0.1)', text: Colors.status.cancelled };
-      default:
-        return { bg: 'rgba(209, 209, 214, 0.1)', text: Colors.text.secondary };
+    try {
+      setSaving(true);
+      await createPaymentIn(user.id, paymentData, items);
+      Alert.alert('Success', 'Payment created successfully');
+      router.back();
+    } catch (error) {
+      console.error('Error creating payment:', error);
+      Alert.alert('Error', 'Failed to create payment');
+    } finally {
+      setSaving(false);
     }
   };
-  
-  const renderCustomerItem = ({ item }: { item: Customer }) => (
-    <TouchableOpacity
-      style={styles.sheetItem}
-      onPress={() => selectCustomer(item)}
-    >
-      <Text style={styles.sheetItemText}>{item.name}</Text>
-      {formData.customerId === item.id && (
-        <Check size={18} color={Colors.primary} />
-      )}
-    </TouchableOpacity>
-  );
+
+  const handleAddItem = () => {
+    if (!selectedInvoice) return;
+    const newItem = {
+      invoiceId: selectedInvoice.id,
+      amount: selectedInvoice.total,
+      notes: '',
+    };
+    setItems([...items, newItem]);
+    setPaymentData({
+      ...paymentData,
+      amount: paymentData.amount + selectedInvoice.total,
+    });
+    setSelectedInvoice(null);
+    setShowInvoiceModal(false);
+  };
+
+  const handleRemoveItem = (index: number) => {
+    const item = items[index];
+    setItems(items.filter((_, i) => i !== index));
+    setPaymentData({
+      ...paymentData,
+      amount: paymentData.amount - item.amount,
+    });
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={100}
-    >
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>New Payment</Text>
-        <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
-          <Text style={styles.saveButtonText}>Save</Text>
+        <TouchableOpacity 
+          style={styles.saveButton}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.card}>
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <User size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Customer <Text style={{ color: Colors.primary }}>*</Text></Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.selectContainer}
-              onPress={() => setShowCustomerSheet(true)}
-            >
-              <Text style={[
-                styles.selectText, 
-                !formData.customerId && styles.placeholderText
-              ]}>
-                {customers.find(c => c.id === formData.customerId)?.name || 'Select customer'}
-              </Text>
-              <ChevronDown size={18} color={Colors.text.secondary} />
-            </TouchableOpacity>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.section}>
+          <Text style={styles.label}>Customer</Text>
+          <TouchableOpacity 
+            style={styles.input}
+            onPress={() => setShowCustomerModal(true)}
+          >
+            <FileText size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <Text style={styles.inputText}>{selectedCustomer?.name || 'Select Customer'}</Text>
+            <ChevronDown size={16} color={Colors.text.secondary} />
+          </TouchableOpacity>
+
+          <Text style={styles.label}>Payment Number</Text>
+          <View style={styles.input}>
+            <Hash size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.textInput}
+              value={paymentData.paymentNumber}
+              onChangeText={(text) => setPaymentData({ ...paymentData, paymentNumber: text })}
+              placeholder="Enter payment number"
+            />
           </View>
 
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <DollarSign size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Amount <Text style={{ color: Colors.primary }}>*</Text></Text>
-            </View>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="0.00"
-                keyboardType="numeric"
-                value={formData.amount > 0 ? formData.amount.toString() : ''}
-                onChangeText={(value) => setFormData({ ...formData, amount: parseFloat(value) || 0 })}
-              />
-            </View>
+          <Text style={styles.label}>Status</Text>
+          <TouchableOpacity 
+            style={styles.input}
+            onPress={() => setShowStatusModal(true)}
+          >
+            <FileText size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <Text style={styles.inputText}>{paymentData.status.charAt(0).toUpperCase() + paymentData.status.slice(1)}</Text>
+            <ChevronDown size={16} color={Colors.text.secondary} />
+          </TouchableOpacity>
+
+          <Text style={styles.label}>Payment Date</Text>
+          <View style={styles.input}>
+            <Calendar size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.textInput}
+              value={paymentData.paymentDate}
+              onChangeText={(text) => setPaymentData({ ...paymentData, paymentDate: text })}
+              placeholder="YYYY-MM-DD"
+            />
           </View>
 
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <Calendar size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Payment Date <Text style={{ color: Colors.primary }}>*</Text></Text>
-            </View>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                value={formData.paymentDate}
-                onChangeText={(value) => setFormData({ ...formData, paymentDate: value })}
-              />
-            </View>
+          <Text style={styles.label}>Payment Method</Text>
+          <View style={styles.input}>
+            <DollarSign size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.textInput}
+              value={paymentData.paymentMethod}
+              onChangeText={(text) => setPaymentData({ ...paymentData, paymentMethod: text })}
+              placeholder="Enter payment method"
+            />
           </View>
 
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <CreditCard size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Payment Method <Text style={{ color: Colors.primary }}>*</Text></Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.selectContainer}
-              onPress={() => setShowPaymentMethodSheet(true)}
-            >
-              <Text style={[
-                styles.selectText, 
-                !formData.paymentMethod && styles.placeholderText
-              ]}>
-                {formData.paymentMethod || 'Select payment method'}
-              </Text>
-              <ChevronDown size={18} color={Colors.text.secondary} />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <Hash size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Reference Number</Text>
-            </View>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter reference number"
-                value={formData.referenceNumber}
-                onChangeText={(value) => setFormData({ ...formData, referenceNumber: value })}
-              />
-            </View>
-          </View>
-        </View>
-        
-        <View style={styles.card}>
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <Text style={styles.label}>Status</Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.selectContainer}
-              onPress={() => setShowStatusSheet(true)}
-            >
-              <View style={[styles.statusIndicator, { 
-                backgroundColor: getStatusColor(formData.status).bg
-              }]}>
-                <Text style={[styles.statusIndicatorText, { 
-                  color: getStatusColor(formData.status).text
-                }]}>
-                  {STATUS_OPTIONS.find(option => option.value === formData.status)?.label}
-                </Text>
-              </View>
-              <ChevronDown size={18} color={Colors.text.secondary} />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <FileText size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Notes</Text>
-            </View>
-            <View style={styles.textareaContainer}>
-              <TextInput
-                style={styles.textarea}
-                placeholder="Add notes or details about this payment"
-                multiline={true}
-                numberOfLines={4}
-                textAlignVertical="top"
-                value={formData.notes}
-                onChangeText={(value) => setFormData({ ...formData, notes: value })}
-              />
-            </View>
-          </View>
-        </View>
-      </ScrollView>
-      
-      {/* Customer selection bottom sheet */}
-      <Modal
-        visible={showCustomerSheet}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => {
-          setShowCustomerSheet(false);
-          setCustomerSearch('');
-        }}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheet}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>Select Customer</Text>
-              <TouchableOpacity 
-                onPress={() => {
-                  setShowCustomerSheet(false);
-                  setCustomerSearch('');
-                }}
-              >
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.searchContainer}>
-              <Search size={20} color={Colors.text.secondary} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search customers..."
-                value={customerSearch}
-                onChangeText={setCustomerSearch}
-              />
-              {customerSearch ? (
-                <TouchableOpacity onPress={() => setCustomerSearch('')}>
-                  <X size={18} color={Colors.text.secondary} />
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            
-            <FlatList
-              data={filteredCustomers}
-              keyExtractor={(item) => item.id}
-              renderItem={renderCustomerItem}
-              contentContainerStyle={styles.bottomSheetContent}
+          <Text style={styles.label}>Reference Number</Text>
+          <View style={styles.input}>
+            <Hash size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.textInput}
+              value={paymentData.referenceNumber}
+              onChangeText={(text) => setPaymentData({ ...paymentData, referenceNumber: text })}
+              placeholder="Enter reference number"
             />
           </View>
         </View>
-      </Modal>
-      
-      {/* Payment method selection bottom sheet */}
-      <Modal
-        visible={showPaymentMethodSheet}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowPaymentMethodSheet(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheet}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>Select Payment Method</Text>
-              <TouchableOpacity onPress={() => setShowPaymentMethodSheet(false)}>
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-            
-            <ScrollView contentContainerStyle={styles.bottomSheetContent}>
-              {PAYMENT_METHODS.map(method => (
-                <TouchableOpacity
-                  key={method}
-                  style={styles.sheetItem}
-                  onPress={() => selectPaymentMethod(method)}
-                >
-                  <Text style={styles.sheetItemText}>{method}</Text>
-                  {formData.paymentMethod === method && (
-                    <Check size={18} color={Colors.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Invoices</Text>
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => setShowInvoiceModal(true)}
+              disabled={!selectedCustomer}
+            >
+              <Plus size={20} color={Colors.primary} />
+              <Text style={styles.addButtonText}>Add Invoice</Text>
+            </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
-      
-      {/* Status selection bottom sheet */}
-      <Modal
-        visible={showStatusSheet}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowStatusSheet(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheet}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>Select Status</Text>
-              <TouchableOpacity onPress={() => setShowStatusSheet(false)}>
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-            
-            <ScrollView contentContainerStyle={styles.bottomSheetContent}>
-              {STATUS_OPTIONS.map(option => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={styles.sheetItem}
-                  onPress={() => selectStatus(option.value)}
-                >
-                  <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                    <View style={[styles.statusDot, { 
-                      backgroundColor: getStatusColor(option.value).text
-                    }]} />
-                    <Text style={styles.sheetItemText}>{option.label}</Text>
+
+          {items.length > 0 ? items.map((item, index) => {
+            const invoice = invoices.find(inv => inv.id === item.invoiceId);
+            return (
+              <View key={index} style={styles.itemCard}>
+                <View style={styles.itemHeader}>
+                  <View style={styles.itemInfo}>
+                    <Package size={16} color={Colors.text.secondary} />
+                    <Text style={styles.itemName}>Invoice #{invoice?.invoiceNumber}</Text>
                   </View>
-                  {formData.status === option.value && (
-                    <Check size={18} color={Colors.primary} />
-                  )}
+                  <TouchableOpacity 
+                    style={styles.removeButton}
+                    onPress={() => handleRemoveItem(index)}
+                  >
+                    <X size={16} color={Colors.negative} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.itemDetails}>
+                  <View style={styles.itemTotal}>
+                    <Text style={styles.itemLabel}>Amount</Text>
+                    <Text style={styles.itemTotalText}>${(item.amount / 100).toFixed(2)}</Text>
+                  </View>
+                </View>
+              </View>
+            );
+          }) : (
+            <Text style={styles.emptyText}>No invoices added</Text>
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.label}>Notes</Text>
+          <TextInput
+            style={styles.notesInput}
+            value={paymentData.notes}
+            onChangeText={(text) => setPaymentData({ ...paymentData, notes: text })}
+            placeholder="Add notes..."
+            multiline
+            numberOfLines={4}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Summary</Text>
+          <View style={[styles.summaryRow, styles.totalRow]}>
+            <Text style={styles.totalRowLabel}>Total Amount</Text>
+            <Text style={styles.totalRowValue}>${(paymentData.amount / 100).toFixed(2)}</Text>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Customer Selection Modal */}
+      <Modal
+        visible={showCustomerModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCustomerModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Customer</Text>
+              <TouchableOpacity onPress={() => setShowCustomerModal(false)}>
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              {customers.map((customer) => (
+                <TouchableOpacity 
+                  key={customer.id}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSelectedCustomer(customer);
+                    setPaymentData({ ...paymentData, customerId: customer.id });
+                    setShowCustomerModal(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{customer.name}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+
+      {/* Invoice Selection Modal */}
+      <Modal
+        visible={showInvoiceModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowInvoiceModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Invoice</Text>
+              <TouchableOpacity onPress={() => setShowInvoiceModal(false)}>
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              {invoices.map((invoice) => (
+                <TouchableOpacity 
+                  key={invoice.id}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSelectedInvoice(invoice);
+                    handleAddItem();
+                  }}
+                >
+                  <Text style={styles.modalItemText}>#{invoice.invoiceNumber}</Text>
+                  <Text style={styles.modalItemSubtext}>${(invoice.total / 100).toFixed(2)}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Status Selection Modal */}
+      <Modal
+        visible={showStatusModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowStatusModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Status</Text>
+              <TouchableOpacity onPress={() => setShowStatusModal(false)}>
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              {['pending', 'completed', 'cancelled'].map((status) => (
+                <TouchableOpacity 
+                  key={status}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setPaymentData({ ...paymentData, status });
+                    setShowStatusModal(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{status.charAt(0).toUpperCase() + status.slice(1)}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
@@ -389,8 +389,8 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
     backgroundColor: Colors.background.default,
@@ -404,178 +404,202 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     color: Colors.text.primary,
   },
   saveButton: {
+    backgroundColor: Colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: Colors.primary,
     borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   saveButtonText: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 14,
+    color: Colors.background.default,
+    fontSize: 16,
+    fontWeight: '500',
   },
   content: {
     flex: 1,
+  },
+  section: {
     padding: 16,
-  },
-  card: {
-    backgroundColor: Colors.background.default,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
-  },
-  formGroup: {
-    marginBottom: 20,
-  },
-  labelContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: Colors.text.primary,
-  },
-  labelIcon: {
-    marginRight: 8,
-  },
-  inputContainer: {
-    borderWidth: 1,
-    borderColor: Colors.border.medium,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 48,
-    justifyContent: 'center',
-  },
-  input: {
-    fontSize: 16,
-    color: Colors.text.primary,
-    height: '100%',
-  },
-  selectContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border.medium,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 48,
-  },
-  selectText: {
-    fontSize: 16,
-    color: Colors.text.primary,
-  },
-  placeholderText: {
-    color: Colors.text.tertiary,
-  },
-  textareaContainer: {
-    borderWidth: 1,
-    borderColor: Colors.border.medium,
-    borderRadius: 8,
-    padding: 8,
-    height: 120,
-  },
-  textarea: {
-    flex: 1,
-    fontSize: 16,
-    color: Colors.text.primary,
-    textAlignVertical: 'top',
-  },
-  statusIndicator: {
-    flex: 1,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-  },
-  statusIndicatorText: {
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  
-  // Bottom sheet styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  bottomSheet: {
-    backgroundColor: Colors.background.default,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: 16,
-    maxHeight: '80%',
-  },
-  bottomSheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
-  bottomSheetTitle: {
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  bottomSheetContent: {
-    paddingBottom: 24,
+  label: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginBottom: 4,
   },
-  searchContainer: {
+  input: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background.secondary,
-    margin: 16,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 10,
+    marginBottom: 16,
   },
-  searchInput: {
+  inputIcon: {
+    marginRight: 8,
+  },
+  inputText: {
     flex: 1,
-    marginLeft: 8,
     fontSize: 16,
     color: Colors.text.primary,
   },
-  sheetItem: {
+  textInput: {
+    flex: 1,
+    fontSize: 16,
+    color: Colors.text.primary,
+    padding: 0,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary + '20',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  addButtonText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  itemCard: {
+    backgroundColor: Colors.background.secondary,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  itemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  itemInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  itemName: {
+    fontSize: 14,
+    color: Colors.text.primary,
+    fontWeight: '500',
+  },
+  removeButton: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  itemTotal: {
+    alignItems: 'flex-end',
+  },
+  itemLabel: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 4,
+  },
+  itemTotalText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: Colors.text.primary,
+    textAlignVertical: 'top',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  totalRow: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    marginTop: 8,
+    paddingTop: 16,
+  },
+  totalRowLabel: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  totalRowValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: Colors.background.default,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
-  sheetItemText: {
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  modalItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  modalItemText: {
     fontSize: 16,
     color: Colors.text.primary,
   },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 10,
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  statusText: {
+  modalItemSubtext: {
     fontSize: 14,
-    fontWeight: '500',
+    color: Colors.text.secondary,
+    marginTop: 4,
   },
 }); 

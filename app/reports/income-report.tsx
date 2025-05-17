@@ -32,9 +32,15 @@ import {
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
-import { getIncomeData } from '@/mocks/incomeData';
-import { IncomeRecord } from '@/types/income';
 import { formatCurrency, formatDate, formatDateShort, formatPercentage } from '@/utils/formatters';
+import { useAuthStore } from '@/store/auth';
+import { 
+  getIncomeReportData, 
+  getIncomeSummaryStats, 
+  getIncomeByCategory,
+  getIncomeByDateRange,
+  getIncomeByPaymentMethod
+} from '@/db/income';
 import EmptyState from '@/components/EmptyState';
 
 const { width } = Dimensions.get('window');
@@ -75,6 +81,7 @@ const CATEGORIES = [
 
 export default function IncomeReportScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [dateRange, setDateRange] = useState('This Month');
   const [showDateRangeSelector, setShowDateRangeSelector] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -87,29 +94,105 @@ export default function IncomeReportScreen() {
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   
-  // Get income data
-  const [incomeData, setIncomeData] = useState<IncomeRecord[]>([]);
+  // State for report data
+  const [incomeData, setIncomeData] = useState<any[]>([]);
+  const [summaryStats, setSummaryStats] = useState<any>(null);
+  const [categoryBreakdown, setCategoryBreakdown] = useState<any[]>([]);
+  const [dateRangeData, setDateRangeData] = useState<any[]>([]);
+  const [paymentMethodData, setPaymentMethodData] = useState<any[]>([]);
   
+  // Load data
   useEffect(() => {
-    // Simulate loading data
-    setIsLoading(true);
-    setTimeout(() => {
-      setIncomeData(getIncomeData());
-      setIsLoading(false);
-    }, 800);
-  }, [dateRange]);
+    if (user) {
+      loadReportData();
+    }
+  }, [user, dateRange]);
 
-  // Filter income data based on search query, category, and payment method
+  const loadReportData = async () => {
+    if (!user) return;
+    
+    setIsLoading(true);
+    try {
+      // Get date range
+      const { startDate, endDate } = getDateRangeFromSelection(dateRange);
+      
+      // Fetch all data in parallel
+      const [
+        incomeData,
+        summaryStats,
+        categoryData,
+        dateRangeData,
+        paymentMethodData
+      ] = await Promise.all([
+        getIncomeReportData(user.id, startDate, endDate),
+        getIncomeSummaryStats(user.id, startDate, endDate),
+        getIncomeByCategory(user.id, startDate, endDate),
+        getIncomeByDateRange(user.id, startDate, endDate),
+        getIncomeByPaymentMethod(user.id, startDate, endDate)
+      ]);
+
+      setIncomeData(incomeData);
+      setSummaryStats(summaryStats);
+      setCategoryBreakdown(categoryData);
+      setDateRangeData(dateRangeData);
+      setPaymentMethodData(paymentMethodData);
+    } catch (error) {
+      console.error('Error loading income report data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Helper function to get date range from selection
+  const getDateRangeFromSelection = (selection: string) => {
+    const today = new Date();
+    let startDate: Date | null = null;
+    let endDate: Date | null = null;
+
+    switch (selection) {
+      case 'Today':
+        startDate = today;
+        endDate = today;
+        break;
+      case 'Yesterday':
+        startDate = new Date(today.setDate(today.getDate() - 1));
+        endDate = startDate;
+        break;
+      case 'This Week':
+        startDate = new Date(today.setDate(today.getDate() - today.getDay()));
+        endDate = new Date(today.setDate(today.getDate() + 6));
+        break;
+      case 'This Month':
+        startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+        endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        break;
+      case 'This Quarter':
+        const quarter = Math.floor(today.getMonth() / 3);
+        startDate = new Date(today.getFullYear(), quarter * 3, 1);
+        endDate = new Date(today.getFullYear(), (quarter + 1) * 3, 0);
+        break;
+      case 'This Year':
+        startDate = new Date(today.getFullYear(), 0, 1);
+        endDate = new Date(today.getFullYear(), 11, 31);
+        break;
+    }
+
+    return {
+      startDate: startDate?.toISOString().split('T')[0],
+      endDate: endDate?.toISOString().split('T')[0]
+    };
+  };
+
+  // Filter income data based on search query and filters
   const filteredIncomeData = incomeData.filter(income => {
     const matchesSearch = 
       searchQuery === '' || 
-      income.source.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      income.notes?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      income.reference?.toLowerCase().includes(searchQuery.toLowerCase());
+      income.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      income.referenceNumber?.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesCategory = 
       selectedCategory === 'All Categories' || 
-      income.category === selectedCategory;
+      income.categoryId === selectedCategory;
     
     const matchesPaymentMethod = 
       selectedPaymentMethod === 'All Methods' || 
@@ -126,60 +209,37 @@ export default function IncomeReportScreen() {
       return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
     } else if (sortConfig.key === 'amount') {
       return sortConfig.direction === 'asc' ? a.amount - b.amount : b.amount - a.amount;
-    } else if (sortConfig.key === 'source') {
+    } else if (sortConfig.key === 'description') {
       return sortConfig.direction === 'asc' 
-        ? a.source.localeCompare(b.source) 
-        : b.source.localeCompare(a.source);
-    } else if (sortConfig.key === 'category') {
-      return sortConfig.direction === 'asc' 
-        ? a.category.localeCompare(b.category) 
-        : b.category.localeCompare(a.category);
+        ? (a.description || '').localeCompare(b.description || '') 
+        : (b.description || '').localeCompare(a.description || '');
     }
     return 0;
   });
 
   // Calculate summary statistics
-  const totalIncome = filteredIncomeData.reduce((sum, income) => sum + income.amount, 0);
-  const previousPeriodIncome = 9800; // Mock data for previous period
-  const incomeChange = totalIncome - previousPeriodIncome;
-  const incomeChangePercentage = (incomeChange / previousPeriodIncome) * 100;
-  const averageIncome = totalIncome / (filteredIncomeData.length || 1);
-  
+  const totalIncome = summaryStats?.totalAmount || 0;
+  const averageIncome = summaryStats?.averageAmount || 0;
+  const transactionCount = summaryStats?.count || 0;
+  const maxAmount = summaryStats?.maxAmount || 0;
+  const minAmount = summaryStats?.minAmount || 0;
+
   // Find highest income day
-  const incomeByDay = filteredIncomeData.reduce((acc, income) => {
-    const dateStr = formatDateShort(income.date);
-    acc[dateStr] = (acc[dateStr] || 0) + income.amount;
-    return acc;
-  }, {} as Record<string, number>);
-  
-  const highestIncomeDay = Object.entries(incomeByDay).reduce(
-    (max, [date, amount]) => (amount > max.amount ? { date, amount } : max),
+  const highestIncomeDay = dateRangeData.reduce(
+    (max, day) => (day.totalAmount > max.amount ? { date: day.date, amount: day.totalAmount } : max),
     { date: '', amount: 0 }
   );
 
   // Calculate category breakdown
-  const categoryBreakdown = filteredIncomeData.reduce((acc, income) => {
-    if (!acc[income.category]) {
-      acc[income.category] = {
-        count: 0,
-        total: 0,
-      };
-    }
-    acc[income.category].count += 1;
-    acc[income.category].total += income.amount;
-    return acc;
-  }, {} as Record<string, { count: number; total: number }>);
-
-  // Convert to array for rendering
-  const categoryBreakdownArray = Object.entries(categoryBreakdown).map(([category, data]) => ({
-    category,
-    count: data.count,
-    total: data.total,
-    percentage: (data.total / totalIncome) * 100,
+  const categoryBreakdownArray = categoryBreakdown.map((item) => ({
+    categoryId: item.categoryId,
+    count: item.count,
+    totalAmount: item.totalAmount,
+    percentage: (item.totalAmount / totalIncome) * 100,
   }));
 
   // Sort category breakdown by total amount (descending)
-  categoryBreakdownArray.sort((a, b) => b.total - a.total);
+  categoryBreakdownArray.sort((a, b) => b.totalAmount - a.totalAmount);
 
   // Handle sort
   const handleSort = (key: string) => {
@@ -459,17 +519,7 @@ export default function IncomeReportScreen() {
               <View style={styles.statItem}>
                 <Text style={styles.statLabel}>Total Income</Text>
                 <Text style={styles.statValue}>{formatCurrency(totalIncome)}</Text>
-                <View style={styles.changeIndicator}>
-                  <Text 
-                    style={[
-                      styles.changeText, 
-                      incomeChange >= 0 ? styles.positiveChange : styles.negativeChange
-                    ]}
-                  >
-                    {incomeChange >= 0 ? '+' : ''}{formatCurrency(incomeChange)} 
-                    ({incomeChangePercentage >= 0 ? '+' : ''}{incomeChangePercentage.toFixed(1)}%)
-                  </Text>
-                </View>
+                <Text style={styles.statSubtext}>{transactionCount} transactions</Text>
               </View>
               
               <View style={styles.statItem}>
@@ -484,14 +534,16 @@ export default function IncomeReportScreen() {
                   {highestIncomeDay.date ? formatCurrency(highestIncomeDay.amount) : 'N/A'}
                 </Text>
                 <Text style={styles.statSubtext}>
-                  {highestIncomeDay.date || ''}
+                  {highestIncomeDay.date ? formatDate(highestIncomeDay.date) : ''}
                 </Text>
               </View>
               
               <View style={styles.statItem}>
-                <Text style={styles.statLabel}>Transactions</Text>
-                <Text style={styles.statValue}>{filteredIncomeData.length}</Text>
-                <Text style={styles.statSubtext}>in selected period</Text>
+                <Text style={styles.statLabel}>Range</Text>
+                <Text style={styles.statValue}>
+                  {formatCurrency(minAmount)} - {formatCurrency(maxAmount)}
+                </Text>
+                <Text style={styles.statSubtext}>min - max</Text>
               </View>
             </View>
           </View>
@@ -501,7 +553,7 @@ export default function IncomeReportScreen() {
             <View style={styles.categoryBreakdownContainer}>
               <Text style={styles.sectionTitle}>Income by Category</Text>
               
-              {categoryBreakdownArray.length === 0 ? (
+              {categoryBreakdown.length === 0 ? (
                 <EmptyState
                   title="No Data Available"
                   description="There are no income records matching your filters."
@@ -516,24 +568,26 @@ export default function IncomeReportScreen() {
                     <Text style={[styles.tableHeaderCell, { flex: 1 }]}>%</Text>
                   </View>
                   
-                  {categoryBreakdownArray.map((item, index) => (
+                  {categoryBreakdown.map((item, index) => (
                     <View 
-                      key={item.category} 
+                      key={item.categoryId} 
                       style={[
                         styles.tableRow,
                         index % 2 === 0 && styles.tableRowEven
                       ]}
                     >
-                      <Text style={[styles.tableCell, { flex: 2 }]}>{item.category}</Text>
+                      <Text style={[styles.tableCell, { flex: 2 }]}>{item.categoryId}</Text>
                       <Text style={[styles.tableCell, { flex: 1 }]}>{item.count}</Text>
-                      <Text style={[styles.tableCell, { flex: 2 }]}>{formatCurrency(item.total)}</Text>
-                      <Text style={[styles.tableCell, { flex: 1 }]}>{item.percentage.toFixed(1)}%</Text>
+                      <Text style={[styles.tableCell, { flex: 2 }]}>{formatCurrency(item.totalAmount)}</Text>
+                      <Text style={[styles.tableCell, { flex: 1 }]}>
+                        {formatPercentage((item.totalAmount / totalIncome) * 100)}
+                      </Text>
                     </View>
                   ))}
                   
                   <View style={styles.tableTotalRow}>
                     <Text style={[styles.tableTotalCell, { flex: 2 }]}>Total</Text>
-                    <Text style={[styles.tableTotalCell, { flex: 1 }]}>{filteredIncomeData.length}</Text>
+                    <Text style={[styles.tableTotalCell, { flex: 1 }]}>{transactionCount}</Text>
                     <Text style={[styles.tableTotalCell, { flex: 2 }]}>{formatCurrency(totalIncome)}</Text>
                     <Text style={[styles.tableTotalCell, { flex: 1 }]}>100%</Text>
                   </View>
@@ -579,18 +633,12 @@ export default function IncomeReportScreen() {
                         </TouchableOpacity>
                         <TouchableOpacity 
                           style={[styles.tableHeaderCell, { flex: 2 }]}
-                          onPress={() => handleSort('source')}
+                          onPress={() => handleSort('description')}
                         >
-                          <Text style={styles.tableHeaderText}>Source</Text>
-                          {renderSortIndicator('source')}
+                          <Text style={styles.tableHeaderText}>Description</Text>
+                          {renderSortIndicator('description')}
                         </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={[styles.tableHeaderCell, { flex: 1.5 }]}
-                          onPress={() => handleSort('category')}
-                        >
-                          <Text style={styles.tableHeaderText}>Category</Text>
-                          {renderSortIndicator('category')}
-                        </TouchableOpacity>
+                        <Text style={[styles.tableHeaderCell, { flex: 1.5 }]}>Category</Text>
                         <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Method</Text>
                         <TouchableOpacity 
                           style={[styles.tableHeaderCell, { flex: 1.2 }]}
@@ -613,7 +661,6 @@ export default function IncomeReportScreen() {
                             if (isSelectionMode) {
                               toggleItemSelection(income.id);
                             } else {
-                              // Navigate to income detail
                               router.push(`/income/${income.id}`);
                             }
                           }}
@@ -636,10 +683,10 @@ export default function IncomeReportScreen() {
                             style={[styles.tableCell, { flex: 2 }]} 
                             numberOfLines={1}
                           >
-                            {income.source}
+                            {income.description}
                           </Text>
                           <Text style={[styles.tableCell, { flex: 1.5 }]}>
-                            {income.category}
+                            {income.categoryId}
                           </Text>
                           <Text style={[styles.tableCell, { flex: 1 }]} numberOfLines={1}>
                             {income.paymentMethod || 'N/A'}
@@ -970,20 +1017,6 @@ const styles = StyleSheet.create({
   statSubtext: {
     fontSize: 12,
     color: '#999',
-  },
-  changeIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  changeText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  positiveChange: {
-    color: '#4CAF50',
-  },
-  negativeChange: {
-    color: '#F44336',
   },
   categoryBreakdownContainer: {
     backgroundColor: 'white',

@@ -1,33 +1,31 @@
-export type StockStatus = 'in_stock' | 'low_stock' | 'out_of_stock' | 'discontinued';
-
 export interface Product {
-  id: string;
-  name: string;
+  id: number;
+  userId: number;
+  productName: string;
   sku: string;
-  barcode?: string;
-  description?: string;
-  category?: string;
-  tags?: string[];
-  purchasePrice: number;
+  barcode: string | null;
+  category: string | null;
+  brand: string | null;
+  isActive: boolean;
+  costPrice: number;
   sellingPrice: number;
+  taxRate: number | null;
   stockQuantity: number;
-  reorderLevel: number;
-  unit: string;
-  taxRate?: number;
-  images?: string[];
-  vendor?: string;
-  location?: string;
-  dimensions?: {
-    length?: number;
-    width?: number;
-    height?: number;
-    weight?: number;
-  };
-  status: StockStatus;
-  createdAt: Date;
-  updatedAt: Date;
-  expiryDate?: Date;
-  notes?: string;
+  unit: string | null;
+  reorderLevel: number | null;
+  vendor: string | null;
+  location: string | null;
+  shortDescription: string | null;
+  fullDescription: string | null;
+  weight: number | null;
+  length: number | null;
+  width: number | null;
+  height: number | null;
+  tags: string | null;
+  notes: string | null;
+  images: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface ProductCategory {

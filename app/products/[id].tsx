@@ -41,11 +41,16 @@ import {
   TrendingUp,
   Box
 } from "lucide-react-native";
+import { useSQLiteContext } from 'expo-sqlite';
+import { drizzle } from 'drizzle-orm/expo-sqlite';
+import * as dbProduct from '@/db/product';
+import * as schema from '@/db/schema';
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import Colors from "@/constants/colors";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import SnackBar from "@/components/SnackBar";
-import { Product } from "@/types/product";
+import { Product, StockStatus } from '@/types/product';
 
 // Mock product data for demonstration
 const mockProducts: { [key: string]: Product } = {
@@ -194,6 +199,8 @@ const mockProducts: { [key: string]: Product } = {
 export default function ProductDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const sqlite = useSQLiteContext();
+  const db = drizzle(sqlite, { schema });
   const [product, setProduct] = useState<Product | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -268,9 +275,37 @@ export default function ProductDetailScreen() {
     
     setIsLoading(true);
     try {
-      // Use mock data instead of AsyncStorage
-      if (mockProducts[id]) {
-        setProduct(mockProducts[id]);
+      const dbProductData = await dbProduct.getProductById(Number(id));
+      
+      if (dbProductData) {
+        setProduct({
+          id: dbProductData.id.toString(),
+          name: dbProductData.productName,
+          sku: dbProductData.sku,
+          barcode: dbProductData.barcode || undefined,
+          description: dbProductData.fullDescription || undefined,
+          category: dbProductData.category || undefined,
+          tags: dbProductData.tags ? dbProductData.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+          purchasePrice: dbProductData.costPrice || 0,
+          sellingPrice: dbProductData.sellingPrice || 0,
+          stockQuantity: dbProductData.stockQuantity || 0,
+          reorderLevel: dbProductData.reorderLevel || 0,
+          unit: dbProductData.unit || 'piece',
+          taxRate: dbProductData.taxRate || undefined,
+          images: dbProductData.images ? dbProductData.images.split(',').map(i => i.trim()).filter(Boolean) : [],
+          vendor: dbProductData.vendor || undefined,
+          location: dbProductData.location || undefined,
+          dimensions: {
+            length: dbProductData.length || undefined,
+            width: dbProductData.width || undefined,
+            height: dbProductData.height || undefined,
+            weight: dbProductData.weight || undefined,
+          },
+          status: getStockStatus(dbProductData.stockQuantity || 0, dbProductData.reorderLevel || 0, Boolean(dbProductData.isActive)),
+          createdAt: dbProductData.createdAt ? new Date(dbProductData.createdAt) : new Date(),
+          updatedAt: dbProductData.updatedAt ? new Date(dbProductData.updatedAt) : new Date(),
+          notes: dbProductData.notes || undefined,
+        });
       } else {
         console.error("Product not found");
         setSnackbarMessage("Failed to load product details");
@@ -305,20 +340,15 @@ export default function ProductDetailScreen() {
             setIsDeleting(true);
             
             try {
-              // Simulate product deletion instead of using AsyncStorage
+              await dbProduct.deleteProduct(Number(id));
+              showSnackbar("Product deleted successfully");
               setTimeout(() => {
-                setSnackbarMessage("Product deleted successfully");
-                setSnackbarVisible(true);
-                
-                // Navigate back after a short delay
-                setTimeout(() => {
-                  router.replace("/products");
-                }, 1000);
+                router.replace("/products");
               }, 500);
             } catch (error) {
               console.error("Error deleting product:", error);
-              setSnackbarMessage("Failed to delete product");
-              setSnackbarVisible(true);
+              showSnackbar("Failed to delete product");
+            } finally {
               setIsDeleting(false);
             }
           }
@@ -374,14 +404,12 @@ export default function ProductDetailScreen() {
                   // Update state with the updated product
                   setProduct(updatedProduct);
                   
-                  setSnackbarMessage(`Stock updated by ${parsedQuantity > 0 ? '+' : ''}${parsedQuantity}`);
-                  setSnackbarVisible(true);
+                  showSnackbar(`Stock updated by ${parsedQuantity > 0 ? '+' : ''}${parsedQuantity}`);
                 }, 300);
               }
             } catch (error) {
               console.error("Error adjusting stock:", error);
-              setSnackbarMessage("Failed to adjust stock");
-              setSnackbarVisible(true);
+              showSnackbar("Failed to adjust stock");
             }
           }
         }
@@ -428,12 +456,18 @@ ${product.description ? `Description: ${product.description}` : ''}
       }
     } catch (error) {
       console.error("Error sharing product:", error);
-      setSnackbarMessage("Failed to share product");
-      setSnackbarVisible(true);
+      showSnackbar("Failed to share product");
     }
   };
   
-  const getStockStatusColor = (status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'discontinued') => {
+  const getStockStatus = (quantity: number, reorderLevel: number, isActive: boolean): StockStatus => {
+    if (!isActive) return 'discontinued';
+    if (quantity <= 0) return 'out_of_stock';
+    if (quantity <= reorderLevel) return 'low_stock';
+    return 'in_stock';
+  };
+  
+  const getStockStatusColor = (status: StockStatus) => {
     switch (status) {
       case 'in_stock':
         return Colors.status.active;
@@ -448,7 +482,7 @@ ${product.description ? `Description: ${product.description}` : ''}
     }
   };
   
-  const getStockStatusText = (status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'discontinued') => {
+  const getStockStatusText = (status: StockStatus) => {
     switch (status) {
       case 'in_stock':
         return 'IN STOCK';
@@ -461,6 +495,14 @@ ${product.description ? `Description: ${product.description}` : ''}
       default:
         return 'UNKNOWN';
     }
+  };
+
+  const showSnackbar = (message: string) => {
+    setSnackbarMessage(message);
+    setSnackbarVisible(true);
+    setTimeout(() => {
+      setSnackbarVisible(false);
+    }, 3000);
   };
 
   if (isLoading) {
@@ -493,7 +535,7 @@ ${product.description ? `Description: ${product.description}` : ''}
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
       {/* Modern Header */}
@@ -842,7 +884,7 @@ ${product.description ? `Description: ${product.description}` : ''}
         message={snackbarMessage}
         onDismiss={() => setSnackbarVisible(false)}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 

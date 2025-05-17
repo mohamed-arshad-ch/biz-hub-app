@@ -9,7 +9,6 @@ import {
   Alert,
   FlatList,
   Modal,
-  ColorValue,
   ActivityIndicator,
   ScrollView
 } from 'react-native';
@@ -25,13 +24,14 @@ import {
 } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
-import { ExpenseCategory } from '@/types/category';
+import { useAuthStore } from '@/store/auth';
 import { 
-  getExpenseCategories, 
-  addExpenseCategory, 
-  updateExpenseCategory, 
-  deleteExpenseCategory 
-} from '@/mocks/categoryData';
+  ExpenseCategory,
+  createExpenseCategory,
+  getAllExpenseCategories,
+  updateExpenseCategory,
+  deleteExpenseCategory
+} from '@/db/expense-category';
 
 // Color options for categories
 const colorOptions = [
@@ -41,6 +41,7 @@ const colorOptions = [
 
 export default function ExpenseCategorySettingsScreen() {
   const router = useRouter();
+  const user = useAuthStore(state => state.user);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [currentCategory, setCurrentCategory] = useState<ExpenseCategory | null>(null);
@@ -51,13 +52,17 @@ export default function ExpenseCategorySettingsScreen() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadCategories();
-  }, []);
+    if (user) {
+      loadCategories();
+    }
+  }, [user]);
 
   const loadCategories = async () => {
+    if (!user) return;
+    
     setIsLoading(true);
     try {
-      const categoriesData = await getExpenseCategories();
+      const categoriesData = await getAllExpenseCategories(user.id);
       setCategories(categoriesData);
     } catch (error) {
       console.error('Error loading expense categories:', error);
@@ -67,44 +72,25 @@ export default function ExpenseCategorySettingsScreen() {
     }
   };
 
-  const handleAddCategory = async () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Category name cannot be empty');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const newCategory = {
-        id: Date.now().toString(), // Generate a unique ID
-        name,
-        description,
-        color: selectedColor
-      };
-      
-      const updatedCategories = await addExpenseCategory(newCategory);
-      setCategories(updatedCategories);
-      setName('');
-      setDescription('');
-      setSelectedColor(colorOptions[0]);
-      setModalVisible(false);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to add category');
-    } finally {
-      setIsLoading(false);
-    }
+  const handleAddCategory = () => {
+    setIsEditing(false);
+    setCurrentCategory(null);
+    setName('');
+    setDescription('');
+    setSelectedColor(colorOptions[0]);
+    setModalVisible(true);
   };
 
   const handleEditCategory = (category: ExpenseCategory) => {
     setIsEditing(true);
     setCurrentCategory(category);
     setName(category.name);
-    setDescription(category.description);
+    setDescription(category.description || '');
     setSelectedColor(category.color);
     setModalVisible(true);
   };
 
-  const handleDeleteCategory = (id: string) => {
+  const handleDeleteCategory = (id: number) => {
     Alert.alert(
       'Delete Category',
       'Are you sure you want to delete this expense category?',
@@ -117,15 +103,13 @@ export default function ExpenseCategorySettingsScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            if (!user) return;
+            
             setIsLoading(true);
             try {
-              const success = await deleteExpenseCategory(id);
-              if (success) {
-                setCategories(categories.filter(category => category.id !== id));
-                Alert.alert('Success', 'Category deleted successfully');
-              } else {
-                Alert.alert('Error', 'Failed to delete category');
-              }
+              await deleteExpenseCategory(id, user.id);
+              setCategories(categories.filter(category => category.id !== id));
+              Alert.alert('Success', 'Category deleted successfully');
             } catch (error) {
               console.error('Error deleting category:', error);
               Alert.alert('Error', 'An error occurred while deleting the category');
@@ -139,6 +123,8 @@ export default function ExpenseCategorySettingsScreen() {
   };
 
   const handleSaveCategory = async () => {
+    if (!user) return;
+    
     if (!name.trim()) {
       Alert.alert('Error', 'Category name is required');
       return;
@@ -149,7 +135,7 @@ export default function ExpenseCategorySettingsScreen() {
     try {
       if (isEditing && currentCategory) {
         // Update existing category
-        const updatedCategory = await updateExpenseCategory(currentCategory.id, {
+        const updatedCategory = await updateExpenseCategory(currentCategory.id, user.id, {
           name,
           description,
           color: selectedColor
@@ -165,7 +151,8 @@ export default function ExpenseCategorySettingsScreen() {
         }
       } else {
         // Add new category
-        const newCategory = await addExpenseCategory({
+        const newCategory = await createExpenseCategory({
+          userId: user.id,
           name,
           description,
           color: selectedColor
@@ -236,7 +223,7 @@ export default function ExpenseCategorySettingsScreen() {
         <Text style={styles.headerTitle}>Expense Categories</Text>
         <TouchableOpacity 
           style={styles.addButton}
-          onPress={() => setModalVisible(true)}
+          onPress={handleAddCategory}
           activeOpacity={0.7}
         >
           <Plus size={20} color="#fff" />
@@ -257,7 +244,7 @@ export default function ExpenseCategorySettingsScreen() {
           </Text>
           <TouchableOpacity 
             style={styles.emptyAddButton}
-            onPress={() => setModalVisible(true)}
+            onPress={handleAddCategory}
           >
             <Text style={styles.emptyAddButtonText}>Add Category</Text>
           </TouchableOpacity>
@@ -266,7 +253,7 @@ export default function ExpenseCategorySettingsScreen() {
         <FlatList
           data={categories}
           renderItem={renderCategoryItem}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />

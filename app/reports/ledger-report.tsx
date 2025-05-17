@@ -35,22 +35,40 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { formatCurrency, formatDate, formatDateShort } from '@/utils/formatters';
-import { getLedgerEntries } from '@/mocks/ledgerData';
+import { useAuthStore } from '@/store/auth';
+import { getLedgerEntriesByAccount } from '@/db/ledger';
+import type { Ledger } from '@/db/schema';
 import EmptyState from '@/components/EmptyState';
 
 const windowWidth = Dimensions.get('window').width;
 const isMobile = windowWidth < 768;
 
+interface LedgerEntry extends Ledger {
+  balance: number;
+  type: string;
+  account: string;
+  reference: string;
+  description: string;
+  reconciled: boolean;
+  createdBy: string;
+  createdAt: string;
+  modifiedBy?: string;
+  modifiedDate?: string;
+  accountName?: string;
+  accountType?: string;
+}
+
 export default function LedgerReportScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const scrollViewRef = useRef(null);
   
   // State variables
   const [dateRange, setDateRange] = useState('This Month');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [customDateRange, setCustomDateRange] = useState({ from: '', to: '' });
-  const [ledgerEntries, setLedgerEntries] = useState([]);
-  const [filteredEntries, setFilteredEntries] = useState([]);
+  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
+  const [filteredEntries, setFilteredEntries] = useState<LedgerEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,7 +82,7 @@ export default function LedgerReportScreen() {
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<LedgerEntry | null>(null);
   const [showTransactionDetail, setShowTransactionDetail] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [showExportOptions, setShowExportOptions] = useState(false);
@@ -80,18 +98,64 @@ export default function LedgerReportScreen() {
 
   // Load data
   useEffect(() => {
+    loadLedgerEntries();
+  }, [dateRange]);
+
+  const loadLedgerEntries = async () => {
+    if (!user) return;
+    
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      const entries = getLedgerEntries(50);
-      setLedgerEntries(entries);
-      setFilteredEntries(entries);
+    try {
+      // Get all ledger entries for the user
+      const entries = await getLedgerEntriesByAccount(user.id, 0); // 0 means all accounts
+      
+      // Sort entries by date first to ensure correct balance calculation
+      const sortedEntries = [...entries].sort((a, b) => 
+        new Date(a.date).getTime() - new Date(b.date).getTime()
+      );
+      
+      // Transform entries to include balance and additional fields
+      const transformedEntries = sortedEntries.map((entry, index) => {
+        const balance = sortedEntries
+          .slice(0, index + 1)
+          .reduce((acc, curr) => {
+            if (curr.entryType === 'debit') {
+              return acc + curr.amount;
+            } else {
+              return acc - curr.amount;
+            }
+          }, 0);
+
+        return {
+          ...entry,
+          balance,
+          type: entry.referenceType,
+          account: entry.accountName || `Account #${entry.accountId}`,
+          reference: `${entry.referenceType} #${entry.referenceId}`,
+          description: entry.description || '',
+          reconciled: false,
+          createdBy: 'System',
+          createdAt: entry.createdAt || new Date().toISOString(),
+          modifiedBy: undefined,
+          modifiedDate: undefined,
+          accountName: entry.accountName || undefined,
+          accountType: entry.accountType || undefined
+        };
+      });
+
+      setLedgerEntries(transformedEntries);
+      setFilteredEntries(transformedEntries);
       
       // Calculate summary
-      const totalDebits = entries.reduce((sum, entry) => sum + entry.debit, 0);
-      const totalCredits = entries.reduce((sum, entry) => sum + entry.credit, 0);
-      const openingBalance = entries.length > 0 ? entries[0].balance - (entries[0].credit - entries[0].debit) : 0;
-      const closingBalance = entries.length > 0 ? entries[entries.length - 1].balance : 0;
+      const totalDebits = transformedEntries.reduce((sum, entry) => 
+        entry.entryType === 'debit' ? sum + entry.amount : sum, 0);
+      const totalCredits = transformedEntries.reduce((sum, entry) => 
+        entry.entryType === 'credit' ? sum + entry.amount : sum, 0);
+      const openingBalance = transformedEntries.length > 0 ? 
+        transformedEntries[0].balance - (transformedEntries[0].entryType === 'debit' ? 
+          transformedEntries[0].amount : -transformedEntries[0].amount) : 0;
+      const closingBalance = transformedEntries.length > 0 ? 
+        transformedEntries[transformedEntries.length - 1].balance : 0;
       
       setSummary({
         openingBalance,
@@ -100,10 +164,12 @@ export default function LedgerReportScreen() {
         closingBalance,
         netChange: closingBalance - openingBalance
       });
-      
+    } catch (error) {
+      console.error('Error loading ledger entries:', error);
+    } finally {
       setIsLoading(false);
-    }, 1000);
-  }, [dateRange]);
+    }
+  };
 
   // Apply filters
   useEffect(() => {
@@ -132,34 +198,30 @@ export default function LedgerReportScreen() {
     
     if (filters.minAmount) {
       const min = parseFloat(filters.minAmount);
-      filtered = filtered.filter(entry => (entry.debit + entry.credit) >= min);
+      filtered = filtered.filter(entry => entry.amount >= min);
     }
     
     if (filters.maxAmount) {
       const max = parseFloat(filters.maxAmount);
-      filtered = filtered.filter(entry => (entry.debit + entry.credit) <= max);
-    }
-    
-    if (filters.onlyReconciled) {
-      filtered = filtered.filter(entry => entry.reconciled);
+      filtered = filtered.filter(entry => entry.amount <= max);
     }
     
     // Apply sorting
     filtered.sort((a, b) => {
-      const aValue = a[sortConfig.key];
-      const bValue = b[sortConfig.key];
+      const aValue = a[sortConfig.key as keyof LedgerEntry];
+      const bValue = b[sortConfig.key as keyof LedgerEntry];
       
       if (typeof aValue === 'string') {
         if (sortConfig.direction === 'asc') {
-          return aValue.localeCompare(bValue);
+          return aValue.localeCompare(bValue as string);
         } else {
-          return bValue.localeCompare(aValue);
+          return (bValue as string).localeCompare(aValue);
         }
       } else {
         if (sortConfig.direction === 'asc') {
-          return aValue - bValue;
+          return (aValue as number) - (bValue as number);
         } else {
-          return bValue - aValue;
+          return (bValue as number) - (aValue as number);
         }
       }
     });
@@ -169,7 +231,7 @@ export default function LedgerReportScreen() {
   }, [searchQuery, filters, sortConfig, ledgerEntries]);
 
   // Handle sort
-  const handleSort = (key) => {
+  const handleSort = (key: string) => {
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
       direction = 'desc';
@@ -178,7 +240,7 @@ export default function LedgerReportScreen() {
   };
 
   // Get sort icon
-  const getSortIcon = (key) => {
+  const getSortIcon = (key: string) => {
     if (sortConfig.key !== key) return null;
     
     return sortConfig.direction === 'asc' 
@@ -187,7 +249,7 @@ export default function LedgerReportScreen() {
   };
 
   // Handle export
-  const handleExport = (format) => {
+  const handleExport = (format: string) => {
     setExportLoading(true);
     setShowExportOptions(false);
     
@@ -219,7 +281,7 @@ export default function LedgerReportScreen() {
     }
     
     setShowDatePicker(false);
-    // This would trigger the useEffect to reload data
+    loadLedgerEntries();
   };
 
   // Reset filters
@@ -243,10 +305,10 @@ export default function LedgerReportScreen() {
   );
 
   // Transaction types for filter
-  const transactionTypes = ['All', 'Sale', 'Purchase', 'Income', 'Expense', 'Transfer', 'Adjustment'];
+  const transactionTypes = ['All', 'payment_in', 'sales_invoice', 'sales_return', 'payment_out', 'purchase_invoice', 'purchase_return', 'income', 'expense'];
   
-  // Accounts for filter (mock data)
-  const accounts = ['All', 'Cash', 'Bank Account', 'Accounts Receivable', 'Accounts Payable', 'Sales', 'Purchases', 'Expenses'];
+  // Accounts for filter (mock data for now)
+  const accounts = ['All', 'Bank/Cash', 'Accounts Receivable', 'Sales Revenue', 'Sales Returns', 'Accounts Payable', 'Purchases', 'Purchase Returns'];
 
   // Date range options
   const dateRangeOptions = ['Today', 'Yesterday', 'This Week', 'This Month', 'This Quarter', 'This Year', 'Custom'];
@@ -299,15 +361,15 @@ export default function LedgerReportScreen() {
               
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Debit:</Text>
-                <Text style={[styles.detailValue, selectedTransaction.debit > 0 && styles.debitText]}>
-                  {formatCurrency(selectedTransaction.debit)}
+                <Text style={[styles.detailValue, selectedTransaction.entryType === 'debit' && styles.debitText]}>
+                  {formatCurrency(selectedTransaction.amount)}
                 </Text>
               </View>
               
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Credit:</Text>
-                <Text style={[styles.detailValue, selectedTransaction.credit > 0 && styles.creditText]}>
-                  {formatCurrency(selectedTransaction.credit)}
+                <Text style={[styles.detailValue, selectedTransaction.entryType === 'credit' && styles.creditText]}>
+                  {formatCurrency(selectedTransaction.amount)}
                 </Text>
               </View>
               
@@ -330,7 +392,7 @@ export default function LedgerReportScreen() {
               
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Created Date:</Text>
-                <Text style={styles.detailValue}>{formatDate(selectedTransaction.createdDate)}</Text>
+                <Text style={styles.detailValue}>{formatDate(selectedTransaction.createdAt)}</Text>
               </View>
               
               {selectedTransaction.modifiedBy && (
@@ -342,7 +404,9 @@ export default function LedgerReportScreen() {
                   
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>Modified Date:</Text>
-                    <Text style={styles.detailValue}>{formatDate(selectedTransaction.modifiedDate)}</Text>
+                    <Text style={styles.detailValue}>
+                      {selectedTransaction.modifiedDate ? formatDate(selectedTransaction.modifiedDate) : 'N/A'}
+                    </Text>
                   </View>
                 </>
               )}
@@ -822,18 +886,10 @@ export default function LedgerReportScreen() {
             
             <TouchableOpacity 
               style={[styles.tableHeaderCell, { flex: 0.8, alignItems: 'flex-end' }]}
-              onPress={() => handleSort('debit')}
+              onPress={() => handleSort('amount')}
             >
-              <Text style={styles.tableHeaderText}>Debit</Text>
-              {getSortIcon('debit')}
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.tableHeaderCell, { flex: 0.8, alignItems: 'flex-end' }]}
-              onPress={() => handleSort('credit')}
-            >
-              <Text style={styles.tableHeaderText}>Credit</Text>
-              {getSortIcon('credit')}
+              <Text style={styles.tableHeaderText}>Amount</Text>
+              {getSortIcon('amount')}
             </TouchableOpacity>
             
             <TouchableOpacity 
@@ -873,15 +929,15 @@ export default function LedgerReportScreen() {
                   </Text>
                   
                   <View style={styles.mobileRowFooter}>
-                    {item.debit > 0 && (
+                    {item.entryType === 'debit' && (
                       <Text style={styles.mobileRowDebit}>
-                        Dr: {formatCurrency(item.debit)}
+                        Dr: {formatCurrency(item.amount)}
                       </Text>
                     )}
                     
-                    {item.credit > 0 && (
+                    {item.entryType === 'credit' && (
                       <Text style={styles.mobileRowCredit}>
-                        Cr: {formatCurrency(item.credit)}
+                        Cr: {formatCurrency(item.amount)}
                       </Text>
                     )}
                     
@@ -939,16 +995,16 @@ export default function LedgerReportScreen() {
                     
                     <Text style={[
                       styles.tableCell, 
-                      { flex: 0.8, textAlign: 'right', color: item.debit > 0 ? '#F44336' : '#999' }
+                      { flex: 0.8, textAlign: 'right', color: item.entryType === 'debit' ? '#F44336' : '#999' }
                     ]}>
-                      {item.debit > 0 ? formatCurrency(item.debit) : '-'}
+                      {item.entryType === 'debit' ? formatCurrency(item.amount) : '-'}
                     </Text>
                     
                     <Text style={[
                       styles.tableCell, 
-                      { flex: 0.8, textAlign: 'right', color: item.credit > 0 ? '#4CAF50' : '#999' }
+                      { flex: 0.8, textAlign: 'right', color: item.entryType === 'credit' ? '#4CAF50' : '#999' }
                     ]}>
-                      {item.credit > 0 ? formatCurrency(item.credit) : '-'}
+                      {item.entryType === 'credit' ? formatCurrency(item.amount) : '-'}
                     </Text>
                     
                     <Text style={[
@@ -1059,19 +1115,19 @@ export default function LedgerReportScreen() {
 }
 
 // Helper function to get color based on transaction type
-const getTypeColor = (type) => {
+const getTypeColor = (type: string) => {
   switch (type) {
-    case 'Sale':
+    case 'sales_invoice':
       return '#4CAF50';
-    case 'Purchase':
+    case 'purchase_invoice':
       return '#F44336';
-    case 'Income':
+    case 'income':
       return '#2196F3';
-    case 'Expense':
+    case 'expense':
       return '#FF9800';
-    case 'Transfer':
+    case 'payment_in':
       return '#9C27B0';
-    case 'Adjustment':
+    case 'payment_out':
       return '#607D8B';
     default:
       return '#333';

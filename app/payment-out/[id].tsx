@@ -1,75 +1,85 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  ScrollView,
-  ActivityIndicator,
-  Alert,
-  StatusBar
-} from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { 
-  ArrowLeft, 
-  Printer, 
-  Trash, 
-  Pencil,
-  Calendar,
-  CreditCard,
-  DollarSign,
-  Receipt,
-  User,
-  FileText
-} from 'lucide-react-native';
-import { paymentOutData } from '@/mocks/paymentOutData';
-import { PaymentOut } from '@/types/payment-out';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, StatusBar, ActivityIndicator, Share as RNShare } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { ArrowLeft, Edit, Trash2, Calendar, CreditCard, User, Hash, Tag, Clock, Printer, FileText, DollarSign, Package } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuthStore } from '@/store/auth';
+import { getPaymentOutById, deletePaymentOut, PaymentOut, PaymentOutItem } from '@/db/payment-out';
+import * as dbVendor from '@/db/vendor';
+import * as dbInvoice from '@/db/purchase-invoice';
+
 export default function PaymentOutDetailsScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const [payment, setPayment] = useState<PaymentOut | null>(null);
+  const { id } = useLocalSearchParams();
+  const { user } = useAuthStore();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
+  const [payment, setPayment] = useState<(PaymentOut & { items: PaymentOutItem[] }) | null>(null);
+  const [vendor, setVendor] = useState<any>(null);
+  const [invoices, setInvoices] = useState<any[]>([]);
 
   useEffect(() => {
-    // Simulate API fetch
-    const fetchPayment = () => {
-      setLoading(true);
-      setTimeout(() => {
-        const foundPayment = paymentOutData.find(p => p.id === id);
-        setPayment(foundPayment || null);
+    if (!user || !id) return;
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const paymentData = await getPaymentOutById(parseInt(id as string), user.id);
+        if (!paymentData) {
+          Alert.alert('Error', 'Payment not found');
+          router.back();
+          return;
+        }
+        setPayment(paymentData);
+
+        // Fetch vendor data
+        const vendorData = await dbVendor.getVendorById(paymentData.vendorId);
+        setVendor(vendorData);
+
+        // Fetch invoice data for each item
+        const invoicePromises = paymentData.items.map((item: any) => 
+          dbInvoice.getPurchaseInvoiceById(item.invoiceId, user.id)
+        );
+        const invoiceData = await Promise.all(invoicePromises);
+        setInvoices(invoiceData);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        Alert.alert('Error', 'Failed to load payment details');
+      } finally {
         setLoading(false);
-      }, 500);
+      }
     };
+    fetchData();
+  }, [user, id]);
 
-    fetchPayment();
-  }, [id]);
-
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    if (!user || !payment) return;
     Alert.alert(
       'Delete Payment',
       'Are you sure you want to delete this payment?',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            // Here you would typically call an API to delete the payment
-            Alert.alert('Success', 'Payment deleted successfully');
-            router.back();
+          onPress: async () => {
+            try {
+              await deletePaymentOut(payment.id, user.id);
+              Alert.alert('Success', 'Payment deleted successfully');
+              router.back();
+            } catch (error) {
+              console.error('Error deleting payment:', error);
+              Alert.alert('Error', 'Failed to delete payment');
+            }
           },
         },
       ]
     );
   };
-
+  
   const handlePrint = () => {
-    Alert.alert('Print', 'Printing payment...');
+    Alert.alert('Print', 'Printing payment receipt...');
   };
 
   const getStatusColor = (status: string) => {
@@ -87,168 +97,125 @@ export default function PaymentOutDetailsScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading payment details...</Text>
-      </View>
+      <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (!payment) {
-    return (
-      <View style={styles.errorContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-        <Text style={styles.errorText}>Payment not found</Text>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backButtonText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
+    return null;
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Payment Details</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.title}>Payment #{payment.paymentNumber}</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => router.push(`/payment-out/edit/${payment.id}`)}
+          >
+            <Edit size={20} color={Colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={handleDelete}
+          >
+            <Trash2 size={20} color={Colors.negative} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Amount Card */}
-        <View style={styles.amountCard}>
-          <Text style={styles.amountLabel}>Total Amount</Text>
-          <Text style={styles.amountValue}>${payment.amount.toFixed(2)}</Text>
-          <View style={[
-            styles.statusBadge, 
-            { backgroundColor: getStatusColor(payment.status).bg }
-          ]}>
-            <Text style={[
-              styles.statusText, 
-              { color: getStatusColor(payment.status).text }
-            ]}>
-              {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Payment Information */}
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Payment Information</Text>
-          <View style={styles.card}>
-            <View style={styles.infoRow}>
-              <View style={styles.infoItem}>
-                <Receipt size={18} color={Colors.text.secondary} style={styles.infoIcon} />
-                <View>
-                  <Text style={styles.infoLabel}>Reference Number</Text>
-                  <Text style={styles.infoValue}>#{payment.referenceNumber}</Text>
-                </View>
-              </View>
+          <View style={styles.infoRow}>
+            <View style={styles.infoLabel}>
+              <FileText size={16} color={Colors.text.secondary} />
+              <Text style={styles.infoLabelText}>Vendor</Text>
             </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.infoItem}>
-                <Calendar size={18} color={Colors.text.secondary} style={styles.infoIcon} />
-                <View>
-                  <Text style={styles.infoLabel}>Payment Date</Text>
-                  <Text style={styles.infoValue}>{new Date(payment.paymentDate).toLocaleDateString()}</Text>
-                </View>
-              </View>
+            <Text style={styles.infoValue}>{vendor?.name}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <View style={styles.infoLabel}>
+              <Calendar size={16} color={Colors.text.secondary} />
+              <Text style={styles.infoLabelText}>Payment Date</Text>
             </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.infoItem}>
-                <CreditCard size={18} color={Colors.text.secondary} style={styles.infoIcon} />
-                <View>
-                  <Text style={styles.infoLabel}>Payment Method</Text>
-                  <Text style={styles.infoValue}>
-                    {payment.paymentMethod.split('_').map(word => 
-                      word.charAt(0).toUpperCase() + word.slice(1)
-                    ).join(' ')}
-                  </Text>
-                </View>
-              </View>
+            <Text style={styles.infoValue}>{payment.paymentDate}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <View style={styles.infoLabel}>
+              <DollarSign size={16} color={Colors.text.secondary} />
+              <Text style={styles.infoLabelText}>Payment Method</Text>
+            </View>
+            <Text style={styles.infoValue}>{payment.paymentMethod}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <View style={styles.infoLabel}>
+              <Hash size={16} color={Colors.text.secondary} />
+              <Text style={styles.infoLabelText}>Reference Number</Text>
+            </View>
+            <Text style={styles.infoValue}>{payment.referenceNumber || '-'}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <View style={styles.infoLabel}>
+              <FileText size={16} color={Colors.text.secondary} />
+              <Text style={styles.infoLabelText}>Status</Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(payment.status).bg }]}>
+              <Text style={[styles.statusText, { color: getStatusColor(payment.status).text }]}>
+                {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* Vendor Information */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Vendor Information</Text>
-          <View style={styles.card}>
-            <View style={styles.infoRow}>
-              <View style={styles.infoItem}>
-                <User size={18} color={Colors.text.secondary} style={styles.infoIcon} />
-                <View>
-                  <Text style={styles.infoLabel}>Vendor Name</Text>
-                  <Text style={styles.infoValue}>{payment.vendorName}</Text>
+          <Text style={styles.sectionTitle}>Invoices</Text>
+          {payment.items.map((item: any, index: number) => {
+            const invoice = invoices.find(inv => inv.id === item.invoiceId);
+            return (
+              <View key={index} style={styles.itemCard}>
+                <View style={styles.itemHeader}>
+                  <View style={styles.itemInfo}>
+                    <Package size={16} color={Colors.text.secondary} />
+                    <Text style={styles.itemName}>Invoice #{invoice?.invoiceNumber}</Text>
+                  </View>
                 </View>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Description/Notes */}
-        {payment.notes && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Notes</Text>
-            <View style={styles.card}>
-              <View style={styles.infoRow}>
-                <View style={styles.infoItem}>
-                  <FileText size={18} color={Colors.text.secondary} style={styles.infoIcon} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.infoLabel}>Description</Text>
-                    <Text style={styles.infoValue}>{payment.notes}</Text>
+                <View style={styles.itemDetails}>
+                  <View style={styles.itemTotal}>
+                    <Text style={styles.itemLabel}>Amount</Text>
+                    <Text style={styles.itemTotalText}>${(item.amount / 100).toFixed(2)}</Text>
                   </View>
                 </View>
               </View>
-            </View>
+            );
+          })}
+        </View>
+
+        {payment.notes && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Notes</Text>
+            <Text style={styles.notesText}>{payment.notes}</Text>
           </View>
         )}
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.deleteButton]}
-            onPress={handleDelete}
-          >
-            <Trash size={20} color="#FFF" />
-            <Text style={styles.actionButtonText}>Delete</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionButton, styles.printButton]}
-            onPress={handlePrint}
-          >
-            <Printer size={20} color="#FFF" />
-            <Text style={styles.actionButtonText}>Print</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionButton, styles.editButton]}
-            onPress={() => router.push(`/payment-out/edit/${payment.id}`)}
-          >
-            <Pencil size={20} color="#FFF" />
-            <Text style={styles.actionButtonText}>Edit</Text>
-          </TouchableOpacity>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Summary</Text>
+          <View style={[styles.summaryRow, styles.totalRow]}>
+            <Text style={styles.totalRowLabel}>Total Amount</Text>
+            <Text style={styles.totalRowValue}>${(payment.amount / 100).toFixed(2)}</Text>
+          </View>
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -257,52 +224,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background.default,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.background.default,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: Colors.text.secondary,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.background.default,
-    padding: 20,
-  },
-  errorText: {
-    fontSize: 18,
-    color: Colors.text.primary,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  backButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
     backgroundColor: Colors.background.default,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
-  headerButton: {
+  backButton: {
     width: 40,
     height: 40,
     justifyContent: 'center',
@@ -313,132 +245,124 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  scrollView: {
-    flex: 1,
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  amountCard: {
-    backgroundColor: Colors.background.default,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: Colors.primary + '30',
-  },
-  amountLabel: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    marginBottom: 8,
-  },
-  amountValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.primary,
-    marginBottom: 12,
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  statusText: {
-    fontSize: 14,
-    fontWeight: '600',
+    flex: 1,
   },
   section: {
-    marginBottom: 16,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     color: Colors.text.primary,
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  card: {
-    backgroundColor: Colors.background.default,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
+    marginBottom: 16,
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    flex: 1,
-  },
-  infoIcon: {
-    marginRight: 12,
-    marginTop: 2,
+    alignItems: 'center',
+    marginBottom: 12,
   },
   infoLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  infoLabelText: {
     fontSize: 14,
     color: Colors.text.secondary,
-    marginBottom: 4,
   },
   infoValue: {
-    fontSize: 16,
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  itemCard: {
+    backgroundColor: Colors.background.secondary,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  itemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  itemInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  itemName: {
+    fontSize: 14,
     color: Colors.text.primary,
     fontWeight: '500',
   },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border.light,
-    marginVertical: 12,
-  },
-  actionButtonsContainer: {
+  itemDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 16,
+    alignItems: 'flex-end',
   },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    flex: 1,
-    marginHorizontal: 4,
+  itemTotal: {
+    alignItems: 'flex-end',
   },
-  deleteButton: {
-    backgroundColor: '#FF3B30',
+  itemLabel: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 4,
   },
-  printButton: {
-    backgroundColor: Colors.text.secondary,
-  },
-  editButton: {
-    backgroundColor: Colors.primary,
-  },
-  actionButtonText: {
-    color: '#FFF',
+  itemTotalText: {
+    fontSize: 16,
     fontWeight: '600',
+    color: Colors.primary,
+  },
+  notesText: {
     fontSize: 14,
-    marginLeft: 6,
+    color: Colors.text.primary,
+    lineHeight: 20,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  totalRow: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    marginTop: 8,
+    paddingTop: 16,
+  },
+  totalRowLabel: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  totalRowValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.primary,
   },
 }); 

@@ -32,6 +32,8 @@ import {
   ShoppingBag
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
+import * as dbProduct from '@/db/product';
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import Colors from "@/constants/colors";
 import { Product, StockStatus } from "@/types/product";
@@ -262,64 +264,46 @@ export default function AddProductScreen() {
     setIsLoading(true);
     
     try {
-      // Determine stock status based on quantity and reorder level
-      let status: StockStatus;
-      const stockQty = parseInt(stockQuantity);
-      const reorderLvl = parseInt(reorderLevel);
-      
-      if (!isActive) {
-        status = "discontinued";
-      } else if (stockQty === 0) {
-        status = "out_of_stock";
-      } else if (stockQty < reorderLvl) {
-        status = "low_stock";
-      } else {
-        status = "in_stock";
-      }
-      
-      // Create new product object
-      const newProduct: Product = {
-        id: `product-${Date.now()}`, // Generate a temporary ID (would be replaced with server-generated ID)
-        name: productName.trim(),
+      // Prepare data for DB
+      const userId = 1; // TODO: Replace with actual user ID from auth context
+      const dbData = {
+        userId,
+        productName: productName.trim(),
         sku: sku.trim(),
-        barcode: barcode.trim() || undefined,
-        description: fullDescription.trim() || shortDescription.trim() || undefined,
-        category: category.trim() || undefined,
-        tags: tags.trim() ? tags.split(",").map(tag => tag.trim()) : [],
-        purchasePrice: parseFloat(costPrice),
+        barcode: barcode.trim() || null,
+        category: category.trim() || null,
+        brand: brand.trim() || null,
+        isActive,
+        costPrice: parseFloat(costPrice),
         sellingPrice: parseFloat(sellingPrice),
+        taxRate: taxRate.trim() ? parseFloat(taxRate) : 0,
         stockQuantity: parseInt(stockQuantity),
-        reorderLevel: parseInt(reorderLevel),
         unit,
-        taxRate: taxRate.trim() ? parseFloat(taxRate) : undefined,
-        images: images.length > 0 ? images : [],
-        vendor: vendor.trim() || undefined,
-        location: location.trim() || undefined,
-        dimensions: (length.trim() || width.trim() || height.trim() || weight.trim()) ? {
-          length: length.trim() ? parseFloat(length) : undefined,
-          width: width.trim() ? parseFloat(width) : undefined,
-          height: height.trim() ? parseFloat(height) : undefined,
-          weight: weight.trim() ? parseFloat(weight) : undefined,
-        } : undefined,
-        status,
-        notes: notes.trim() || undefined,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        reorderLevel: parseInt(reorderLevel),
+        vendor: vendor.trim() || null,
+        location: location.trim() || null,
+        shortDescription: shortDescription.trim() || null,
+        fullDescription: fullDescription.trim() || null,
+        weight: weight.trim() ? parseFloat(weight) : 0,
+        length: length.trim() ? parseFloat(length) : 0,
+        width: width.trim() ? parseFloat(width) : 0,
+        height: height.trim() ? parseFloat(height) : 0,
+        tags: tags.trim() ? tags.split(',').map(tag => tag.trim()).join(',') : '',
+        notes: notes.trim() || null,
+        images: images.length > 0 ? images.join(',') : '',
       };
-      
-      // Simulate saving to database/storage with a delay
-      setTimeout(() => {
-        // In a real implementation, would save to AsyncStorage or backend
-        
-        setIsLoading(false);
+      const result = await dbProduct.addProduct(dbData);
+      setIsLoading(false);
+      if (result) {
         setSnackbarMessage("Product added successfully");
         setSnackbarVisible(true);
-        
-        // Navigate back to products list after a short delay
         setTimeout(() => {
           router.replace("/products");
         }, 1500);
-      }, 800);
+      } else {
+        setSnackbarMessage("Failed to add product");
+        setSnackbarVisible(true);
+      }
     } catch (error) {
       console.error("Error adding product:", error);
       setSnackbarMessage("Failed to add product");
@@ -356,65 +340,51 @@ export default function AddProductScreen() {
     setIsLoading(true);
     
     try {
-      // Determine stock status based on quantity and reorder level
-      let status: StockStatus;
-      const stockQty = parseInt(stockQuantity);
-      const reorderLvl = parseInt(reorderLevel);
-      
-      if (!isActive) {
-        status = "discontinued";
-      } else if (stockQty === 0) {
-        status = "out_of_stock";
-      } else if (stockQty < reorderLvl) {
-        status = "low_stock";
-      } else {
-        status = "in_stock";
-      }
-      
-      // Create new product object
-      const newProduct: Product = {
-        id: `product-${Date.now()}`, // Generate a temporary ID (would be replaced with server-generated ID)
-        name: productName.trim(),
+      // Prepare data for DB
+      const userId = 1; // TODO: Replace with actual user ID from auth context
+      const dbData = {
+        userId,
+        productName: productName.trim(),
         sku: sku.trim(),
-        barcode: barcode.trim() || undefined,
-        description: fullDescription.trim() || shortDescription.trim() || undefined,
-        category: category.trim() || undefined,
-        tags: tags.trim() ? tags.split(",").map(tag => tag.trim()) : [],
-        purchasePrice: parseFloat(costPrice),
+        barcode: barcode.trim() || null,
+        category: category.trim() || null,
+        brand: brand.trim() || null,
+        isActive,
+        costPrice: parseFloat(costPrice),
         sellingPrice: parseFloat(sellingPrice),
+        taxRate: taxRate.trim() ? parseFloat(taxRate) : 0,
         stockQuantity: parseInt(stockQuantity),
-        reorderLevel: parseInt(reorderLevel),
         unit,
-        taxRate: taxRate.trim() ? parseFloat(taxRate) : undefined,
-        images: images.length > 0 ? images : [],
-        vendor: vendor.trim() || undefined,
-        location: location.trim() || undefined,
-        dimensions: (length.trim() || width.trim() || height.trim() || weight.trim()) ? {
-          length: length.trim() ? parseFloat(length) : undefined,
-          width: width.trim() ? parseFloat(width) : undefined,
-          height: height.trim() ? parseFloat(height) : undefined,
-          weight: weight.trim() ? parseFloat(weight) : undefined,
-        } : undefined,
-        status,
-        notes: notes.trim() || undefined,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        reorderLevel: parseInt(reorderLevel),
+        vendor: vendor.trim() || null,
+        location: location.trim() || null,
+        shortDescription: shortDescription.trim() || null,
+        fullDescription: fullDescription.trim() || null,
+        weight: weight.trim() ? parseFloat(weight) : 0,
+        length: length.trim() ? parseFloat(length) : 0,
+        width: width.trim() ? parseFloat(width) : 0,
+        height: height.trim() ? parseFloat(height) : 0,
+        tags: tags.trim() ? tags.split(',').map(tag => tag.trim()).join(',') : '',
+        notes: notes.trim() || null,
+        images: images.length > 0 ? images.join(',') : '',
       };
-      
-      // Simulate saving to database/storage with a delay
-      setTimeout(() => {
-        // In a real implementation, would save to AsyncStorage or backend
-        
-        // Clear the form
+      const result = await dbProduct.addProduct(dbData);
+      setIsLoading(false);
+      if (result) {
+        setSnackbarMessage("Product added successfully");
+        setSnackbarVisible(true);
+        // Reset form fields
         setProductName("");
         setSku("");
         setBarcode("");
         setCategory("");
         setBrand("");
+        setIsActive(true);
         setCostPrice("");
         setSellingPrice("");
         setTaxRate("");
         setStockQuantity("");
+        setUnit("piece");
         setReorderLevel("");
         setVendor("");
         setLocation("");
@@ -427,20 +397,10 @@ export default function AddProductScreen() {
         setTags("");
         setNotes("");
         setImages([]);
-        
-        // Reset form validation
-        setErrors({});
-        
-        // Show success message
-        setSnackbarMessage("Product added successfully, you can add another");
+      } else {
+        setSnackbarMessage("Failed to add product");
         setSnackbarVisible(true);
-        setIsLoading(false);
-        
-        // Scroll back to top
-        if (scrollViewRef.current) {
-          scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: true });
-        }
-      }, 800);
+      }
     } catch (error) {
       console.error("Error adding product:", error);
       setSnackbarMessage("Failed to add product");
@@ -463,7 +423,7 @@ export default function AddProductScreen() {
   };
   
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
       {/* Modern Header */}
@@ -1022,7 +982,7 @@ export default function AddProductScreen() {
         message={snackbarMessage}
         onDismiss={() => setSnackbarVisible(false)}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 

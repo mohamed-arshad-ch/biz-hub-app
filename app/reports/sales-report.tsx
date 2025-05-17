@@ -34,42 +34,49 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { formatCurrency, formatDate, formatDateShort, formatNumber, formatPercentage } from '@/utils/formatters';
-import { getSalesData } from '@/mocks/salesData';
-import { SaleRecord, SaleItem } from '@/types/sales';
 import EmptyState from '@/components/EmptyState';
+import { getSalesReportData, getSalesSummaryStats, getSalesByCustomer, getSalesByProduct, getSalesByDateRange } from '@/db/sales-invoice';
+import { useAuthStore } from '@/store/auth';
 
 const { width } = Dimensions.get('window');
 
 // Extended type for sales report data
-interface SaleReportRecord extends SaleRecord {
-  subtotal?: number;
-  taxAmount?: number;
-  discountAmount?: number;
+interface SaleReportRecord {
+  id: number;
+  date: string;
+  invoiceNumber: string;
+  customer: string | null;
+  customerId: number;
+  amount: number;
+  subtotal: number;
+  taxAmount: number | null;
+  status: string | null;
+  notes: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 // Customer summary type
 interface CustomerSummary {
-  customer: string;
+  customerId: number;
+  customerName: string | null;
   transactionCount: number;
   totalAmount: number;
-  percentageOfTotal: number;
-  averageTransactionValue: number;
-  previousPeriodAmount?: number;
+  averageAmount: number;
 }
 
 // Product summary type
 interface ProductSummary {
-  product: string;
+  productId: number;
+  productName: string | null;
   quantitySold: number;
   totalAmount: number;
-  percentageOfTotal: number;
-  costOfGoodsSold?: number;
-  grossProfit?: number;
-  profitMargin?: number;
+  costOfGoodsSold: number;
 }
 
 export default function SalesReportScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [dateRange, setDateRange] = useState('This Month');
   const [isDateRangeSelectorVisible, setIsDateRangeSelectorVisible] = useState(false);
   const [viewMode, setViewMode] = useState<'summary' | 'detailed'>('summary');
@@ -85,42 +92,63 @@ export default function SalesReportScreen() {
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [filterOptions, setFilterOptions] = useState({
     customers: [] as string[],
-    paymentMethods: [] as string[],
-    paymentStatus: [] as string[],
+    status: [] as string[],
   });
   
-  // Mock data for sales entries
+  // Sales data state
   const [salesData, setSalesData] = useState<SaleReportRecord[]>([]);
   const [filteredSalesData, setFilteredSalesData] = useState<SaleReportRecord[]>([]);
+  const [summaryStats, setSummaryStats] = useState<any>(null);
+  const [customerSummary, setCustomerSummary] = useState<CustomerSummary[]>([]);
+  const [productSummary, setProductSummary] = useState<ProductSummary[]>([]);
+  const [dateRangeSummary, setDateRangeSummary] = useState<any[]>([]);
   
   // Load sales data
   useEffect(() => {
-    setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      const data = getSalesData().map(sale => ({
-        ...sale,
-        subtotal: sale.amount * 0.9, // Assuming 10% tax for mock data
-        taxAmount: sale.amount * 0.1,
-        discountAmount: sale.amount * 0.05, // 5% discount for demonstration
-      }));
-      setSalesData(data);
-      setFilteredSalesData(data);
+    const loadData = async () => {
+      if (!user?.id) return;
       
-      // Extract unique filter options
-      const customers = [...new Set(data.map(sale => sale.customer))];
-      const paymentMethods = [...new Set(data.map(sale => sale.paymentMethod || 'Unknown'))];
-      const paymentStatus = [...new Set(data.map(sale => sale.status))];
-      
-      setFilterOptions({
-        customers,
-        paymentMethods,
-        paymentStatus,
-      });
-      
-      setIsLoading(false);
-    }, 800);
-  }, []);
+      setIsLoading(true);
+      try {
+        // Get date range
+        const now = new Date();
+        const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        // Fetch all required data
+        const [salesData, stats, customers, products, dateData] = await Promise.all([
+          getSalesReportData(user.id, startDate, endDate),
+          getSalesSummaryStats(user.id, startDate, endDate),
+          getSalesByCustomer(user.id, startDate, endDate),
+          getSalesByProduct(user.id, startDate, endDate),
+          getSalesByDateRange(user.id, startDate, endDate)
+        ]);
+
+        setSalesData(salesData);
+        setFilteredSalesData(salesData);
+        setSummaryStats(stats[0]);
+        setCustomerSummary(customers);
+        setProductSummary(products);
+        setDateRangeSummary(dateData);
+
+        // Extract unique filter options
+        const uniqueCustomers = [...new Set(salesData.map(sale => sale.customer).filter(Boolean))] as string[];
+        const uniqueStatus = [...new Set(salesData.map(sale => sale.status).filter(Boolean))] as string[];
+        
+        setFilterOptions({
+          customers: uniqueCustomers,
+          status: uniqueStatus,
+        });
+      } catch (error) {
+        console.error('Error loading sales data:', error);
+        Alert.alert('Error', 'Failed to load sales data. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, [user?.id]);
   
   // Apply search filter
   useEffect(() => {
@@ -131,7 +159,7 @@ export default function SalesReportScreen() {
     
     const searchLower = searchText.toLowerCase();
     const filtered = salesData.filter(sale => 
-      sale.customer.toLowerCase().includes(searchLower) ||
+      sale.customer?.toLowerCase().includes(searchLower) ||
       sale.invoiceNumber.toLowerCase().includes(searchLower) ||
       (sale.notes && sale.notes.toLowerCase().includes(searchLower))
     );
@@ -152,13 +180,13 @@ export default function SalesReportScreen() {
           comparison = a.invoiceNumber.localeCompare(b.invoiceNumber);
           break;
         case 'customer':
-          comparison = a.customer.localeCompare(b.customer);
+          comparison = (a.customer || '').localeCompare(b.customer || '');
           break;
         case 'amount':
           comparison = a.amount - b.amount;
           break;
         case 'status':
-          comparison = a.status.localeCompare(b.status);
+          comparison = (a.status || '').localeCompare(b.status || '');
           break;
         default:
           comparison = 0;
@@ -169,12 +197,13 @@ export default function SalesReportScreen() {
     
     setFilteredSalesData(sortedData);
   }, [sortColumn, sortDirection]);
-  
+
   // Calculate summary statistics
-  const totalSalesAmount = filteredSalesData.reduce((sum, sale) => sum + sale.amount, 0);
-  const totalTransactions = filteredSalesData.length;
-  const averageSaleValue = totalTransactions > 0 ? totalSalesAmount / totalTransactions : 0;
-  const totalTaxCollected = filteredSalesData.reduce((sum, sale) => sum + (sale.taxAmount || 0), 0);
+  const totalSalesAmount = summaryStats?.totalAmount || 0;
+  const totalTransactions = summaryStats?.count || 0;
+  const averageSaleValue = summaryStats?.average || 0;
+  const totalTaxCollected = summaryStats?.totalTax || 0;
+  const totalSubtotal = summaryStats?.totalSubtotal || 0;
   
   // Previous period comparison (mock data - assuming 5% growth)
   const previousPeriodAmount = totalSalesAmount * 0.95;
@@ -187,48 +216,15 @@ export default function SalesReportScreen() {
   const grossProfitMargin = totalSalesAmount > 0 ? (grossProfit / totalSalesAmount) * 100 : 0;
   
   // Calculate sales by customer
-  const salesByCustomer: CustomerSummary[] = Object.values(
-    filteredSalesData.reduce((acc, sale) => {
-      if (!acc[sale.customer]) {
-        acc[sale.customer] = {
-          customer: sale.customer,
-          transactionCount: 0,
-          totalAmount: 0,
-          percentageOfTotal: 0,
-          averageTransactionValue: 0,
-          previousPeriodAmount: 0, // Mock data
-        };
-      }
-      
-      acc[sale.customer].transactionCount += 1;
-      acc[sale.customer].totalAmount += sale.amount;
-      
-      return acc;
-    }, {} as Record<string, CustomerSummary>)
-  ).map(summary => ({
+  const salesByCustomer: CustomerSummary[] = customerSummary.map(summary => ({
     ...summary,
-    percentageOfTotal: totalSalesAmount > 0 ? (summary.totalAmount / totalSalesAmount) * 100 : 0,
-    averageTransactionValue: summary.transactionCount > 0 ? summary.totalAmount / summary.transactionCount : 0,
-    previousPeriodAmount: summary.totalAmount * 0.95, // Mock data - assuming 5% growth
-  })).sort((a, b) => b.totalAmount - a.totalAmount);
+    averageAmount: summary.totalAmount / summary.transactionCount,
+  }));
   
-  // Calculate sales by product (mock data since we don't have product-level data in the original sales records)
-  const mockProducts = [
-    { name: "Product A", quantity: 42, amount: totalSalesAmount * 0.3 },
-    { name: "Product B", quantity: 28, amount: totalSalesAmount * 0.25 },
-    { name: "Product C", quantity: 35, amount: totalSalesAmount * 0.2 },
-    { name: "Product D", quantity: 15, amount: totalSalesAmount * 0.15 },
-    { name: "Product E", quantity: 10, amount: totalSalesAmount * 0.1 },
-  ];
-  
-  const salesByProduct: ProductSummary[] = mockProducts.map(product => ({
-    product: product.name,
-    quantitySold: product.quantity,
-    totalAmount: product.amount,
-    percentageOfTotal: totalSalesAmount > 0 ? (product.amount / totalSalesAmount) * 100 : 0,
-    costOfGoodsSold: product.amount * 0.7, // Assuming 30% margin
-    grossProfit: product.amount * 0.3,
-    profitMargin: 30, // 30% margin
+  // Calculate sales by product
+  const salesByProduct: ProductSummary[] = productSummary.map(product => ({
+    ...product,
+    costOfGoodsSold: product.costOfGoodsSold || 0,
   }));
   
   // Date range options
@@ -258,7 +254,7 @@ export default function SalesReportScreen() {
     if (selectedItems.length === filteredSalesData.length) {
       setSelectedItems([]);
     } else {
-      setSelectedItems(filteredSalesData.map(sale => sale.id));
+      setSelectedItems(filteredSalesData.map(sale => sale.id.toString()));
     }
   };
   
@@ -349,7 +345,7 @@ export default function SalesReportScreen() {
           description={searchText ? "No sales match your search criteria. Try adjusting your filters or search terms." : "There are no sales records in the selected date range."}
           icon="shopping-cart"
           actionLabel="Create New Sale"
-          onAction={() => router.push('/sales/new')}
+          onAction={() => router.push('/sales-invoice/new' as any)}
         />
       </SafeAreaView>
     );
@@ -469,14 +465,6 @@ export default function SalesReportScreen() {
             onPress={() => handleFilterToggle('customer')}
           >
             <Text style={styles.filterOptionText}>Customer</Text>
-            <ChevronDown size={16} color="#555" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.filterOption}
-            onPress={() => handleFilterToggle('paymentMethod')}
-          >
-            <Text style={styles.filterOptionText}>Payment Method</Text>
             <ChevronDown size={16} color="#555" />
           </TouchableOpacity>
           
@@ -622,7 +610,7 @@ export default function SalesReportScreen() {
               
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View>
-                  <View style={styles.tableHeaderRow}>
+                  <View style={styles.tableHeader}>
                     <TouchableOpacity 
                       style={[styles.tableHeaderCell, { width: 180 }]}
                       onPress={() => handleSortChange('customer')}
@@ -641,35 +629,28 @@ export default function SalesReportScreen() {
                       style={[styles.tableHeaderCell, { width: 120 }]}
                       onPress={() => handleSortChange('totalAmount')}
                     >
-                      <Text style={styles.tableHeaderText}>Total</Text>
+                      <Text style={styles.tableHeaderText}>Total Amount</Text>
                       {renderSortIndicator('totalAmount')}
                     </TouchableOpacity>
                     <TouchableOpacity 
-                      style={[styles.tableHeaderCell, { width: 100 }]}
-                      onPress={() => handleSortChange('percentageOfTotal')}
-                    >
-                      <Text style={styles.tableHeaderText}>% of Total</Text>
-                      {renderSortIndicator('percentageOfTotal')}
-                    </TouchableOpacity>
-                    <TouchableOpacity 
                       style={[styles.tableHeaderCell, { width: 120 }]}
-                      onPress={() => handleSortChange('averageTransactionValue')}
+                      onPress={() => handleSortChange('averageAmount')}
                     >
                       <Text style={styles.tableHeaderText}>Avg. Value</Text>
-                      {renderSortIndicator('averageTransactionValue')}
+                      {renderSortIndicator('averageAmount')}
                     </TouchableOpacity>
                   </View>
                   
                   {salesByCustomer.map((customerSummary, index) => (
                     <View 
-                      key={customerSummary.customer}
+                      key={customerSummary.customerId}
                       style={[
                         styles.tableRow,
                         index % 2 === 1 && styles.tableRowAlternate
                       ]}
                     >
                       <Text style={[styles.tableCell, { width: 180 }]} numberOfLines={1}>
-                        {customerSummary.customer}
+                        {customerSummary.customerName || 'Unknown Customer'}
                       </Text>
                       <Text style={[styles.tableCell, { width: 100 }]}>
                         {customerSummary.transactionCount}
@@ -677,18 +658,15 @@ export default function SalesReportScreen() {
                       <Text style={[styles.tableCell, { width: 120 }]}>
                         {formatCurrency(customerSummary.totalAmount)}
                       </Text>
-                      <Text style={[styles.tableCell, { width: 100 }]}>
-                        {customerSummary.percentageOfTotal.toFixed(1)}%
-                      </Text>
                       <Text style={[styles.tableCell, { width: 120 }]}>
-                        {formatCurrency(customerSummary.averageTransactionValue)}
+                        {formatCurrency(customerSummary.averageAmount)}
                       </Text>
                     </View>
                   ))}
                   
                   <View style={styles.tableTotalRow}>
                     <Text style={[styles.tableTotalCell, { width: 180 }]}>
-                      Total ({salesByCustomer.length} customers)
+                      Total ({customerSummary.length} customers)
                     </Text>
                     <Text style={[styles.tableTotalCell, { width: 100 }]}>
                       {totalTransactions}
@@ -718,7 +696,7 @@ export default function SalesReportScreen() {
               
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View>
-                  <View style={styles.tableHeaderRow}>
+                  <View style={styles.tableHeader}>
                     <TouchableOpacity 
                       style={[styles.tableHeaderCell, { width: 180 }]}
                       onPress={() => handleSortChange('product')}
@@ -737,57 +715,37 @@ export default function SalesReportScreen() {
                       style={[styles.tableHeaderCell, { width: 120 }]}
                       onPress={() => handleSortChange('totalAmount')}
                     >
-                      <Text style={styles.tableHeaderText}>Total</Text>
+                      <Text style={styles.tableHeaderText}>Total Amount</Text>
                       {renderSortIndicator('totalAmount')}
                     </TouchableOpacity>
                     <TouchableOpacity 
-                      style={[styles.tableHeaderCell, { width: 100 }]}
-                      onPress={() => handleSortChange('percentageOfTotal')}
-                    >
-                      <Text style={styles.tableHeaderText}>% of Total</Text>
-                      {renderSortIndicator('percentageOfTotal')}
-                    </TouchableOpacity>
-                    <TouchableOpacity 
                       style={[styles.tableHeaderCell, { width: 120 }]}
-                      onPress={() => handleSortChange('grossProfit')}
+                      onPress={() => handleSortChange('costOfGoodsSold')}
                     >
-                      <Text style={styles.tableHeaderText}>Profit</Text>
-                      {renderSortIndicator('grossProfit')}
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[styles.tableHeaderCell, { width: 100 }]}
-                      onPress={() => handleSortChange('profitMargin')}
-                    >
-                      <Text style={styles.tableHeaderText}>Margin</Text>
-                      {renderSortIndicator('profitMargin')}
+                      <Text style={styles.tableHeaderText}>Cost of Goods Sold</Text>
+                      {renderSortIndicator('costOfGoodsSold')}
                     </TouchableOpacity>
                   </View>
                   
                   {salesByProduct.map((productSummary, index) => (
                     <View 
-                      key={productSummary.product}
+                      key={productSummary.productId}
                       style={[
                         styles.tableRow,
                         index % 2 === 1 && styles.tableRowAlternate
                       ]}
                     >
                       <Text style={[styles.tableCell, { width: 180 }]} numberOfLines={1}>
-                        {productSummary.product}
+                        {productSummary.productName || 'Unknown Product'}
                       </Text>
                       <Text style={[styles.tableCell, { width: 100 }]}>
-                        {productSummary.quantitySold}
+                        {formatNumber(productSummary.quantitySold)}
                       </Text>
                       <Text style={[styles.tableCell, { width: 120 }]}>
                         {formatCurrency(productSummary.totalAmount)}
                       </Text>
-                      <Text style={[styles.tableCell, { width: 100 }]}>
-                        {productSummary.percentageOfTotal.toFixed(1)}%
-                      </Text>
                       <Text style={[styles.tableCell, { width: 120 }]}>
-                        {formatCurrency(productSummary.grossProfit || 0)}
-                      </Text>
-                      <Text style={[styles.tableCell, { width: 100 }]}>
-                        {productSummary.profitMargin?.toFixed(1)}%
+                        {formatCurrency(productSummary.costOfGoodsSold)}
                       </Text>
                     </View>
                   ))}
@@ -802,14 +760,8 @@ export default function SalesReportScreen() {
                     <Text style={[styles.tableTotalCell, { width: 120 }]}>
                       {formatCurrency(totalSalesAmount)}
                     </Text>
-                    <Text style={[styles.tableTotalCell, { width: 100 }]}>
-                      100%
-                    </Text>
                     <Text style={[styles.tableTotalCell, { width: 120 }]}>
-                      {formatCurrency(grossProfit)}
-                    </Text>
-                    <Text style={[styles.tableTotalCell, { width: 100 }]}>
-                      {grossProfitMargin.toFixed(1)}%
+                      {formatCurrency(costOfGoodsSold)}
                     </Text>
                   </View>
                 </View>
@@ -929,27 +881,6 @@ export default function SalesReportScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity 
                       style={[styles.tableHeaderCell, { width: 120 }]}
-                      onPress={() => handleSortChange('paymentMethod')}
-                    >
-                      <Text style={styles.tableHeaderText}>Payment</Text>
-                      {renderSortIndicator('paymentMethod')}
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[styles.tableHeaderCell, { width: 100 }]}
-                      onPress={() => handleSortChange('subtotal')}
-                    >
-                      <Text style={styles.tableHeaderText}>Subtotal</Text>
-                      {renderSortIndicator('subtotal')}
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[styles.tableHeaderCell, { width: 100 }]}
-                      onPress={() => handleSortChange('taxAmount')}
-                    >
-                      <Text style={styles.tableHeaderText}>Tax</Text>
-                      {renderSortIndicator('taxAmount')}
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[styles.tableHeaderCell, { width: 120 }]}
                       onPress={() => handleSortChange('amount')}
                     >
                       <Text style={styles.tableHeaderText}>Total</Text>
@@ -963,25 +894,25 @@ export default function SalesReportScreen() {
                       style={[
                         styles.tableRow,
                         index % 2 === 1 && styles.tableRowAlternate,
-                        selectedItems.includes(sale.id) && styles.tableRowSelected
+                        selectedItems.includes(sale.id.toString()) && styles.tableRowSelected
                       ]}
                       onPress={() => {
                         if (isSelectMode) {
-                          toggleItemSelection(sale.id);
+                          toggleItemSelection(sale.id.toString());
                         } else {
-                          router.push(`/sales/${sale.id}`);
+                          router.push(`/sales-invoice/${sale.id}` as any);
                         }
                       }}
                       onLongPress={() => {
                         if (!isSelectMode) {
                           setIsSelectMode(true);
-                          toggleItemSelection(sale.id);
+                          toggleItemSelection(sale.id.toString());
                         }
                       }}
                     >
                       {isSelectMode && (
                         <View style={[styles.tableCell, { width: 50 }]}>
-                          {selectedItems.includes(sale.id) ? (
+                          {selectedItems.includes(sale.id.toString()) ? (
                             <CheckSquare size={18} color={Colors.primary} />
                           ) : (
                             <Square size={18} color="#555" />
@@ -995,7 +926,7 @@ export default function SalesReportScreen() {
                         {sale.invoiceNumber}
                       </Text>
                       <Text style={[styles.tableCell, { width: 180 }]} numberOfLines={1}>
-                        {sale.customer}
+                        {customerSummary.find(c => c.customerId === sale.customerId)?.customerName || 'Unknown Customer'}
                       </Text>
                       <View style={[styles.tableCell, { width: 100 }]}>
                         <View style={[
@@ -1006,19 +937,10 @@ export default function SalesReportScreen() {
                           sale.status === 'cancelled' && styles.statusCancelled,
                         ]}>
                           <Text style={styles.statusText}>
-                            {sale.status.charAt(0).toUpperCase() + sale.status.slice(1)}
+                            {sale.status || 'Unknown'}
                           </Text>
                         </View>
                       </View>
-                      <Text style={[styles.tableCell, { width: 120 }]}>
-                        {sale.paymentMethod || 'N/A'}
-                      </Text>
-                      <Text style={[styles.tableCell, { width: 100 }]}>
-                        {formatCurrency(sale.subtotal || 0)}
-                      </Text>
-                      <Text style={[styles.tableCell, { width: 100 }]}>
-                        {formatCurrency(sale.taxAmount || 0)}
-                      </Text>
                       <Text style={[styles.tableCell, { width: 120, fontWeight: '500', color: '#2196F3' }]}>
                         {formatCurrency(sale.amount)}
                       </Text>
@@ -1036,19 +958,10 @@ export default function SalesReportScreen() {
                       {filteredSalesData.length} invoices
                     </Text>
                     <Text style={[styles.tableTotalCell, { width: 180 }]}>
-                      {salesByCustomer.length} customers
+                      {customerSummary.length} customers
                     </Text>
                     <Text style={[styles.tableTotalCell, { width: 100 }]}>
                       
-                    </Text>
-                    <Text style={[styles.tableTotalCell, { width: 120 }]}>
-                      
-                    </Text>
-                    <Text style={[styles.tableTotalCell, { width: 100 }]}>
-                      {formatCurrency(filteredSalesData.reduce((sum, sale) => sum + (sale.subtotal || 0), 0))}
-                    </Text>
-                    <Text style={[styles.tableTotalCell, { width: 100 }]}>
-                      {formatCurrency(filteredSalesData.reduce((sum, sale) => sum + (sale.taxAmount || 0), 0))}
                     </Text>
                     <Text style={[styles.tableTotalCell, { width: 120 }]}>
                       {formatCurrency(totalSalesAmount)}
@@ -1077,6 +990,13 @@ export default function SalesReportScreen() {
           </>
         )}
       </ScrollView>
+
+      <TouchableOpacity 
+        style={styles.newButton}
+        onPress={() => router.push('/sales-invoice/new' as any)}
+      >
+        <Text style={styles.newButtonText}>New Sale</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -1555,6 +1475,17 @@ const styles = StyleSheet.create({
   },
   paginationPageButtonText: {
     fontSize: 14,
+    color: 'white',
+    fontWeight: '500',
+  },
+  newButton: {
+    padding: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  newButtonText: {
+    fontSize: 16,
     color: 'white',
     fontWeight: '500',
   },

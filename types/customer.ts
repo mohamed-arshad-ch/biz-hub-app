@@ -1,27 +1,26 @@
 export interface Customer {
-  id: string;
+  id: number;
+  userId: number;
   name: string;
-  email: string;
-  phone: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  zipCode?: string;
-  country?: string;
-  company?: string;
-  notes?: string;
-  outstandingBalance: number;
-  totalPurchases: number;
-  lastPurchaseDate?: Date;
-  createdAt: Date;
-  updatedAt: Date;
-  category?: string;
-  tags?: string[];
-  contactPerson?: string;
-  taxId?: string;
-  paymentTerms?: string;
-  creditLimit?: number;
-  status: 'active' | 'inactive' | 'blocked';
+  company: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zipCode: string | null;
+  country: string | null;
+  contactPerson: string | null;
+  category: string | null;
+  status: 'active' | 'inactive' | 'blocked' | null;
+  notes: string | null;
+  creditLimit: number | null;
+  paymentTerms: string | null;
+  taxId: string | null;
+  tags: string | null;
+  outstandingBalance: number | null;
+  totalPurchases: number | null;
+  createdAt: string | null;
 }
 
 export interface CustomerCategory {
@@ -29,4 +28,5 @@ export interface CustomerCategory {
   name: string;
   color: string;
   description?: string;
+  parentCategory?: string;
 }

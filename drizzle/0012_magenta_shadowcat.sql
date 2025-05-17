@@ -1,0 +1,1 @@
+ALTER TABLE `sales_orders` DROP COLUMN `terms_and_conditions`;

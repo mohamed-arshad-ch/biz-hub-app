@@ -38,6 +38,7 @@ import Colors from '@/constants/colors';
 import { Customer } from '@/types/customer';
 import SnackBar from '@/components/SnackBar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 type CustomerType = 'Individual' | 'Business';
 
 export default function AddCustomerScreen() {
@@ -190,330 +191,332 @@ export default function AddCustomerScreen() {
   };
   
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
-    >
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-      
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleCancel} style={styles.backButton}>
-          <ArrowLeft size={24} color={Colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.title}>Add Customer</Text>
-        <TouchableOpacity 
-          onPress={handleSave} 
-          style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
-          disabled={isSaving}
-        >
-          {isSaving ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.saveButtonText}>Save</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-      
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        {/* Basic Information */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Basic Information</Text>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Name *</Text>
-            <TextInput
-              style={[
-                styles.input,
-                errors.name ? styles.inputError : null,
-              ]}
-              value={formData.name}
-              onChangeText={(text) => handleInputChange("name", text)}
-              placeholder="Enter customer name"
-            />
-            {errors.name && (
-              <Text style={styles.errorText}>{errors.name}</Text>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
+      >
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+        
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleCancel} style={styles.backButton}>
+            <ArrowLeft size={24} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Add Customer</Text>
+          <TouchableOpacity 
+            onPress={handleSave} 
+            style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.saveButtonText}>Save</Text>
             )}
-          </View>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Company</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.company}
-              onChangeText={(text) => handleInputChange("company", text)}
-              placeholder="Enter company name"
-            />
-          </View>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Status</Text>
-            <View style={styles.statusContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.statusOption,
-                  formData.status === "active" ? styles.statusOptionActive : null,
-                ]}
-                onPress={() => handleInputChange("status", "active")}
-              >
-                <Text
-                  style={[
-                    styles.statusOptionText,
-                    formData.status === "active" ? styles.statusOptionTextActive : null,
-                  ]}
-                >
-                  Active
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.statusOption,
-                  formData.status === "inactive" ? styles.statusOptionActive : null,
-                ]}
-                onPress={() => handleInputChange("status", "inactive")}
-              >
-                <Text
-                  style={[
-                    styles.statusOptionText,
-                    formData.status === "inactive" ? styles.statusOptionTextActive : null,
-                  ]}
-                >
-                  Inactive
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.statusOption,
-                  formData.status === "blocked" ? styles.statusOptionActive : null,
-                ]}
-                onPress={() => handleInputChange("status", "blocked")}
-              >
-                <Text
-                  style={[
-                    styles.statusOptionText,
-                    formData.status === "blocked" ? styles.statusOptionTextActive : null,
-                  ]}
-                >
-                  Blocked
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Category</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.category}
-              onChangeText={(text) => handleInputChange("category", text)}
-              placeholder="Enter category (optional)"
-            />
-          </View>
+          </TouchableOpacity>
         </View>
         
-        {/* Contact Information */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Contact Information</Text>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Phone</Text>
-            <View style={styles.inputWithIcon}>
-              <Phone size={20} color={Colors.text.secondary} />
+        <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+          {/* Basic Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Basic Information</Text>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Name *</Text>
               <TextInput
                 style={[
-                  styles.iconInput,
-                  errors.phone ? styles.inputError : null,
+                  styles.input,
+                  errors.name ? styles.inputError : null,
                 ]}
-                value={formData.phone}
-                onChangeText={(text) => handleInputChange("phone", text)}
-                placeholder="Enter phone number"
-                keyboardType="phone-pad"
+                value={formData.name}
+                onChangeText={(text) => handleInputChange("name", text)}
+                placeholder="Enter customer name"
               />
+              {errors.name && (
+                <Text style={styles.errorText}>{errors.name}</Text>
+              )}
             </View>
-            {errors.phone && (
-              <Text style={styles.errorText}>{errors.phone}</Text>
-            )}
-          </View>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Email</Text>
-            <View style={styles.inputWithIcon}>
-              <Mail size={20} color={Colors.text.secondary} />
-              <TextInput
-                style={[
-                  styles.iconInput,
-                  errors.email ? styles.inputError : null,
-                ]}
-                value={formData.email}
-                onChangeText={(text) => handleInputChange("email", text)}
-                placeholder="Enter email address"
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-            {errors.email && (
-              <Text style={styles.errorText}>{errors.email}</Text>
-            )}
-          </View>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Address</Text>
-            <View style={styles.inputWithIcon}>
-              <MapPin size={20} color={Colors.text.secondary} />
-              <TextInput
-                style={styles.iconInput}
-                value={formData.address}
-                onChangeText={(text) => handleInputChange("address", text)}
-                placeholder="Enter street address"
-              />
-            </View>
-          </View>
-          
-          <View style={styles.rowInputs}>
-            <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-              <Text style={styles.label}>City</Text>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Company</Text>
               <TextInput
                 style={styles.input}
-                value={formData.city}
-                onChangeText={(text) => handleInputChange("city", text)}
-                placeholder="City"
+                value={formData.company}
+                onChangeText={(text) => handleInputChange("company", text)}
+                placeholder="Enter company name"
               />
             </View>
             
-            <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-              <Text style={styles.label}>State/Province</Text>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Status</Text>
+              <View style={styles.statusContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.statusOption,
+                    formData.status === "active" ? styles.statusOptionActive : null,
+                  ]}
+                  onPress={() => handleInputChange("status", "active")}
+                >
+                  <Text
+                    style={[
+                      styles.statusOptionText,
+                      formData.status === "active" ? styles.statusOptionTextActive : null,
+                    ]}
+                  >
+                    Active
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.statusOption,
+                    formData.status === "inactive" ? styles.statusOptionActive : null,
+                  ]}
+                  onPress={() => handleInputChange("status", "inactive")}
+                >
+                  <Text
+                    style={[
+                      styles.statusOptionText,
+                      formData.status === "inactive" ? styles.statusOptionTextActive : null,
+                    ]}
+                  >
+                    Inactive
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.statusOption,
+                    formData.status === "blocked" ? styles.statusOptionActive : null,
+                  ]}
+                  onPress={() => handleInputChange("status", "blocked")}
+                >
+                  <Text
+                    style={[
+                      styles.statusOptionText,
+                      formData.status === "blocked" ? styles.statusOptionTextActive : null,
+                    ]}
+                  >
+                    Blocked
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Category</Text>
               <TextInput
                 style={styles.input}
-                value={formData.state}
-                onChangeText={(text) => handleInputChange("state", text)}
-                placeholder="State"
+                value={formData.category}
+                onChangeText={(text) => handleInputChange("category", text)}
+                placeholder="Enter category (optional)"
               />
             </View>
           </View>
           
-          <View style={styles.rowInputs}>
-            <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-              <Text style={styles.label}>Zip/Postal Code</Text>
+          {/* Contact Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Contact Information</Text>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Phone</Text>
+              <View style={styles.inputWithIcon}>
+                <Phone size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={[
+                    styles.iconInput,
+                    errors.phone ? styles.inputError : null,
+                  ]}
+                  value={formData.phone}
+                  onChangeText={(text) => handleInputChange("phone", text)}
+                  placeholder="Enter phone number"
+                  keyboardType="phone-pad"
+                />
+              </View>
+              {errors.phone && (
+                <Text style={styles.errorText}>{errors.phone}</Text>
+              )}
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Email</Text>
+              <View style={styles.inputWithIcon}>
+                <Mail size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={[
+                    styles.iconInput,
+                    errors.email ? styles.inputError : null,
+                  ]}
+                  value={formData.email}
+                  onChangeText={(text) => handleInputChange("email", text)}
+                  placeholder="Enter email address"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+              {errors.email && (
+                <Text style={styles.errorText}>{errors.email}</Text>
+              )}
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Address</Text>
+              <View style={styles.inputWithIcon}>
+                <MapPin size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={styles.iconInput}
+                  value={formData.address}
+                  onChangeText={(text) => handleInputChange("address", text)}
+                  placeholder="Enter street address"
+                />
+              </View>
+            </View>
+            
+            <View style={styles.rowInputs}>
+              <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.label}>City</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.city}
+                  onChangeText={(text) => handleInputChange("city", text)}
+                  placeholder="City"
+                />
+              </View>
+              
+              <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={styles.label}>State/Province</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.state}
+                  onChangeText={(text) => handleInputChange("state", text)}
+                  placeholder="State"
+                />
+              </View>
+            </View>
+            
+            <View style={styles.rowInputs}>
+              <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.label}>Zip/Postal Code</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.zipCode}
+                  onChangeText={(text) => handleInputChange("zipCode", text)}
+                  placeholder="Zip code"
+                />
+              </View>
+              
+              <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={styles.label}>Country</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.country}
+                  onChangeText={(text) => handleInputChange("country", text)}
+                  placeholder="Country"
+                />
+              </View>
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Contact Person</Text>
               <TextInput
                 style={styles.input}
-                value={formData.zipCode}
-                onChangeText={(text) => handleInputChange("zipCode", text)}
-                placeholder="Zip code"
+                value={formData.contactPerson || ""}
+                onChangeText={(text) => handleInputChange("contactPerson", text)}
+                placeholder="Enter contact person name"
+              />
+            </View>
+          </View>
+          
+          {/* Financial Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Financial Information</Text>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Credit Limit</Text>
+              <View style={styles.inputWithIcon}>
+                <CreditCard size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={styles.iconInput}
+                  value={formData.creditLimit.toString()}
+                  onChangeText={(text) => 
+                    handleInputChange('creditLimit', 
+                      isNaN(Number(text)) ? 0 : Number(text)
+                    )
+                  }
+                  placeholder="Enter credit limit"
+                  keyboardType="numeric"
+                />
+              </View>
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Payment Terms</Text>
+              <View style={styles.inputWithIcon}>
+                <Clock size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={styles.iconInput}
+                  value={formData.paymentTerms}
+                  onChangeText={(text) => 
+                    handleInputChange('paymentTerms', text)
+                  }
+                  placeholder="Enter payment terms (e.g., Net 30)"
+                />
+              </View>
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Tax ID</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.taxId || ""}
+                onChangeText={(text) => handleInputChange("taxId", text)}
+                placeholder="Enter tax ID"
+              />
+            </View>
+          </View>
+          
+          {/* Additional Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Additional Information</Text>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Notes</Text>
+              <TextInput
+                style={styles.textArea}
+                value={formData.notes}
+                onChangeText={(text) => handleInputChange("notes", text)}
+                placeholder="Additional notes about this customer"
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
               />
             </View>
             
-            <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-              <Text style={styles.label}>Country</Text>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Tags</Text>
               <TextInput
                 style={styles.input}
-                value={formData.country}
-                onChangeText={(text) => handleInputChange("country", text)}
-                placeholder="Country"
+                value={formData.tags.join(', ')}
+                onChangeText={(text) => {
+                  const tagsArray = text.split(',').map(tag => tag.trim());
+                  handleInputChange('tags', tagsArray);
+                }}
+                placeholder="Comma separated tags"
               />
             </View>
           </View>
           
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Contact Person</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.contactPerson || ""}
-              onChangeText={(text) => handleInputChange("contactPerson", text)}
-              placeholder="Enter contact person name"
-            />
-          </View>
-        </View>
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
         
-        {/* Financial Information */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Financial Information</Text>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Credit Limit</Text>
-            <View style={styles.inputWithIcon}>
-              <CreditCard size={20} color={Colors.text.secondary} />
-              <TextInput
-                style={styles.iconInput}
-                value={formData.creditLimit.toString()}
-                onChangeText={(text) => 
-                  handleInputChange('creditLimit', 
-                    isNaN(Number(text)) ? 0 : Number(text)
-                  )
-                }
-                placeholder="Enter credit limit"
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Payment Terms</Text>
-            <View style={styles.inputWithIcon}>
-              <Clock size={20} color={Colors.text.secondary} />
-              <TextInput
-                style={styles.iconInput}
-                value={formData.paymentTerms}
-                onChangeText={(text) => 
-                  handleInputChange('paymentTerms', text)
-                }
-                placeholder="Enter payment terms (e.g., Net 30)"
-              />
-            </View>
-          </View>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Tax ID</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.taxId || ""}
-              onChangeText={(text) => handleInputChange("taxId", text)}
-              placeholder="Enter tax ID"
-            />
-          </View>
-        </View>
-        
-        {/* Additional Information */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Additional Information</Text>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Notes</Text>
-            <TextInput
-              style={styles.textArea}
-              value={formData.notes}
-              onChangeText={(text) => handleInputChange("notes", text)}
-              placeholder="Additional notes about this customer"
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-          </View>
-          
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Tags</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.tags.join(', ')}
-              onChangeText={(text) => {
-                const tagsArray = text.split(',').map(tag => tag.trim());
-                handleInputChange('tags', tagsArray);
-              }}
-              placeholder="Comma separated tags"
-            />
-          </View>
-        </View>
-        
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
-      
-      <SnackBar
-        visible={showSnackbar}
-        message={snackbarMessage}
-        onDismiss={() => setShowSnackbar(false)}
-      />
-    </KeyboardAvoidingView>
+        <SnackBar
+          visible={showSnackbar}
+          message={snackbarMessage}
+          onDismiss={() => setShowSnackbar(false)}
+        />
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

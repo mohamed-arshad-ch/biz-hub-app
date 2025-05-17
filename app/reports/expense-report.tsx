@@ -11,7 +11,8 @@ import {
   Platform,
   ActivityIndicator,
   Dimensions,
-  Modal
+  Modal,
+  RefreshControl
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { 
@@ -40,10 +41,16 @@ import {
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
-import { getExpensesData } from '@/mocks/expensesData';
-import { ExpenseRecord } from '@/types/expenses';
 import { formatCurrency, formatDate, formatDateShort, formatPercentage } from '@/utils/formatters';
 import EmptyState from '@/components/EmptyState';
+import { useAuthStore } from '@/store/auth';
+import { 
+  getExpenseReportData, 
+  getExpenseSummaryStats, 
+  getExpenseByCategory, 
+  getExpenseByDateRange, 
+  getExpenseByPaymentMethod 
+} from '@/db/expense';
 
 const { width } = Dimensions.get('window');
 
@@ -88,6 +95,7 @@ const EXPENSE_CATEGORIES = [
 
 export default function ExpenseReportScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [dateRange, setDateRange] = useState('this_month');
@@ -108,14 +116,15 @@ export default function ExpenseReportScreen() {
   const [isExporting, setIsExporting] = useState(false);
   const [showExportSuccess, setShowExportSuccess] = useState(false);
   
-  // Get expense data
-  const allExpenses = useMemo(() => getExpensesData(), []);
+  // State for report data
+  const [expenseData, setExpenseData] = useState<any[]>([]);
+  const [summaryStats, setSummaryStats] = useState<any>(null);
+  const [categoryBreakdown, setCategoryBreakdown] = useState<any[]>([]);
+  const [dateRangeData, setDateRangeData] = useState<any[]>([]);
+  const [paymentMethodData, setPaymentMethodData] = useState<any[]>([]);
   
-  // Apply filters and sorting to expenses
-  const filteredExpenses = useMemo(() => {
-    let result = [...allExpenses];
-    
-    // Apply date range filter
+  // Get date range based on selection
+  const getDateRange = () => {
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
@@ -131,47 +140,76 @@ export default function ExpenseReportScreen() {
     
     switch (dateRange) {
       case 'today':
-        result = result.filter(expense => 
-          expense.date.getDate() === today.getDate() &&
-          expense.date.getMonth() === today.getMonth() &&
-          expense.date.getFullYear() === today.getFullYear()
-        );
-        break;
+        return { start: today, end: today };
       case 'yesterday':
-        result = result.filter(expense => 
-          expense.date.getDate() === yesterday.getDate() &&
-          expense.date.getMonth() === yesterday.getMonth() &&
-          expense.date.getFullYear() === yesterday.getFullYear()
-        );
-        break;
+        return { start: yesterday, end: yesterday };
       case 'this_week':
-        result = result.filter(expense => expense.date >= startOfWeek);
-        break;
+        return { start: startOfWeek, end: today };
       case 'this_month':
-        result = result.filter(expense => expense.date >= startOfMonth);
-        break;
+        return { start: startOfMonth, end: today };
       case 'this_quarter':
-        result = result.filter(expense => expense.date >= startOfQuarter);
-        break;
+        return { start: startOfQuarter, end: today };
       case 'this_year':
-        result = result.filter(expense => expense.date >= startOfYear);
-        break;
+        return { start: startOfYear, end: today };
       case 'custom':
         if (customDateRange.start && customDateRange.end) {
-          const startDate = new Date(customDateRange.start);
-          const endDate = new Date(customDateRange.end);
-          endDate.setHours(23, 59, 59, 999); // End of day
-          
-          result = result.filter(expense => 
-            expense.date >= startDate && expense.date <= endDate
-          );
+          return {
+            start: new Date(customDateRange.start),
+            end: new Date(customDateRange.end)
+          };
         }
-        break;
+        return { start: startOfMonth, end: today };
+      default:
+        return { start: startOfMonth, end: today };
     }
+  };
+  
+  // Load report data
+  const loadReportData = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      const { start, end } = getDateRange();
+      
+      const [
+        expenses,
+        stats,
+        categories,
+        dateRanges,
+        paymentMethods
+      ] = await Promise.all([
+        getExpenseReportData(user.id, start, end),
+        getExpenseSummaryStats(user.id, start, end),
+        getExpenseByCategory(user.id, start, end),
+        getExpenseByDateRange(user.id, start, end),
+        getExpenseByPaymentMethod(user.id, start, end)
+      ]);
+      
+      setExpenseData(expenses);
+      setSummaryStats(stats[0]);
+      setCategoryBreakdown(categories);
+      setDateRangeData(dateRanges);
+      setPaymentMethodData(paymentMethods);
+    } catch (error) {
+      console.error('Error loading expense report data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Load data on mount and when date range changes
+  useEffect(() => {
+    loadReportData();
+  }, [dateRange, customDateRange]);
+  
+  // Apply filters and sorting to expenses
+  const filteredExpenses = useMemo(() => {
+    let result = [...expenseData];
     
     // Apply category filter
     if (selectedCategory !== 'All Categories') {
-      result = result.filter(expense => expense.category === selectedCategory);
+      result = result.filter(expense => expense.categoryName === selectedCategory);
     }
     
     // Apply payment method filter
@@ -184,9 +222,8 @@ export default function ExpenseReportScreen() {
       const searchLower = searchText.toLowerCase();
       result = result.filter(expense => 
         expense.description.toLowerCase().includes(searchLower) ||
-        expense.vendor?.toLowerCase().includes(searchLower) ||
-        expense.reference?.toLowerCase().includes(searchLower) ||
-        expense.notes?.toLowerCase().includes(searchLower)
+        expense.categoryName?.toLowerCase().includes(searchLower) ||
+        expense.paymentMethod?.toLowerCase().includes(searchLower)
       );
     }
     
@@ -196,7 +233,7 @@ export default function ExpenseReportScreen() {
       
       switch (sortField) {
         case 'date':
-          comparison = a.date.getTime() - b.date.getTime();
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
           break;
         case 'amount':
           comparison = a.amount - b.amount;
@@ -205,69 +242,62 @@ export default function ExpenseReportScreen() {
           comparison = a.description.localeCompare(b.description);
           break;
         case 'category':
-          comparison = a.category.localeCompare(b.category);
+          comparison = (a.categoryName || '').localeCompare(b.categoryName || '');
           break;
-        case 'vendor':
-          comparison = (a.vendor || '').localeCompare(b.vendor || '');
+        case 'paymentMethod':
+          comparison = (a.paymentMethod || '').localeCompare(b.paymentMethod || '');
           break;
         default:
-          comparison = a.date.getTime() - b.date.getTime();
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
       }
       
       return sortDirection === 'asc' ? comparison : -comparison;
     });
     
     return result;
-  }, [allExpenses, dateRange, customDateRange, selectedCategory, selectedPaymentMethod, searchText, sortField, sortDirection]);
+  }, [expenseData, selectedCategory, selectedPaymentMethod, searchText, sortField, sortDirection]);
   
   // Calculate summary statistics
-  const summaryStats = useMemo(() => {
-    const totalExpense = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const calculatedStats = useMemo(() => {
+    if (!summaryStats) return null;
+    
+    const totalExpense = summaryStats.totalAmount || 0;
+    const transactionCount = summaryStats.count || 0;
+    const avgExpensePerDay = summaryStats.average || 0;
     
     // Find highest expense day
-    const expensesByDay: Record<string, number> = {};
-    filteredExpenses.forEach(expense => {
-      const dateKey = expense.date.toISOString().split('T')[0];
-      expensesByDay[dateKey] = (expensesByDay[dateKey] || 0) + expense.amount;
-    });
-    
     let highestExpenseDay = { date: new Date(), amount: 0 };
-    Object.entries(expensesByDay).forEach(([dateStr, amount]) => {
-      if (amount > highestExpenseDay.amount) {
-        highestExpenseDay = { date: new Date(dateStr), amount };
+    dateRangeData.forEach(day => {
+      if (day.totalAmount > highestExpenseDay.amount) {
+        highestExpenseDay = { date: new Date(day.date), amount: day.totalAmount };
       }
     });
-    
-    // Calculate average expense per day
-    const uniqueDays = Object.keys(expensesByDay).length;
-    const avgExpensePerDay = uniqueDays > 0 ? totalExpense / uniqueDays : 0;
     
     return {
       totalExpense,
-      transactionCount: filteredExpenses.length,
+      transactionCount,
       highestExpenseDay,
       avgExpensePerDay,
-      // Mock budget data
+      // Mock budget data for now
       budget: 10000,
       budgetVariance: 10000 - totalExpense
     };
-  }, [filteredExpenses]);
+  }, [summaryStats, dateRangeData]);
   
   // Calculate category breakdown
-  const categoryBreakdown = useMemo(() => {
+  const calculatedCategoryBreakdown = useMemo(() => {
     const breakdown: Record<string, { count: number, amount: number, percentage: number }> = {};
     
-    filteredExpenses.forEach(expense => {
-      if (!breakdown[expense.category]) {
-        breakdown[expense.category] = { count: 0, amount: 0, percentage: 0 };
-      }
-      
-      breakdown[expense.category].count += 1;
-      breakdown[expense.category].amount += expense.amount;
+    categoryBreakdown.forEach(category => {
+      breakdown[category.categoryName] = {
+        count: category.count,
+        amount: category.totalAmount,
+        percentage: 0
+      };
     });
     
     // Calculate percentages
-    const totalAmount = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const totalAmount = calculatedStats?.totalExpense || 0;
     Object.keys(breakdown).forEach(category => {
       breakdown[category].percentage = totalAmount > 0 
         ? (breakdown[category].amount / totalAmount) * 100 
@@ -275,15 +305,13 @@ export default function ExpenseReportScreen() {
     });
     
     return breakdown;
-  }, [filteredExpenses]);
+  }, [categoryBreakdown, calculatedStats]);
   
   // Handle refresh
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    // Simulate refresh
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1000);
+    await loadReportData();
+    setRefreshing(false);
   };
   
   // Handle date range selection
@@ -708,6 +736,8 @@ export default function ExpenseReportScreen() {
   
   // Render summary view
   const renderSummaryView = () => {
+    if (!calculatedStats) return null;
+    
     return (
       <>
         <View style={styles.summaryContainer}>
@@ -717,31 +747,31 @@ export default function ExpenseReportScreen() {
             <View style={styles.summaryItem}>
               <Text style={styles.summaryItemLabel}>Total Expenses</Text>
               <Text style={styles.summaryItemValue}>
-                {formatCurrency(summaryStats.totalExpense)}
+                {formatCurrency(calculatedStats.totalExpense)}
               </Text>
             </View>
             
             <View style={styles.summaryItem}>
               <Text style={styles.summaryItemLabel}>Transactions</Text>
               <Text style={styles.summaryItemValue}>
-                {summaryStats.transactionCount}
+                {calculatedStats.transactionCount}
               </Text>
             </View>
             
             <View style={styles.summaryItem}>
               <Text style={styles.summaryItemLabel}>Avg. Daily Expense</Text>
               <Text style={styles.summaryItemValue}>
-                {formatCurrency(summaryStats.avgExpensePerDay)}
+                {formatCurrency(calculatedStats.avgExpensePerDay)}
               </Text>
             </View>
             
             <View style={styles.summaryItem}>
               <Text style={styles.summaryItemLabel}>Highest Expense Day</Text>
               <Text style={styles.summaryItemValue}>
-                {formatCurrency(summaryStats.highestExpenseDay.amount)}
+                {formatCurrency(calculatedStats.highestExpenseDay.amount)}
               </Text>
               <Text style={styles.summaryItemSubtext}>
-                {formatDateShort(summaryStats.highestExpenseDay.date)}
+                {formatDateShort(calculatedStats.highestExpenseDay.date)}
               </Text>
             </View>
           </View>
@@ -750,14 +780,14 @@ export default function ExpenseReportScreen() {
             <View style={styles.budgetRow}>
               <Text style={styles.budgetLabel}>Budget</Text>
               <Text style={styles.budgetAmount}>
-                {formatCurrency(summaryStats.budget)}
+                {formatCurrency(calculatedStats.budget)}
               </Text>
             </View>
             
             <View style={styles.budgetRow}>
               <Text style={styles.budgetLabel}>Actual Expenses</Text>
               <Text style={styles.budgetAmount}>
-                {formatCurrency(summaryStats.totalExpense)}
+                {formatCurrency(calculatedStats.totalExpense)}
               </Text>
             </View>
             
@@ -765,9 +795,9 @@ export default function ExpenseReportScreen() {
               <Text style={styles.budgetLabel}>Variance</Text>
               <Text style={[
                 styles.budgetAmount,
-                { color: summaryStats.budgetVariance >= 0 ? '#4CAF50' : '#F44336' }
+                { color: calculatedStats.budgetVariance >= 0 ? '#4CAF50' : '#F44336' }
               ]}>
-                {formatCurrency(summaryStats.budgetVariance)}
+                {formatCurrency(calculatedStats.budgetVariance)}
               </Text>
             </View>
             
@@ -777,14 +807,14 @@ export default function ExpenseReportScreen() {
                   style={[
                     styles.budgetProgress, 
                     { 
-                      width: `${Math.min(100, (summaryStats.totalExpense / summaryStats.budget) * 100)}%`,
-                      backgroundColor: summaryStats.totalExpense > summaryStats.budget ? '#F44336' : '#4CAF50'
+                      width: `${Math.min(100, (calculatedStats.totalExpense / calculatedStats.budget) * 100)}%`,
+                      backgroundColor: calculatedStats.totalExpense > calculatedStats.budget ? '#F44336' : '#4CAF50'
                     }
                   ]} 
                 />
               </View>
               <Text style={styles.budgetProgressText}>
-                {Math.round((summaryStats.totalExpense / summaryStats.budget) * 100)}% of budget used
+                {Math.round((calculatedStats.totalExpense / calculatedStats.budget) * 100)}% of budget used
               </Text>
             </View>
           </View>
@@ -833,9 +863,9 @@ export default function ExpenseReportScreen() {
             </View>
           </View>
           
-          {Object.entries(categoryBreakdown).length > 0 ? (
+          {Object.entries(calculatedCategoryBreakdown).length > 0 ? (
             <FlatList
-              data={Object.entries(categoryBreakdown)}
+              data={Object.entries(calculatedCategoryBreakdown)}
               keyExtractor={([category]) => category}
               renderItem={({ item: [category, data] }) => (
                 <View style={styles.categoryRow}>
@@ -856,7 +886,7 @@ export default function ExpenseReportScreen() {
                     {filteredExpenses.length}
                   </Text>
                   <Text style={[styles.categoryTotalCell, { flex: 1.5 }]}>
-                    {formatCurrency(summaryStats.totalExpense)}
+                    {formatCurrency(calculatedStats.totalExpense)}
                   </Text>
                   <Text style={[styles.categoryTotalCell, { flex: 1 }]}>100%</Text>
                 </View>
@@ -890,7 +920,7 @@ export default function ExpenseReportScreen() {
         <View style={styles.tableControls}>
           <View style={styles.tableInfo}>
             <Text style={styles.tableInfoText}>
-              Showing {filteredExpenses.length} of {allExpenses.length} expenses
+              Showing {filteredExpenses.length} of {expenseData.length} expenses
             </Text>
           </View>
           
@@ -951,8 +981,68 @@ export default function ExpenseReportScreen() {
           </View>
         </View>
         
-        <ScrollView horizontal style={styles.tableScrollContainer}>
-          <View style={styles.tableContainer}>
+        <FlatList
+          data={filteredExpenses}
+          keyExtractor={(item) => item.id.toString()}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={[Colors.primary]}
+            />
+          }
+          renderItem={({ item: expense }) => (
+            <TouchableOpacity 
+              style={[
+                styles.tableRow,
+                selectedItems.includes(expense.id) && styles.tableRowSelected
+              ]}
+              onPress={() => selectMode ? handleSelectItem(expense.id) : router.push(`/expenses/${expense.id}`)}
+              onLongPress={() => {
+                if (!selectMode) {
+                  setSelectMode(true);
+                  handleSelectItem(expense.id);
+                }
+              }}
+            >
+              {selectMode && (
+                <View style={[styles.tableCell, { width: 50 }]}>
+                  {selectedItems.includes(expense.id) ? (
+                    <CheckSquare size={18} color={Colors.primary} />
+                  ) : (
+                    <Square size={18} color="#666" />
+                  )}
+                </View>
+              )}
+              
+              <Text style={[styles.tableCell, { width: 100 }]}>
+                {formatDateShort(expense.date)}
+              </Text>
+              
+              <Text style={[styles.tableCell, { width: 120 }]}>
+                {expense.categoryName}
+              </Text>
+              
+              <Text style={[styles.tableCell, { width: 150 }]} numberOfLines={1}>
+                {expense.vendor || 'N/A'}
+              </Text>
+              
+              <Text style={[styles.tableCell, { width: 200 }]} numberOfLines={1}>
+                {expense.description}
+              </Text>
+              
+              <Text style={[styles.tableCell, { width: 120 }]}>
+                {expense.paymentMethod || 'N/A'}
+              </Text>
+              
+              <Text style={[styles.tableCell, { width: 120, color: '#F44336', fontWeight: '500' }]}>
+                {formatCurrency(expense.amount)}
+              </Text>
+            </TouchableOpacity>
+          )}
+          ListHeaderComponent={() => (
             <View style={styles.tableHeader}>
               {selectMode && (
                 <TouchableOpacity 
@@ -1031,67 +1121,47 @@ export default function ExpenseReportScreen() {
                 )}
               </TouchableOpacity>
             </View>
-            
-            {filteredExpenses.length > 0 ? (
-              filteredExpenses.map((expense, index) => (
-                <TouchableOpacity 
-                  key={expense.id}
-                  style={[
-                    styles.tableRow,
-                    index % 2 === 0 && styles.tableRowEven,
-                    selectedItems.includes(expense.id) && styles.tableRowSelected
-                  ]}
-                  onPress={() => selectMode ? handleSelectItem(expense.id) : router.push(`/expenses/${expense.id}`)}
-                  onLongPress={() => {
-                    if (!selectMode) {
-                      setSelectMode(true);
-                      handleSelectItem(expense.id);
-                    }
-                  }}
-                >
-                  {selectMode && (
-                    <View style={[styles.tableCell, { width: 50 }]}>
-                      {selectedItems.includes(expense.id) ? (
-                        <CheckSquare size={18} color={Colors.primary} />
-                      ) : (
-                        <Square size={18} color="#666" />
-                      )}
-                    </View>
-                  )}
-                  
-                  <Text style={[styles.tableCell, { width: 100 }]}>
-                    {formatDateShort(expense.date)}
-                  </Text>
-                  
-                  <Text style={[styles.tableCell, { width: 120 }]}>
-                    {expense.category}
-                  </Text>
-                  
-                  <Text style={[styles.tableCell, { width: 150 }]} numberOfLines={1}>
-                    {expense.vendor || 'N/A'}
-                  </Text>
-                  
-                  <Text style={[styles.tableCell, { width: 200 }]} numberOfLines={1}>
-                    {expense.description}
-                  </Text>
-                  
-                  <Text style={[styles.tableCell, { width: 120 }]}>
-                    {expense.paymentMethod || 'N/A'}
-                  </Text>
-                  
-                  <Text style={[styles.tableCell, { width: 120, color: '#F44336', fontWeight: '500' }]}>
-                    {formatCurrency(expense.amount)}
-                  </Text>
-                </TouchableOpacity>
-              ))
-            ) : (
-              <View style={styles.emptyTableContainer}>
-                <Text style={styles.emptyTableText}>No expense transactions found</Text>
-                <Text style={styles.emptyTableSubtext}>Try changing your filters or date range</Text>
+          )}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyTableContainer}>
+              <Text style={styles.emptyTableText}>No expense transactions found</Text>
+              <Text style={styles.emptyTableSubtext}>Try changing your filters or date range</Text>
+            </View>
+          )}
+        />
+      </View>
+    );
+  };
+  
+  const renderCategoryBreakdown = () => {
+    if (!categoryBreakdown || categoryBreakdown.length === 0) return null;
+
+    return (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Category Breakdown</Text>
+        </View>
+        <View style={styles.categoryBreakdownContainer}>
+          {categoryBreakdown.map((category) => (
+            <View key={category.categoryId} style={styles.categoryItem}>
+              <View style={styles.categoryHeader}>
+                <Text style={styles.categoryName}>{category.categoryName}</Text>
+                <Text style={styles.categoryAmount}>{formatCurrency(category.totalAmount)}</Text>
               </View>
-            )}
-          </View>
-        </ScrollView>
+              <View style={styles.progressBarContainer}>
+                <View 
+                  style={[
+                    styles.progressBar,
+                    { width: `${(category.totalAmount / summaryStats.totalAmount) * 100}%` }
+                  ]} 
+                />
+              </View>
+              <Text style={styles.categoryPercentage}>
+                {((category.totalAmount / summaryStats.totalAmount) * 100).toFixed(1)}%
+              </Text>
+            </View>
+          ))}
+        </View>
       </View>
     );
   };
@@ -1145,12 +1215,252 @@ export default function ExpenseReportScreen() {
           onAction={() => router.push('/expenses/new')}
         />
       ) : (
-        <ScrollView 
-          style={styles.content}
-          contentContainerStyle={styles.contentContainer}
-        >
-          {viewMode === 'summary' ? renderSummaryView() : renderDetailedView()}
-        </ScrollView>
+        <View style={styles.content}>
+          {viewMode === 'summary' ? (
+            <FlatList
+              data={[1]} // Single item to render the summary view once
+              renderItem={() => (
+                <>
+                  {renderSummaryView()}
+                  {renderCategoryBreakdown()}
+                </>
+              )}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={handleRefresh}
+                  colors={[Colors.primary]}
+                />
+              }
+            />
+          ) : (
+            <View style={styles.detailedContainer}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Expense Transactions</Text>
+                <TouchableOpacity 
+                  style={styles.viewToggleButton}
+                  onPress={() => setViewMode('summary')}
+                >
+                  <EyeOff size={16} color="#666" />
+                  <Text style={styles.viewToggleText}>View Summary</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.tableControls}>
+                <View style={styles.tableInfo}>
+                  <Text style={styles.tableInfoText}>
+                    Showing {filteredExpenses.length} of {expenseData.length} expenses
+                  </Text>
+                </View>
+                
+                <View style={styles.tableActions}>
+                  {selectMode ? (
+                    <>
+                      <TouchableOpacity 
+                        style={styles.tableActionButton}
+                        onPress={handleSelectAll}
+                      >
+                        <Text style={styles.tableActionText}>
+                          {selectedItems.length === filteredExpenses.length ? 'Deselect All' : 'Select All'}
+                        </Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={[styles.tableActionButton, styles.tableActionButtonDanger]}
+                        onPress={handleDeleteSelected}
+                        disabled={selectedItems.length === 0}
+                      >
+                        <Trash2 size={16} color={selectedItems.length === 0 ? '#999' : '#fff'} />
+                        <Text style={[
+                          styles.tableActionText, 
+                          styles.tableActionTextDanger,
+                          selectedItems.length === 0 && { color: '#999' }
+                        ]}>
+                          Delete
+                        </Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={styles.tableActionButton}
+                        onPress={() => setSelectMode(false)}
+                      >
+                        <X size={16} color="#666" />
+                        <Text style={styles.tableActionText}>Cancel</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <TouchableOpacity 
+                        style={styles.tableActionButton}
+                        onPress={() => setSelectMode(true)}
+                      >
+                        <CheckSquare size={16} color="#666" />
+                        <Text style={styles.tableActionText}>Select</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={styles.tableActionButton}
+                        onPress={handleRefresh}
+                      >
+                        <RefreshCw size={16} color="#666" />
+                        <Text style={styles.tableActionText}>Refresh</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              </View>
+              
+              <FlatList
+                data={filteredExpenses}
+                keyExtractor={(item) => item.id.toString()}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    colors={[Colors.primary]}
+                  />
+                }
+                renderItem={({ item: expense }) => (
+                  <TouchableOpacity 
+                    style={[
+                      styles.tableRow,
+                      selectedItems.includes(expense.id) && styles.tableRowSelected
+                    ]}
+                    onPress={() => selectMode ? handleSelectItem(expense.id) : router.push(`/expenses/${expense.id}`)}
+                    onLongPress={() => {
+                      if (!selectMode) {
+                        setSelectMode(true);
+                        handleSelectItem(expense.id);
+                      }
+                    }}
+                  >
+                    {selectMode && (
+                      <View style={[styles.tableCell, { width: 50 }]}>
+                        {selectedItems.includes(expense.id) ? (
+                          <CheckSquare size={18} color={Colors.primary} />
+                        ) : (
+                          <Square size={18} color="#666" />
+                        )}
+                      </View>
+                    )}
+                    
+                    <Text style={[styles.tableCell, { width: 100 }]}>
+                      {formatDateShort(expense.date)}
+                    </Text>
+                    
+                    <Text style={[styles.tableCell, { width: 120 }]}>
+                      {expense.categoryName}
+                    </Text>
+                    
+                    <Text style={[styles.tableCell, { width: 150 }]} numberOfLines={1}>
+                      {expense.vendor || 'N/A'}
+                    </Text>
+                    
+                    <Text style={[styles.tableCell, { width: 200 }]} numberOfLines={1}>
+                      {expense.description}
+                    </Text>
+                    
+                    <Text style={[styles.tableCell, { width: 120 }]}>
+                      {expense.paymentMethod || 'N/A'}
+                    </Text>
+                    
+                    <Text style={[styles.tableCell, { width: 120, color: '#F44336', fontWeight: '500' }]}>
+                      {formatCurrency(expense.amount)}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                ListHeaderComponent={() => (
+                  <View style={styles.tableHeader}>
+                    {selectMode && (
+                      <TouchableOpacity 
+                        style={[styles.tableHeaderCell, { width: 50 }]}
+                        onPress={handleSelectAll}
+                      >
+                        {selectedItems.length === filteredExpenses.length ? (
+                          <CheckSquare size={18} color={Colors.primary} />
+                        ) : (
+                          <Square size={18} color="#666" />
+                        )}
+                      </TouchableOpacity>
+                    )}
+                    
+                    <TouchableOpacity 
+                      style={[styles.tableHeaderCell, { width: 100 }]}
+                      onPress={() => handleSortToggle('date')}
+                    >
+                      <Text style={styles.tableHeaderText}>Date</Text>
+                      {sortField === 'date' && (
+                        sortDirection === 'asc' ? 
+                        <ArrowUp size={14} color="#666" /> : 
+                        <ArrowDown size={14} color="#666" />
+                      )}
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={[styles.tableHeaderCell, { width: 120 }]}
+                      onPress={() => handleSortToggle('category')}
+                    >
+                      <Text style={styles.tableHeaderText}>Category</Text>
+                      {sortField === 'category' && (
+                        sortDirection === 'asc' ? 
+                        <ArrowUp size={14} color="#666" /> : 
+                        <ArrowDown size={14} color="#666" />
+                      )}
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={[styles.tableHeaderCell, { width: 150 }]}
+                      onPress={() => handleSortToggle('vendor')}
+                    >
+                      <Text style={styles.tableHeaderText}>Vendor</Text>
+                      {sortField === 'vendor' && (
+                        sortDirection === 'asc' ? 
+                        <ArrowUp size={14} color="#666" /> : 
+                        <ArrowDown size={14} color="#666" />
+                      )}
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={[styles.tableHeaderCell, { width: 200 }]}
+                      onPress={() => handleSortToggle('description')}
+                    >
+                      <Text style={styles.tableHeaderText}>Description</Text>
+                      {sortField === 'description' && (
+                        sortDirection === 'asc' ? 
+                        <ArrowUp size={14} color="#666" /> : 
+                        <ArrowDown size={14} color="#666" />
+                      )}
+                    </TouchableOpacity>
+                    
+                    <View style={[styles.tableHeaderCell, { width: 120 }]}>
+                      <Text style={styles.tableHeaderText}>Payment</Text>
+                    </View>
+                    
+                    <TouchableOpacity 
+                      style={[styles.tableHeaderCell, { width: 120 }]}
+                      onPress={() => handleSortToggle('amount')}
+                    >
+                      <Text style={styles.tableHeaderText}>Amount</Text>
+                      {sortField === 'amount' && (
+                        sortDirection === 'asc' ? 
+                        <ArrowUp size={14} color="#666" /> : 
+                        <ArrowDown size={14} color="#666" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+                ListEmptyComponent={() => (
+                  <View style={styles.emptyTableContainer}>
+                    <Text style={styles.emptyTableText}>No expense transactions found</Text>
+                    <Text style={styles.emptyTableSubtext}>Try changing your filters or date range</Text>
+                  </View>
+                )}
+              />
+            </View>
+          )}
+        </View>
       )}
       
       {renderFilterModal()}
@@ -1216,9 +1526,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-  },
-  contentContainer: {
-    paddingBottom: 24,
   },
   loadingContainer: {
     flex: 1,
@@ -1515,19 +1822,10 @@ const styles = StyleSheet.create({
   tableActionTextDanger: {
     color: 'white',
   },
-  tableScrollContainer: {
-    marginBottom: 16,
-  },
-  tableContainer: {
-    minWidth: '100%',
-  },
   tableRow: {
     flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
-  },
-  tableRowEven: {
-    backgroundColor: '#f9f9f9',
   },
   tableRowSelected: {
     backgroundColor: `${Colors.primary}15`,
@@ -1786,5 +2084,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
+  },
+  section: {
+    backgroundColor: 'white',
+    padding: 16,
+    marginTop: 16,
+    marginHorizontal: 16,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  categoryBreakdownContainer: {
+    marginTop: 16,
+  },
+  categoryItem: {
+    marginBottom: 12,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  categoryName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  categoryAmount: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+  },
+  categoryPercentage: {
+    fontSize: 14,
+    color: '#666',
   },
 });

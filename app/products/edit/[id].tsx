@@ -29,166 +29,25 @@ import {
   ShoppingBag,
   Info,
   FileText,
-  Save
+  Save,
+  Trash2
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
+import * as dbProduct from '@/db/product';
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import Colors from "@/constants/colors";
 import { Product, StockStatus } from "@/types/product";
 import SnackBar from "@/components/SnackBar";
 
-// Mock product data for demonstration
-const mockProducts: { [key: string]: Product } = {
-  '1': {
-    id: '1',
-    name: 'Laptop Computer',
-    sku: 'LAP-10001',
-    barcode: '8901234567890',
-    description: 'High-performance laptop with SSD storage and dedicated graphics',
-    category: 'Electronics',
-    sellingPrice: 1299.99,
-    purchasePrice: 899.99,
-    stockQuantity: 24,
-    reorderLevel: 5,
-    unit: 'piece',
-    status: 'in_stock',
-    taxRate: 10,
-    vendor: 'TechSuppliers Inc.',
-    location: 'Warehouse A',
-    dimensions: {
-      weight: 2.5,
-      length: 35,
-      width: 25,
-      height: 2
-    },
-    tags: ['electronics', 'computer', 'laptop'],
-    images: [],
-    notes: 'Popular item during back-to-school season',
-    createdAt: new Date('2023-06-12'),
-    updatedAt: new Date('2023-10-01')
-  },
-  '2': {
-    id: '2',
-    name: 'Office Desk Chair',
-    sku: 'CHR-20050',
-    barcode: '7890123456789',
-    description: 'Ergonomic office chair with adjustable height and lumbar support',
-    category: 'Furniture',
-    sellingPrice: 249.99,
-    purchasePrice: 149.99,
-    stockQuantity: 15,
-    reorderLevel: 3,
-    unit: 'piece',
-    status: 'in_stock',
-    taxRate: 8,
-    vendor: 'FurniturePlus',
-    location: 'Warehouse B',
-    dimensions: {
-      weight: 15,
-      length: 60,
-      width: 60,
-      height: 120
-    },
-    tags: ['furniture', 'office', 'chair'],
-    images: [],
-    notes: 'Available in black and gray',
-    createdAt: new Date('2023-05-20'),
-    updatedAt: new Date('2023-09-15')
-  },
-  '3': {
-    id: '3',
-    name: 'Smartphone',
-    sku: 'PHN-30200',
-    barcode: '6789012345678',
-    description: '5G smartphone with high-resolution camera and fast charging',
-    category: 'Electronics',
-    sellingPrice: 899.99,
-    purchasePrice: 599.99,
-    stockQuantity: 42,
-    reorderLevel: 10,
-    unit: 'piece',
-    status: 'in_stock',
-    taxRate: 10,
-    vendor: 'MobileTech Distributors',
-    location: 'Warehouse A',
-    dimensions: {
-      weight: 0.18,
-      length: 15,
-      width: 7,
-      height: 0.8
-    },
-    tags: ['electronics', 'phone', 'mobile'],
-    images: [],
-    notes: 'High demand item during holiday season',
-    createdAt: new Date('2023-07-05'),
-    updatedAt: new Date('2023-10-10')
-  },
-  '4': {
-    id: '4',
-    name: 'Wireless Headphones',
-    sku: 'AUD-40075',
-    barcode: '5678901234567',
-    description: 'Noise-cancelling wireless headphones with long battery life',
-    category: 'Audio',
-    sellingPrice: 199.99,
-    purchasePrice: 119.99,
-    stockQuantity: 38,
-    reorderLevel: 8,
-    unit: 'piece',
-    status: 'in_stock',
-    taxRate: 10,
-    vendor: 'AudioPlus Supplies',
-    location: 'Warehouse A',
-    dimensions: {
-      weight: 0.3,
-      length: 18,
-      width: 16,
-      height: 8
-    },
-    tags: ['electronics', 'audio', 'headphones'],
-    images: [],
-    notes: 'Available in multiple colors',
-    createdAt: new Date('2023-04-15'),
-    updatedAt: new Date('2023-08-20')
-  },
-  '5': {
-    id: '5',
-    name: 'Coffee Maker',
-    sku: 'KIT-50100',
-    barcode: '4567890123456',
-    description: 'Programmable coffee maker with thermal carafe',
-    category: 'Kitchen Appliances',
-    sellingPrice: 129.99,
-    purchasePrice: 79.99,
-    stockQuantity: 25,
-    reorderLevel: 5,
-    unit: 'piece',
-    status: 'in_stock',
-    taxRate: 8,
-    vendor: 'HomeGoods Supply',
-    location: 'Warehouse B',
-    dimensions: {
-      weight: 5,
-      length: 25,
-      width: 20,
-      height: 35
-    },
-    tags: ['appliances', 'kitchen', 'coffee'],
-    images: [],
-    notes: 'Bestseller in kitchen category',
-    createdAt: new Date('2023-03-10'),
-    updatedAt: new Date('2023-09-05')
-  }
-};
-
 export default function EditProductScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [isLoading, setIsLoading] = useState(false);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
-  const [product, setProduct] = useState<Product | null>(null);
   
   // Collapsible sections state
   const [basicInfoExpanded, setBasicInfoExpanded] = useState(true);
@@ -221,136 +80,65 @@ export default function EditProductScreen() {
   const [tags, setTags] = useState("");
   const [notes, setNotes] = useState("");
   const [images, setImages] = useState<string[]>([]);
-  const [hasChanges, setHasChanges] = useState(false);
   
   // Form validation
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   
   // Refs for scrolling to errors
   const scrollViewRef = useRef<ScrollView>(null);
-  
-  // Load product data
+
   useEffect(() => {
-    if (id) {
-      setIsInitialLoading(true);
-      
-      const fetchProduct = async () => {
-        try {
-          // Use mock data instead of AsyncStorage
-          const fetchedProduct = mockProducts[id];
-          
-          if (fetchedProduct) {
-            setProduct(fetchedProduct);
-            
-            // Populate form fields
-            setProductName(fetchedProduct.name);
-            setSku(fetchedProduct.sku);
-            setBarcode(fetchedProduct.barcode || "");
-            setCategory(fetchedProduct.category || "");
-            setBrand(""); // Brand not in the model, would be added in a real app
-            setIsActive(fetchedProduct.status !== "discontinued");
-            setCostPrice(fetchedProduct.purchasePrice.toString());
-            setSellingPrice(fetchedProduct.sellingPrice.toString());
-            setTaxRate(fetchedProduct.taxRate?.toString() || "");
-            setStockQuantity(fetchedProduct.stockQuantity.toString());
-            setUnit(fetchedProduct.unit);
-            setReorderLevel(fetchedProduct.reorderLevel.toString());
-            setVendor(fetchedProduct.vendor || "");
-            setLocation(fetchedProduct.location || "");
-            
-            // Description handling
-            if (fetchedProduct.description) {
-              setFullDescription(fetchedProduct.description);
-              setShortDescription("");
-            }
-            
-            // Dimensions handling
-            if (fetchedProduct.dimensions) {
-              setWeight(fetchedProduct.dimensions.weight?.toString() || "");
-              setLength(fetchedProduct.dimensions.length?.toString() || "");
-              setWidth(fetchedProduct.dimensions.width?.toString() || "");
-              setHeight(fetchedProduct.dimensions.height?.toString() || "");
-            }
-            
-            // Tags handling
-            if (fetchedProduct.tags && fetchedProduct.tags.length > 0) {
-              setTags(fetchedProduct.tags.join(", "));
-            }
-            
-            // Notes handling
-            setNotes(fetchedProduct.notes || "");
-            
-            // Images handling
-            if (fetchedProduct.images && fetchedProduct.images.length > 0) {
-              setImages(fetchedProduct.images);
-            }
-          } else {
-            console.error("Product not found");
-            setSnackbarMessage("Failed to load product data");
-            setSnackbarVisible(true);
-          }
-        } catch (error) {
-          console.error("Error fetching product:", error);
-          setSnackbarMessage("Failed to load product data");
-          setSnackbarVisible(true);
-        } finally {
-          setIsInitialLoading(false);
-        }
-      };
-      
-      fetchProduct();
-    }
+    loadProductData();
   }, [id]);
-  
-  // Track changes
-  useEffect(() => {
-    if (!product) return;
-    
-    const hasFormChanges = 
-      productName !== product.name ||
-      sku !== product.sku ||
-      barcode !== (product.barcode || "") ||
-      category !== (product.category || "") ||
-      isActive !== (product.status !== "discontinued") ||
-      parseFloat(costPrice) !== product.purchasePrice ||
-      parseFloat(sellingPrice) !== product.sellingPrice ||
-      (taxRate ? parseFloat(taxRate) : null) !== (product.taxRate || null) ||
-      parseInt(stockQuantity) !== product.stockQuantity ||
-      unit !== product.unit ||
-      parseInt(reorderLevel) !== product.reorderLevel ||
-      vendor !== (product.vendor || "") ||
-      location !== (product.location || "") ||
-      fullDescription !== (product.description || "") ||
-      notes !== (product.notes || "") ||
-      (product.tags ? tags !== product.tags.join(", ") : tags !== "") ||
-      JSON.stringify(images) !== JSON.stringify(product.images || []);
-    
-    setHasChanges(hasFormChanges);
-  }, [
-    product,
-    productName,
-    sku,
-    barcode,
-    category,
-    isActive,
-    costPrice,
-    sellingPrice,
-    taxRate,
-    stockQuantity,
-    unit,
-    reorderLevel,
-    vendor,
-    location,
-    shortDescription,
-    fullDescription,
-    weight,
-    length,
-    width,
-    height,
-    tags,
-    notes,
-    images
-  ]);
+
+  const loadProductData = async () => {
+    if (!id) {
+      setSnackbarMessage("Product ID is required");
+      setSnackbarVisible(true);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const product = await dbProduct.getProductById(Number(id));
+      
+      if (product) {
+        setProductName(product.productName);
+        setSku(product.sku);
+        setBarcode(product.barcode || "");
+        setCategory(product.category || "");
+        setBrand(product.brand || "");
+        setIsActive(Boolean(product.isActive));
+        setCostPrice(product.costPrice?.toString() || "");
+        setSellingPrice(product.sellingPrice?.toString() || "");
+        setTaxRate(product.taxRate?.toString() || "");
+        setStockQuantity(product.stockQuantity?.toString() || "");
+        setUnit(product.unit || "piece");
+        setReorderLevel(product.reorderLevel?.toString() || "");
+        setVendor(product.vendor || "");
+        setLocation(product.location || "");
+        setShortDescription(product.shortDescription || "");
+        setFullDescription(product.fullDescription || "");
+        setWeight(product.weight?.toString() || "");
+        setLength(product.length?.toString() || "");
+        setWidth(product.width?.toString() || "");
+        setHeight(product.height?.toString() || "");
+        setTags(product.tags || "");
+        setNotes(product.notes || "");
+        setImages(product.images ? product.images.split(',').map(i => i.trim()).filter(Boolean) : []);
+      } else {
+        setSnackbarMessage("Product not found");
+        setSnackbarVisible(true);
+      }
+    } catch (error) {
+      console.error("Error loading product:", error);
+      setSnackbarMessage("Failed to load product data");
+      setSnackbarVisible(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
   
   const validateForm = () => {
     const newErrors: {[key: string]: string} = {};
@@ -409,6 +197,114 @@ export default function EditProductScreen() {
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+  
+  const handleSave = async () => {
+    if (!validateForm()) {
+      setSnackbarMessage("Please fix the errors before saving");
+      setSnackbarVisible(true);
+      return;
+    }
+    
+    if (!id) {
+      setSnackbarMessage("Product ID is required");
+      setSnackbarVisible(true);
+      return;
+    }
+    
+    setIsSaving(true);
+    
+    try {
+      const updatedProduct = {
+        productName: productName.trim(),
+        sku: sku.trim(),
+        barcode: barcode.trim() || null,
+        category: category.trim() || null,
+        brand: brand.trim() || null,
+        isActive: isActive,
+        costPrice: parseFloat(costPrice),
+        sellingPrice: parseFloat(sellingPrice),
+        taxRate: taxRate ? parseFloat(taxRate) : null,
+        stockQuantity: parseInt(stockQuantity),
+        unit: unit,
+        reorderLevel: parseInt(reorderLevel),
+        vendor: vendor.trim() || null,
+        location: location.trim() || null,
+        shortDescription: shortDescription.trim() || null,
+        fullDescription: fullDescription.trim() || null,
+        weight: weight ? parseFloat(weight) : null,
+        length: length ? parseFloat(length) : null,
+        width: width ? parseFloat(width) : null,
+        height: height ? parseFloat(height) : null,
+        tags: tags.trim() || null,
+        notes: notes.trim() || null,
+        images: images.join(','),
+      };
+      
+      const success = await dbProduct.updateProduct(Number(id), updatedProduct);
+      
+      if (success) {
+        setSnackbarMessage("Product updated successfully");
+        setSnackbarVisible(true);
+        
+        // Navigate back to product details after a short delay
+        setTimeout(() => {
+          router.replace(`/products/${id}`);
+        }, 1500);
+      } else {
+        throw new Error("Failed to update product");
+      }
+    } catch (error) {
+      console.error("Error updating product:", error);
+      setSnackbarMessage("Failed to update product");
+      setSnackbarVisible(true);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  
+  const handleDelete = () => {
+    Alert.alert(
+      "Delete Product",
+      "Are you sure you want to delete this product? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            if (!id) return;
+            
+            setIsDeleting(true);
+            
+            try {
+              const success = await dbProduct.deleteProduct(Number(id));
+              
+              if (success) {
+                setSnackbarMessage("Product deleted successfully");
+                setSnackbarVisible(true);
+                
+                // Navigate back to products list after a short delay
+                setTimeout(() => {
+                  router.replace("/products");
+                }, 1500);
+              } else {
+                throw new Error("Failed to delete product");
+              }
+            } catch (error) {
+              console.error("Error deleting product:", error);
+              setSnackbarMessage("Failed to delete product");
+              setSnackbarVisible(true);
+            } finally {
+              setIsDeleting(false);
+            }
+          }
+        }
+      ]
+    );
   };
   
   const handleScanBarcode = () => {
@@ -492,180 +388,47 @@ export default function EditProductScreen() {
     newImages.splice(index, 1);
     setImages(newImages);
   };
-  
-  const handleCancel = () => {
-    if (hasChanges) {
-      Alert.alert(
-        "Discard Changes",
-        "You have unsaved changes. Are you sure you want to discard them?",
-        [
-          {
-            text: "Keep Editing",
-            style: "cancel"
-          },
-          {
-            text: "Discard",
-            style: "destructive",
-            onPress: () => router.back()
-          }
-        ]
-      );
-    } else {
-      router.back();
-    }
-  };
-  
-  const handleSave = async () => {
-    if (!validateForm()) {
-      // Scroll to the first error
-      const firstErrorKey = Object.keys(errors)[0];
-      if (firstErrorKey) {
-        // Expand the section containing the error
-        if (["productName", "sku", "barcode", "category", "brand"].includes(firstErrorKey)) {
-          setBasicInfoExpanded(true);
-        } else if (["costPrice", "sellingPrice", "taxRate"].includes(firstErrorKey)) {
-          setPricingExpanded(true);
-        } else if (["stockQuantity", "reorderLevel", "unit", "vendor", "location"].includes(firstErrorKey)) {
-          setInventoryExpanded(true);
-        } else if (["shortDescription", "fullDescription", "weight", "length", "width", "height"].includes(firstErrorKey)) {
-          setDetailsExpanded(true);
-        }
-      }
-      
-      setSnackbarMessage("Please fix the errors before saving");
-      setSnackbarVisible(true);
-      return;
-    }
-    
-    // Prepare product object
-    const updatedProduct: Product = {
-      ...(product as Product), // Base with existing product data
-      name: productName.trim(),
-      sku: sku.trim(),
-      barcode: barcode.trim() || undefined,
-      category: category.trim() || undefined,
-      sellingPrice: parseFloat(sellingPrice),
-      purchasePrice: parseFloat(costPrice),
-      taxRate: taxRate.trim() ? parseFloat(taxRate) : undefined,
-      stockQuantity: parseInt(stockQuantity),
-      reorderLevel: parseInt(reorderLevel),
-      unit: unit,
-      vendor: vendor.trim() || undefined,
-      location: location.trim() || undefined,
-      description: fullDescription.trim() || undefined,
-      notes: notes.trim() || undefined,
-      dimensions: {
-        weight: weight.trim() ? parseFloat(weight) : undefined,
-        length: length.trim() ? parseFloat(length) : undefined,
-        width: width.trim() ? parseFloat(width) : undefined,
-        height: height.trim() ? parseFloat(height) : undefined,
-      },
-      status: isActive ? 
-        (parseInt(stockQuantity) <= 0 ? "out_of_stock" : 
-         parseInt(stockQuantity) <= parseInt(reorderLevel) ? "low_stock" : "in_stock") : 
-        "discontinued",
-      tags: tags.trim() ? tags.split(",").map(tag => tag.trim()) : [],
-      images: images,
-      updatedAt: new Date()
-    };
-    
-    setIsLoading(true);
-    
-    try {
-      // Simulate saving to AsyncStorage with a delay
-      setTimeout(() => {
-        // In a real implementation, would update AsyncStorage
-        // For now, just update our local mock data
-        if (id) {
-          mockProducts[id] = updatedProduct;
-        }
-        
-        setIsLoading(false);
-        setSnackbarMessage("Product updated successfully");
-        setSnackbarVisible(true);
-        setHasChanges(false);
-        
-        // Navigate back to product details after short delay
-        setTimeout(() => {
-          router.push(`/products/${id}`);
-        }, 1000);
-      }, 800);
-    } catch (error) {
-      console.error("Error updating product:", error);
-      setIsLoading(false);
-      setSnackbarMessage("Failed to update product");
-      setSnackbarVisible(true);
-    }
-  };
-  
-  // Calculate profit margin
-  const calculateProfitMargin = () => {
-    if (!costPrice || !sellingPrice) return "0.00";
-    
-    const cost = parseFloat(costPrice);
-    const selling = parseFloat(sellingPrice);
-    
-    if (isNaN(cost) || isNaN(selling) || cost <= 0 || selling <= 0) return "0.00";
-    
-    const margin = ((selling - cost) / selling) * 100;
-    return margin.toFixed(2);
-  };
-  
-  if (isInitialLoading) {
+
+  if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading product data...</Text>
+        <Text style={styles.loadingText}>Loading product details...</Text>
       </View>
     );
   }
-  
-  if (!product) {
-    return (
-      <View style={styles.errorContainer}>
-        <AlertCircle size={64} color="#ea4335" />
-        <Text style={styles.errorTitle}>Product Not Found</Text>
-        <Text style={styles.errorMessage}>The product you're trying to edit doesn't exist or has been deleted.</Text>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.backButtonText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-  
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
-      {/* Modern Header */}
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.headerButton} 
           onPress={() => router.back()}
-          activeOpacity={0.7}
         >
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Edit Product</Text>
-        <TouchableOpacity 
-          style={[styles.headerActionButton, isLoading && styles.disabledButton]} 
-          onPress={handleSave}
-          disabled={isLoading}
-          activeOpacity={0.7}
-        >
-          {isLoading ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.headerActionButtonText}>Save</Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity 
+            style={[styles.headerButton, styles.deleteButton]} 
+            onPress={handleDelete}
+            disabled={isDeleting}
+          >
+            {isDeleting ? (
+              <ActivityIndicator size="small" color={Colors.negative} />
+            ) : (
+              <Trash2 size={24} color={Colors.negative} />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
       
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardAvoidingView}
       >
         <ScrollView
@@ -674,9 +437,9 @@ export default function EditProductScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Basic Information Card */}
-          <View style={styles.formSection}>
-            <TouchableOpacity
+          {/* Basic Information Section */}
+          <View style={styles.section}>
+            <TouchableOpacity 
               style={styles.sectionHeader}
               onPress={() => setBasicInfoExpanded(!basicInfoExpanded)}
             >
@@ -693,51 +456,49 @@ export default function EditProductScreen() {
             
             {basicInfoExpanded && (
               <View style={styles.sectionContent}>
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Product Name <Text style={styles.required}>*</Text></Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Product Name *</Text>
                   <TextInput
                     style={[styles.input, errors.productName && styles.inputError]}
                     value={productName}
                     onChangeText={setProductName}
                     placeholder="Enter product name"
+                    placeholderTextColor={Colors.text.tertiary}
                   />
                   {errors.productName && (
                     <Text style={styles.errorText}>{errors.productName}</Text>
                   )}
                 </View>
                 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>SKU <Text style={styles.required}>*</Text></Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>SKU *</Text>
                   <TextInput
                     style={[styles.input, errors.sku && styles.inputError]}
                     value={sku}
                     onChangeText={setSku}
                     placeholder="Enter SKU"
+                    placeholderTextColor={Colors.text.tertiary}
                   />
                   {errors.sku && (
                     <Text style={styles.errorText}>{errors.sku}</Text>
                   )}
                 </View>
                 
-                <View style={styles.formGroup}>
+                <View style={styles.inputGroup}>
                   <Text style={styles.label}>Barcode</Text>
-                  <View style={styles.inputWithButton}>
+                  <View style={styles.barcodeInputContainer}>
                     <TextInput
-                      style={[
-                        styles.input, 
-                        styles.inputWithButtonField,
-                        errors.barcode && styles.inputError
-                      ]}
+                      style={[styles.input, styles.barcodeInput, errors.barcode && styles.inputError]}
                       value={barcode}
                       onChangeText={setBarcode}
                       placeholder="Enter barcode"
-                      keyboardType="numeric"
+                      placeholderTextColor={Colors.text.tertiary}
                     />
                     <TouchableOpacity 
-                      style={styles.inputButton}
+                      style={styles.scanButton}
                       onPress={handleScanBarcode}
                     >
-                      <Barcode size={16} color="#fff" />
+                      <Barcode size={20} color={Colors.primary} />
                     </TouchableOpacity>
                   </View>
                   {errors.barcode && (
@@ -745,77 +506,44 @@ export default function EditProductScreen() {
                   )}
                 </View>
                 
-                <View style={styles.formGroup}>
+                <View style={styles.inputGroup}>
                   <Text style={styles.label}>Category</Text>
                   <TextInput
-                    style={[styles.input, errors.category && styles.inputError]}
+                    style={styles.input}
                     value={category}
                     onChangeText={setCategory}
                     placeholder="Enter category"
+                    placeholderTextColor={Colors.text.tertiary}
                   />
-                  {errors.category && (
-                    <Text style={styles.errorText}>{errors.category}</Text>
-                  )}
                 </View>
                 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Brand/Manufacturer</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Brand</Text>
                   <TextInput
-                    style={[styles.input, errors.brand && styles.inputError]}
+                    style={styles.input}
                     value={brand}
                     onChangeText={setBrand}
-                    placeholder="Enter brand or manufacturer"
+                    placeholder="Enter brand"
+                    placeholderTextColor={Colors.text.tertiary}
                   />
-                  {errors.brand && (
-                    <Text style={styles.errorText}>{errors.brand}</Text>
-                  )}
                 </View>
                 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Product Images</Text>
-                  <View style={styles.imagesContainer}>
-                    {images.map((image, index) => (
-                      <View key={index} style={styles.imageContainer}>
-                        <Image source={{ uri: image }} style={styles.image} />
-                        <TouchableOpacity 
-                          style={styles.removeImageButton}
-                          onPress={() => handleRemoveImage(index)}
-                        >
-                          <X size={16} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                    <TouchableOpacity 
-                      style={styles.addImageButton}
-                      onPress={handleAddImage}
-                    >
-                      <Camera size={24} color="#666" />
-                      <Text style={styles.addImageText}>Add Image</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Status</Text>
-                  <View style={styles.switchContainer}>
-                    <Text style={styles.switchLabel}>
-                      {isActive ? "Active" : "Discontinued"}
-                    </Text>
-                    <Switch
-                      value={isActive}
-                      onValueChange={setIsActive}
-                      trackColor={{ false: "#ccc", true: `${Colors.primary}80` }}
-                      thumbColor={isActive ? Colors.primary : "#f4f3f4"}
-                    />
-                  </View>
+                <View style={styles.switchContainer}>
+                  <Text style={styles.label}>Active</Text>
+                  <Switch
+                    value={isActive}
+                    onValueChange={setIsActive}
+                    trackColor={{ false: Colors.border.light, true: Colors.primary + '40' }}
+                    thumbColor={isActive ? Colors.primary : Colors.text.tertiary}
+                  />
                 </View>
               </View>
             )}
           </View>
           
-          {/* Pricing Card */}
-          <View style={styles.formSection}>
-            <TouchableOpacity
+          {/* Pricing Section */}
+          <View style={styles.section}>
+            <TouchableOpacity 
               style={styles.sectionHeader}
               onPress={() => setPricingExpanded(!pricingExpanded)}
             >
@@ -832,83 +560,46 @@ export default function EditProductScreen() {
             
             {pricingExpanded && (
               <View style={styles.sectionContent}>
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Cost Price <Text style={styles.required}>*</Text></Text>
-                  <View style={styles.inputWithPrefix}>
-                    <Text style={styles.inputPrefix}>$</Text>
-                    <TextInput
-                      style={[
-                        styles.input, 
-                        styles.inputWithPrefixField,
-                        errors.costPrice && styles.inputError
-                      ]}
-                      value={costPrice}
-                      onChangeText={setCostPrice}
-                      placeholder="0.00"
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Cost Price *</Text>
+                  <TextInput
+                    style={[styles.input, errors.costPrice && styles.inputError]}
+                    value={costPrice}
+                    onChangeText={setCostPrice}
+                    placeholder="Enter cost price"
+                    placeholderTextColor={Colors.text.tertiary}
+                    keyboardType="decimal-pad"
+                  />
                   {errors.costPrice && (
                     <Text style={styles.errorText}>{errors.costPrice}</Text>
                   )}
                 </View>
                 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Selling Price <Text style={styles.required}>*</Text></Text>
-                  <View style={styles.inputWithPrefix}>
-                    <Text style={styles.inputPrefix}>$</Text>
-                    <TextInput
-                      style={[
-                        styles.input, 
-                        styles.inputWithPrefixField,
-                        errors.sellingPrice && styles.inputError
-                      ]}
-                      value={sellingPrice}
-                      onChangeText={setSellingPrice}
-                      placeholder="0.00"
-                      keyboardType="decimal-pad"
-                    />
-                  </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Selling Price *</Text>
+                  <TextInput
+                    style={[styles.input, errors.sellingPrice && styles.inputError]}
+                    value={sellingPrice}
+                    onChangeText={setSellingPrice}
+                    placeholder="Enter selling price"
+                    placeholderTextColor={Colors.text.tertiary}
+                    keyboardType="decimal-pad"
+                  />
                   {errors.sellingPrice && (
                     <Text style={styles.errorText}>{errors.sellingPrice}</Text>
                   )}
                 </View>
                 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Profit Margin</Text>
-                  <View style={styles.inputWithSuffix}>
-                    <TextInput
-                      style={[
-                        styles.input, 
-                        styles.inputWithSuffixField,
-                        { backgroundColor: "#f0f0f0" }
-                      ]}
-                      value={calculateProfitMargin()}
-                      editable={false}
-                    />
-                    <Text style={styles.inputSuffix}>%</Text>
-                  </View>
-                  <Text style={styles.helperText}>
-                    Calculated automatically based on cost and selling price
-                  </Text>
-                </View>
-                
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Tax Rate</Text>
-                  <View style={styles.inputWithSuffix}>
-                    <TextInput
-                      style={[
-                        styles.input, 
-                        styles.inputWithSuffixField,
-                        errors.taxRate && styles.inputError
-                      ]}
-                      value={taxRate}
-                      onChangeText={setTaxRate}
-                      placeholder="0.00"
-                      keyboardType="decimal-pad"
-                    />
-                    <Text style={styles.inputSuffix}>%</Text>
-                  </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Tax Rate (%)</Text>
+                  <TextInput
+                    style={[styles.input, errors.taxRate && styles.inputError]}
+                    value={taxRate}
+                    onChangeText={setTaxRate}
+                    placeholder="Enter tax rate"
+                    placeholderTextColor={Colors.text.tertiary}
+                    keyboardType="decimal-pad"
+                  />
                   {errors.taxRate && (
                     <Text style={styles.errorText}>{errors.taxRate}</Text>
                   )}
@@ -917,9 +608,9 @@ export default function EditProductScreen() {
             )}
           </View>
           
-          {/* Inventory Card */}
-          <View style={styles.formSection}>
-            <TouchableOpacity
+          {/* Inventory Section */}
+          <View style={styles.section}>
+            <TouchableOpacity 
               style={styles.sectionHeader}
               onPress={() => setInventoryExpanded(!inventoryExpanded)}
             >
@@ -936,79 +627,81 @@ export default function EditProductScreen() {
             
             {inventoryExpanded && (
               <View style={styles.sectionContent}>
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Current Stock <Text style={styles.required}>*</Text></Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Stock Quantity *</Text>
                   <TextInput
                     style={[styles.input, errors.stockQuantity && styles.inputError]}
                     value={stockQuantity}
                     onChangeText={setStockQuantity}
-                    placeholder="0"
-                    keyboardType="numeric"
+                    placeholder="Enter stock quantity"
+                    placeholderTextColor={Colors.text.tertiary}
+                    keyboardType="number-pad"
                   />
                   {errors.stockQuantity && (
                     <Text style={styles.errorText}>{errors.stockQuantity}</Text>
                   )}
                 </View>
                 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Unit of Measure <Text style={styles.required}>*</Text></Text>
-                  <TextInput
-                    style={styles.input}
-                    value={unit}
-                    onChangeText={setUnit}
-                    placeholder="piece, kg, liter, etc."
-                  />
-                </View>
-                
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Reorder Level <Text style={styles.required}>*</Text></Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Reorder Level *</Text>
                   <TextInput
                     style={[styles.input, errors.reorderLevel && styles.inputError]}
                     value={reorderLevel}
                     onChangeText={setReorderLevel}
-                    placeholder="0"
-                    keyboardType="numeric"
+                    placeholder="Enter reorder level"
+                    placeholderTextColor={Colors.text.tertiary}
+                    keyboardType="number-pad"
                   />
                   {errors.reorderLevel && (
                     <Text style={styles.errorText}>{errors.reorderLevel}</Text>
                   )}
-                  <Text style={styles.helperText}>
-                    Minimum stock level before reordering
-                  </Text>
                 </View>
                 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Preferred Vendor</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Unit</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={unit}
+                    onChangeText={setUnit}
+                    placeholder="Enter unit (e.g., piece, kg, etc.)"
+                    placeholderTextColor={Colors.text.tertiary}
+                  />
+                </View>
+                
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Vendor</Text>
                   <TextInput
                     style={styles.input}
                     value={vendor}
                     onChangeText={setVendor}
                     placeholder="Enter vendor name"
+                    placeholderTextColor={Colors.text.tertiary}
                   />
                 </View>
                 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Location in Store/Warehouse</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Location</Text>
                   <TextInput
                     style={styles.input}
                     value={location}
                     onChangeText={setLocation}
                     placeholder="Enter storage location"
+                    placeholderTextColor={Colors.text.tertiary}
                   />
                 </View>
               </View>
             )}
           </View>
           
-          {/* Details Card */}
-          <View style={styles.formSection}>
-            <TouchableOpacity
+          {/* Details Section */}
+          <View style={styles.section}>
+            <TouchableOpacity 
               style={styles.sectionHeader}
               onPress={() => setDetailsExpanded(!detailsExpanded)}
             >
               <View style={styles.sectionHeaderLeft}>
                 <Info size={20} color={Colors.text.primary} />
-                <Text style={styles.sectionTitle}>Additional Details</Text>
+                <Text style={styles.sectionTitle}>Details</Text>
               </View>
               {detailsExpanded ? (
                 <ChevronUp size={20} color={Colors.text.secondary} />
@@ -1019,113 +712,88 @@ export default function EditProductScreen() {
             
             {detailsExpanded && (
               <View style={styles.sectionContent}>
-                <View style={styles.formGroup}>
+                <View style={styles.inputGroup}>
                   <Text style={styles.label}>Short Description</Text>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, styles.textArea]}
                     value={shortDescription}
                     onChangeText={setShortDescription}
-                    placeholder="Brief description of the product"
+                    placeholder="Enter short description"
+                    placeholderTextColor={Colors.text.tertiary}
+                    multiline
+                    numberOfLines={2}
                   />
                 </View>
                 
-                <View style={styles.formGroup}>
+                <View style={styles.inputGroup}>
                   <Text style={styles.label}>Full Description</Text>
                   <TextInput
                     style={[styles.input, styles.textArea]}
                     value={fullDescription}
                     onChangeText={setFullDescription}
-                    placeholder="Detailed description of the product"
+                    placeholder="Enter full description"
+                    placeholderTextColor={Colors.text.tertiary}
                     multiline
                     numberOfLines={4}
-                    textAlignVertical="top"
                   />
                 </View>
                 
-                <Text style={styles.subSectionTitle}>Dimensions & Weight</Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Weight (kg)</Text>
+                  <TextInput
+                    style={[styles.input, errors.weight && styles.inputError]}
+                    value={weight}
+                    onChangeText={setWeight}
+                    placeholder="Enter weight"
+                    placeholderTextColor={Colors.text.tertiary}
+                    keyboardType="decimal-pad"
+                  />
+                  {errors.weight && (
+                    <Text style={styles.errorText}>{errors.weight}</Text>
+                  )}
+                </View>
                 
-                <View style={styles.formRow}>
-                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                    <Text style={styles.label}>Weight</Text>
-                    <View style={styles.inputWithSuffix}>
-                      <TextInput
-                        style={[
-                          styles.input, 
-                          styles.inputWithSuffixField,
-                          errors.weight && styles.inputError
-                        ]}
-                        value={weight}
-                        onChangeText={setWeight}
-                        placeholder="0.00"
-                        keyboardType="decimal-pad"
-                      />
-                      <Text style={styles.inputSuffix}>kg</Text>
-                    </View>
-                    {errors.weight && (
-                      <Text style={styles.errorText}>{errors.weight}</Text>
-                    )}
-                  </View>
-                  
-                  <View style={[styles.formGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Length</Text>
-                    <View style={styles.inputWithSuffix}>
-                      <TextInput
-                        style={[
-                          styles.input, 
-                          styles.inputWithSuffixField,
-                          errors.length && styles.inputError
-                        ]}
-                        value={length}
-                        onChangeText={setLength}
-                        placeholder="0.00"
-                        keyboardType="decimal-pad"
-                      />
-                      <Text style={styles.inputSuffix}>cm</Text>
-                    </View>
+                <View style={styles.dimensionsContainer}>
+                  <View style={[styles.inputGroup, styles.dimensionInput]}>
+                    <Text style={styles.label}>Length (cm)</Text>
+                    <TextInput
+                      style={[styles.input, errors.length && styles.inputError]}
+                      value={length}
+                      onChangeText={setLength}
+                      placeholder="Length"
+                      placeholderTextColor={Colors.text.tertiary}
+                      keyboardType="decimal-pad"
+                    />
                     {errors.length && (
                       <Text style={styles.errorText}>{errors.length}</Text>
                     )}
                   </View>
-                </View>
-                
-                <View style={styles.formRow}>
-                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                    <Text style={styles.label}>Width</Text>
-                    <View style={styles.inputWithSuffix}>
-                      <TextInput
-                        style={[
-                          styles.input, 
-                          styles.inputWithSuffixField,
-                          errors.width && styles.inputError
-                        ]}
-                        value={width}
-                        onChangeText={setWidth}
-                        placeholder="0.00"
-                        keyboardType="decimal-pad"
-                      />
-                      <Text style={styles.inputSuffix}>cm</Text>
-                    </View>
+                  
+                  <View style={[styles.inputGroup, styles.dimensionInput]}>
+                    <Text style={styles.label}>Width (cm)</Text>
+                    <TextInput
+                      style={[styles.input, errors.width && styles.inputError]}
+                      value={width}
+                      onChangeText={setWidth}
+                      placeholder="Width"
+                      placeholderTextColor={Colors.text.tertiary}
+                      keyboardType="decimal-pad"
+                    />
                     {errors.width && (
                       <Text style={styles.errorText}>{errors.width}</Text>
                     )}
                   </View>
                   
-                  <View style={[styles.formGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Height</Text>
-                    <View style={styles.inputWithSuffix}>
-                      <TextInput
-                        style={[
-                          styles.input, 
-                          styles.inputWithSuffixField,
-                          errors.height && styles.inputError
-                        ]}
-                        value={height}
-                        onChangeText={setHeight}
-                        placeholder="0.00"
-                        keyboardType="decimal-pad"
-                      />
-                      <Text style={styles.inputSuffix}>cm</Text>
-                    </View>
+                  <View style={[styles.inputGroup, styles.dimensionInput]}>
+                    <Text style={styles.label}>Height (cm)</Text>
+                    <TextInput
+                      style={[styles.input, errors.height && styles.inputError]}
+                      value={height}
+                      onChangeText={setHeight}
+                      placeholder="Height"
+                      placeholderTextColor={Colors.text.tertiary}
+                      keyboardType="decimal-pad"
+                    />
                     {errors.height && (
                       <Text style={styles.errorText}>{errors.height}</Text>
                     )}
@@ -1135,15 +803,15 @@ export default function EditProductScreen() {
             )}
           </View>
           
-          {/* Notes Card */}
-          <View style={styles.formSection}>
-            <TouchableOpacity
+          {/* Additional Information Section */}
+          <View style={styles.section}>
+            <TouchableOpacity 
               style={styles.sectionHeader}
               onPress={() => setAdditionalExpanded(!additionalExpanded)}
             >
               <View style={styles.sectionHeaderLeft}>
                 <FileText size={20} color={Colors.text.primary} />
-                <Text style={styles.sectionTitle}>Notes & Tags</Text>
+                <Text style={styles.sectionTitle}>Additional Information</Text>
               </View>
               {additionalExpanded ? (
                 <ChevronUp size={20} color={Colors.text.secondary} />
@@ -1154,68 +822,84 @@ export default function EditProductScreen() {
             
             {additionalExpanded && (
               <View style={styles.sectionContent}>
-                <View style={styles.formGroup}>
+                <View style={styles.inputGroup}>
                   <Text style={styles.label}>Tags</Text>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, styles.textArea]}
                     value={tags}
                     onChangeText={setTags}
-                    placeholder="Enter tags separated by commas"
+                    placeholder="Enter tags (comma-separated)"
+                    placeholderTextColor={Colors.text.tertiary}
+                    multiline
+                    numberOfLines={2}
                   />
-                  <Text style={styles.helperText}>
-                    Example: electronics, gadget, wireless
-                  </Text>
                 </View>
                 
-                <View style={styles.formGroup}>
+                <View style={styles.inputGroup}>
                   <Text style={styles.label}>Notes</Text>
                   <TextInput
                     style={[styles.input, styles.textArea]}
                     value={notes}
                     onChangeText={setNotes}
-                    placeholder="Additional notes about the product"
+                    placeholder="Enter additional notes"
+                    placeholderTextColor={Colors.text.tertiary}
                     multiline
                     numberOfLines={4}
-                    textAlignVertical="top"
                   />
+                </View>
+                
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Images</Text>
+                  <View style={styles.imagesContainer}>
+                    {images.map((image, index) => (
+                      <View key={index} style={styles.imageContainer}>
+                        <Image source={{ uri: image }} style={styles.image} />
+                        <TouchableOpacity
+                          style={styles.removeImageButton}
+                          onPress={() => handleRemoveImage(index)}
+                        >
+                          <X size={16} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                    <TouchableOpacity
+                      style={styles.addImageButton}
+                      onPress={handleAddImage}
+                    >
+                      <Camera size={24} color={Colors.primary} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             )}
           </View>
-          
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[styles.saveButton, isLoading && styles.disabledButton]}
-              onPress={handleSave}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <Save size={18} color="#fff" />
-                  <Text style={styles.saveButtonText}>Save Changes</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={handleCancel}
-              disabled={isLoading}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      
+      {/* Action Buttons */}
+      <View style={styles.actionButtonsContainer}>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.saveButton]}
+          onPress={handleSave}
+          disabled={isSaving}
+        >
+          {isSaving ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <>
+              <Save size={20} color="#fff" />
+              <Text style={styles.actionButtonText}>Save Changes</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
       
       <SnackBar
         visible={snackbarVisible}
         message={snackbarMessage}
         onDismiss={() => setSnackbarVisible(false)}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -1223,6 +907,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background.secondary,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.background.default,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.text.secondary,
   },
   header: {
     flexDirection: 'row',
@@ -1233,11 +928,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
   },
   headerButton: {
     width: 40,
@@ -1245,66 +935,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 20,
-    backgroundColor: Colors.background.tertiary,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  headerActionButton: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
+  headerRight: {
+    flexDirection: 'row',
   },
-  headerActionButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: Colors.text.secondary,
-    marginTop: 12,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorMessage: {
-    fontSize: 16,
-    color: Colors.text.secondary,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  backButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    elevation: 2,
-  },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  deleteButton: {
+    backgroundColor: Colors.negative + '10',
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -1314,18 +955,13 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 100,
   },
-  formSection: {
+  section: {
     backgroundColor: Colors.background.default,
     borderRadius: 12,
     marginBottom: 16,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1343,228 +979,129 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
-    marginLeft: 12,
-  },
-  buttonContainer: {
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  saveButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingVertical: 14,
-    borderRadius: 8,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
     marginLeft: 8,
   },
-  cancelButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.background.tertiary,
-    paddingVertical: 14,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.border.medium,
-  },
-  cancelButtonText: {
-    color: Colors.text.primary,
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
   sectionContent: {
-    backgroundColor: "#fff",
     padding: 16,
-    borderRadius: 8,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
-  formGroup: {
+  inputGroup: {
     marginBottom: 16,
   },
   label: {
     fontSize: 14,
-    color: "#333",
+    color: Colors.text.secondary,
     marginBottom: 8,
   },
-  required: {
-    color: "#ea4335",
-  },
   input: {
-    backgroundColor: "#f9f9f9",
-    borderWidth: 1,
-    borderColor: "#ddd",
+    backgroundColor: Colors.background.secondary,
     borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    color: "#333",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: Colors.text.primary,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
   },
   inputError: {
-    borderColor: "#ea4335",
+    borderColor: Colors.negative,
   },
   errorText: {
-    color: "#ea4335",
+    color: Colors.negative,
     fontSize: 12,
     marginTop: 4,
   },
-  helperText: {
-    color: "#666",
-    fontSize: 12,
-    marginTop: 4,
+  barcodeInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  textArea: {
-    minHeight: 100,
-    textAlignVertical: "top",
-  },
-  inputWithButton: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  inputWithButtonField: {
+  barcodeInput: {
     flex: 1,
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: 0,
+    marginRight: 8,
   },
-  inputButton: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 13,
-    borderTopRightRadius: 8,
-    borderBottomRightRadius: 8,
-  },
-  inputButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  inputWithPrefix: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  inputPrefix: {
-    backgroundColor: "#f0f0f0",
-    paddingHorizontal: 12,
-    paddingVertical: 13,
-    borderTopLeftRadius: 8,
-    borderBottomLeftRadius: 8,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRightWidth: 0,
-    fontSize: 14,
-    color: "#333",
-  },
-  inputWithPrefixField: {
-    flex: 1,
-    borderTopLeftRadius: 0,
-    borderBottomLeftRadius: 0,
-  },
-  inputWithSuffix: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  inputSuffix: {
-    backgroundColor: "#f0f0f0",
-    paddingHorizontal: 12,
-    paddingVertical: 13,
-    borderTopRightRadius: 8,
-    borderBottomRightRadius: 8,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderLeftWidth: 0,
-    fontSize: 14,
-    color: "#333",
-  },
-  inputWithSuffixField: {
-    flex: 1,
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: 0,
+  scanButton: {
+    width: 44,
+    height: 44,
+    backgroundColor: Colors.primary + '10',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   switchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#f9f9f9",
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  switchLabel: {
-    fontSize: 14,
-    color: "#333",
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
+  },
+  dimensionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  dimensionInput: {
+    flex: 1,
+    marginRight: 8,
   },
   imagesContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
   },
   imageContainer: {
     width: 80,
     height: 80,
-    borderRadius: 8,
     marginRight: 8,
     marginBottom: 8,
-    position: "relative",
+    borderRadius: 8,
+    overflow: 'hidden',
   },
   image: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 8,
+    width: '100%',
+    height: '100%',
   },
   removeImageButton: {
-    position: "absolute",
-    top: -8,
-    right: -8,
-    backgroundColor: "#ea4335",
-    borderRadius: 12,
+    position: 'absolute',
+    top: 4,
+    right: 4,
     width: 24,
     height: 24,
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   addImageButton: {
     width: 80,
     height: 80,
+    backgroundColor: Colors.background.tertiary,
     borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderStyle: "dashed",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 8,
+    borderColor: Colors.border.light,
+    borderStyle: 'dashed',
   },
-  addImageText: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 4,
+  actionButtonsContainer: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
   },
-  subSectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginTop: 8,
-    marginBottom: 12,
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
   },
-  formRow: {
-    flexDirection: "row",
-    marginBottom: 16,
+  saveButton: {
+    backgroundColor: Colors.primary,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });

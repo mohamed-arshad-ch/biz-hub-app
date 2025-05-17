@@ -1,369 +1,281 @@
-import React, { useState, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  FlatList, 
-  TouchableOpacity, 
-  Alert, 
-  TextInput, 
-  StatusBar,
-  ActivityIndicator,
-  RefreshControl
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { 
-  Plus, 
-  Search, 
-  Filter, 
-  ArrowLeft, 
-  Calendar, 
-  User, 
-  ChevronDown, 
-  SortAsc, 
-  SortDesc,
-  Printer,
-  Share2,
-  X,
-  CreditCard
-} from 'lucide-react-native';
-import { paymentOutData } from '@/mocks/paymentOutData';
-import { PaymentOut } from '@/types/payment-out';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, StatusBar, RefreshControl, ActivityIndicator } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { Plus, Search, Filter, Calendar, SortAsc, SortDesc, ChevronDown, X, FileText, ArrowLeft, Share2, Printer } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useAuthStore } from '@/store/auth';
+import { getPaymentOuts } from '@/db/payment-out';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// Define sort and filter option types
+
 type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc';
-type FilterOption = 'all' | 'completed' | 'pending' | 'cancelled';
+type FilterOption = 'all' | 'pending' | 'completed' | 'cancelled';
 
 export default function PaymentOutScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
-  const [payments, setPayments] = useState<PaymentOut[]>(paymentOutData);
-  const [filteredPayments, setFilteredPayments] = useState<PaymentOut[]>(paymentOutData);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  
-  // Sort and filter states
-  const [sortOption, setSortOption] = useState<SortOption>('date-desc');
-  const [filterOption, setFilterOption] = useState<FilterOption>('all');
+  const [payments, setPayments] = useState<any[]>([]);
   const [showSortOptions, setShowSortOptions] = useState(false);
   const [showFilterOptions, setShowFilterOptions] = useState(false);
+  const [sortBy, setSortBy] = useState<SortOption>('date-desc');
+  const [filterBy, setFilterBy] = useState<FilterOption>('all');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [allPayments, setAllPayments] = useState<any[]>([]);
+  const [showSearch, setShowSearch] = useState(false);
 
-  // Handle refresh
-  const onRefresh = () => {
+  useEffect(() => {
+    loadPayments();
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadPayments();
+    }, [sortBy])
+  );
+
+  const loadPayments = async () => {
+    try {
+      if (!user?.id) {
+        console.error('User not found');
+        return;
+      }
+      setLoading(true);
+      const fetchedPayments = await getPaymentOuts(user.id);
+      
+      // Sort payments based on sortBy option
+      let sortedPayments = [...fetchedPayments];
+      switch (sortBy) {
+        case 'date-desc':
+          sortedPayments.sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
+          break;
+        case 'date-asc':
+          sortedPayments.sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime());
+          break;
+        case 'amount-desc':
+          sortedPayments.sort((a, b) => b.amount - a.amount);
+          break;
+        case 'amount-asc':
+          sortedPayments.sort((a, b) => a.amount - b.amount);
+          break;
+      }
+
+      // Apply filter
+      if (filterBy !== 'all') {
+        sortedPayments = sortedPayments.filter(payment => payment.status === filterBy);
+      }
+
+      // Apply search
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        sortedPayments = sortedPayments.filter(payment => 
+          payment.paymentNumber.toLowerCase().includes(query) ||
+          payment.referenceNumber?.toLowerCase().includes(query) ||
+          payment.paymentMethod.toLowerCase().includes(query)
+        );
+      }
+      
+      setAllPayments(sortedPayments);
+      setPayments(sortedPayments);
+    } catch (error) {
+      console.error('Error loading payments:', error);
+      Alert.alert('Error', 'Failed to load payments');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshPayments = async () => {
     setRefreshing(true);
-    // Simulate network delay
-    setTimeout(() => {
-      setPayments(paymentOutData);
-      setFilteredPayments(paymentOutData);
-      setRefreshing(false);
-    }, 500);
-  };
-
-  // Handle search
-  const handleSearch = (text: string) => {
-    setSearchQuery(text);
-    if (text.trim() === '') {
-      applyFilterAndSort(payments);
-    } else {
-      const filtered = payments.filter(
-        payment => 
-          payment.vendorName.toLowerCase().includes(text.toLowerCase()) ||
-          payment.referenceNumber.toLowerCase().includes(text.toLowerCase())
-      );
-      applyFilterAndSort(filtered);
-    }
-  };
-
-  // Handle sort
-  const handleSort = (option: SortOption) => {
-    setSortOption(option);
-    setShowSortOptions(false);
-    applyFilterAndSort(filteredPayments, option, filterOption);
-  };
-  
-  // Handle filter
-  const handleFilter = (option: FilterOption) => {
-    setFilterOption(option);
-    setShowFilterOptions(false);
-    applyFilterAndSort(filteredPayments, sortOption, option);
-  };
-  
-  // Apply filter and sort
-  const applyFilterAndSort = (data: PaymentOut[], sortOpt = sortOption, filterOpt = filterOption) => {
-    let result = [...data];
-    
-    // Apply filter
-    if (filterOpt !== 'all') {
-      result = result.filter(payment => payment.status === filterOpt);
-    }
-    
-    // Apply sort
-    switch (sortOpt) {
-      case 'date-desc':
-        result.sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
-        break;
-      case 'date-asc':
-        result.sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime());
-        break;
-      case 'amount-desc':
-        result.sort((a, b) => b.amount - a.amount);
-        break;
-      case 'amount-asc':
-        result.sort((a, b) => a.amount - b.amount);
-        break;
-    }
-    
-    setFilteredPayments(result);
+    await loadPayments();
+    setRefreshing(false);
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completed':
-        return { bg: 'rgba(76, 175, 80, 0.1)', text: Colors.status.completed };
       case 'pending':
-        return { bg: 'rgba(251, 188, 4, 0.1)', text: Colors.status.pending };
+        return { bg: 'rgba(33, 150, 243, 0.1)', text: Colors.info };
+      case 'completed':
+        return { bg: 'rgba(76, 175, 80, 0.1)', text: Colors.primary };
       case 'cancelled':
-        return { bg: 'rgba(209, 209, 214, 0.1)', text: Colors.status.cancelled };
+        return { bg: 'rgba(244, 67, 54, 0.1)', text: Colors.negative };
       default:
         return { bg: 'rgba(209, 209, 214, 0.1)', text: Colors.text.secondary };
     }
   };
-  
-  // Handle print payment
-  const handlePrint = (payment: PaymentOut) => {
-    Alert.alert('Print', `Printing payment #${payment.referenceNumber}...`);
-  };
-  
-  // Handle share payment
-  const handleShare = (payment: PaymentOut) => {
-    Alert.alert('Share', `Sharing payment #${payment.referenceNumber}...`);
+
+  const renderPaymentItem = useCallback(({ item }: { item: any }) => {
+    const statusColors = getStatusColor(item.status);
+    return (
+      <TouchableOpacity 
+        style={styles.card}
+        onPress={() => router.push(`/payment-out/${item.id}`)}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderLeft}>
+            <Text style={styles.paymentNumber}>#{item.paymentNumber}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: statusColors.bg }]}>
+              <Text style={[styles.statusText, { color: statusColors.text }]}>
+                {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.cardHeaderRight}>
+            <TouchableOpacity style={styles.iconButton}>
+              <Share2 size={18} color={Colors.text.secondary} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconButton}>
+              <Printer size={18} color={Colors.text.secondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.cardContent}>
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Method:</Text>
+            <Text style={styles.value}>{item.paymentMethod}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Date:</Text>
+            <Text style={styles.value}>{new Date(item.paymentDate).toLocaleDateString()}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Amount:</Text>
+            <Text style={styles.amount}>${(item.amount / 100).toFixed(2)}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [router]);
+
+  // Add search handler
+  const handleSearch = (text: string) => {
+    setSearchQuery(text);
+    if (text) {
+      const query = text.toLowerCase();
+      const filtered = allPayments.filter(payment => 
+        payment.paymentNumber.toLowerCase().includes(query) ||
+        payment.referenceNumber?.toLowerCase().includes(query) ||
+        payment.paymentMethod.toLowerCase().includes(query)
+      );
+      setPayments(filtered);
+    } else {
+      setPayments(allPayments);
+    }
   };
 
-  const renderPaymentItem = useCallback(({ item }: { item: PaymentOut }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => router.push(`/payment-out/${item.id}`)}
-    >
-      <View style={styles.cardHeader}>
-        <View style={styles.vendorInfo}>
-          <Text style={styles.vendorName}>{item.vendorName}</Text>
-          <Text style={styles.refNumber}>#{item.referenceNumber}</Text>
-        </View>
-        <Text style={styles.amount}>${item.amount.toFixed(2)}</Text>
-      </View>
-      
-      <View style={styles.cardContent}>
-        <View style={styles.infoRow}>
-          <View style={styles.infoItem}>
-            <Calendar size={16} color={Colors.text.secondary} style={styles.infoIcon} />
-            <Text style={styles.infoText}>{new Date(item.paymentDate).toLocaleDateString()}</Text>
-          </View>
-          <View style={styles.infoItem}>
-            <CreditCard size={16} color={Colors.text.secondary} style={styles.infoIcon} />
-            <Text style={styles.infoText}>
-              {item.paymentMethod.split('_').map(word => 
-                word.charAt(0).toUpperCase() + word.slice(1)
-              ).join(' ')}
-            </Text>
-          </View>
-        </View>
-      </View>
-      
-      <View style={styles.cardFooter}>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status).bg }]}>
-          <Text style={[styles.statusText, { color: getStatusColor(item.status).text }]}>
-            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-          </Text>
-        </View>
-        
-        <View style={styles.actions}>
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={() => handlePrint(item)}
-          >
-            <Printer size={18} color={Colors.text.secondary} />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={() => handleShare(item)}
-          >
-            <Share2 size={18} color={Colors.text.secondary} />
-          </TouchableOpacity>
-        </View>
-      </View>
-    </TouchableOpacity>
-  ), []);
-  
-  // Render empty list
-  const renderEmptyList = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyTitle}>No Payments Found</Text>
-      <Text style={styles.emptyText}>
-        {searchQuery || filterOption !== 'all' 
-          ? 'Try changing your search or filter options' 
-          : 'Tap the + button to create your first payment'}
-      </Text>
-    </View>
-  );
+  // Add filter handler
+  const handleFilter = (filter: FilterOption) => {
+    setFilterBy(filter);
+    if (filter === 'all') {
+      setPayments(allPayments);
+    } else {
+      const filtered = allPayments.filter(payment => payment.status === filter);
+      setPayments(filtered);
+    }
+  };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Payment Out</Text>
-        <View style={{width: 40}} />
+        <Text style={styles.title}>Payments Out</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.searchButton}
+            onPress={() => setShowSearch(true)}
+          >
+            <Search size={20} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.filterButton}
+            onPress={() => setShowFilterOptions(true)}
+          >
+            <Filter size={20} color={Colors.text.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <Search size={18} color={Colors.text.secondary} />
+      {showSearch && (
+        <View style={styles.searchContainer}>
           <TextInput
             style={styles.searchInput}
             placeholder="Search payments..."
-            placeholderTextColor={Colors.text.tertiary}
             value={searchQuery}
             onChangeText={handleSearch}
+            autoFocus
           />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => handleSearch("")}>
-              <X size={18} color={Colors.text.secondary} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-      
-      <View style={styles.filterSortContainer}>
-        <View style={styles.filterSortWrapper}>
           <TouchableOpacity 
-            style={styles.filterButton}
+            style={styles.closeSearchButton}
             onPress={() => {
-              setShowFilterOptions(!showFilterOptions);
-              setShowSortOptions(false);
+              setShowSearch(false);
+              setSearchQuery('');
+              setPayments(allPayments);
             }}
           >
-            <Filter size={16} color={Colors.text.secondary} />
-            <Text style={styles.filterSortText}>
-              Filter: {filterOption === 'all' ? 'All' : filterOption.charAt(0).toUpperCase() + filterOption.slice(1)}
-            </Text>
-            <ChevronDown size={16} color={Colors.text.secondary} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.sortButton}
-            onPress={() => {
-              setShowSortOptions(!showSortOptions);
-              setShowFilterOptions(false);
-            }}
-          >
-            {sortOption.includes('desc') ? (
-              <SortDesc size={16} color={Colors.text.secondary} />
-            ) : (
-              <SortAsc size={16} color={Colors.text.secondary} />
-            )}
-            <Text style={styles.filterSortText}>
-              Sort: {
-                sortOption === 'date-desc' ? 'Newest' :
-                sortOption === 'date-asc' ? 'Oldest' :
-                sortOption === 'amount-desc' ? 'Highest' : 'Lowest'
-              }
-            </Text>
-            <ChevronDown size={16} color={Colors.text.secondary} />
+            <X size={20} color={Colors.text.primary} />
           </TouchableOpacity>
         </View>
-        
-        {showFilterOptions && (
-          <View style={styles.dropdown}>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterOption === 'all' && styles.selectedItem]}
-              onPress={() => handleFilter('all')}
+      )}
+
+      {showFilterOptions && (
+        <View style={styles.filterContainer}>
+          {['all', 'pending', 'completed', 'cancelled'].map((filter) => (
+            <TouchableOpacity
+              key={filter}
+              style={[
+                styles.filterOption,
+                filterBy === filter && styles.filterOptionSelected
+              ]}
+              onPress={() => {
+                handleFilter(filter as FilterOption);
+                setShowFilterOptions(false);
+              }}
             >
-              <Text style={[styles.dropdownText, filterOption === 'all' && styles.selectedText]}>All</Text>
+              <Text style={[
+                styles.filterOptionText,
+                filterBy === filter && styles.filterOptionTextSelected
+              ]}>
+                {filter.charAt(0).toUpperCase() + filter.slice(1)}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterOption === 'completed' && styles.selectedItem]}
-              onPress={() => handleFilter('completed')}
-            >
-              <Text style={[styles.dropdownText, filterOption === 'completed' && styles.selectedText]}>Completed</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterOption === 'pending' && styles.selectedItem]}
-              onPress={() => handleFilter('pending')}
-            >
-              <Text style={[styles.dropdownText, filterOption === 'pending' && styles.selectedText]}>Pending</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterOption === 'cancelled' && styles.selectedItem]}
-              onPress={() => handleFilter('cancelled')}
-            >
-              <Text style={[styles.dropdownText, filterOption === 'cancelled' && styles.selectedText]}>Cancelled</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        
-        {showSortOptions && (
-          <View style={styles.dropdown}>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortOption === 'date-desc' && styles.selectedItem]}
-              onPress={() => handleSort('date-desc')}
-            >
-              <Text style={[styles.dropdownText, sortOption === 'date-desc' && styles.selectedText]}>Date (Newest first)</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortOption === 'date-asc' && styles.selectedItem]}
-              onPress={() => handleSort('date-asc')}
-            >
-              <Text style={[styles.dropdownText, sortOption === 'date-asc' && styles.selectedText]}>Date (Oldest first)</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortOption === 'amount-desc' && styles.selectedItem]}
-              onPress={() => handleSort('amount-desc')}
-            >
-              <Text style={[styles.dropdownText, sortOption === 'amount-desc' && styles.selectedText]}>Amount (Highest first)</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortOption === 'amount-asc' && styles.selectedItem]}
-              onPress={() => handleSort('amount-asc')}
-            >
-              <Text style={[styles.dropdownText, sortOption === 'amount-asc' && styles.selectedText]}>Amount (Lowest first)</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
+          ))}
+        </View>
+      )}
 
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading payments...</Text>
         </View>
       ) : (
         <FlatList
-          data={filteredPayments}
-          keyExtractor={(item) => item.id}
+          data={payments}
+          keyExtractor={(item) => item.id.toString()}
           renderItem={renderPaymentItem}
           contentContainerStyle={styles.listContainer}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[Colors.primary]}
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={refreshPayments} />
           }
-          ListEmptyComponent={renderEmptyList}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No payments found</Text>
+              <Text style={styles.emptySubtext}>Create a new payment to get started</Text>
+            </View>
+          }
         />
       )}
-      
       <TouchableOpacity
         style={styles.fab}
         onPress={() => router.push('/payment-out/new')}
       >
         <Plus size={24} color="#FFFFFF" />
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -374,8 +286,8 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
     backgroundColor: Colors.background.default,
@@ -393,221 +305,161 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  searchContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  searchInputContainer: {
+  headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
+    gap: 8,
   },
-  searchInput: {
-    flex: 1,
-    height: 44,
-    marginLeft: 8,
-    fontSize: 16,
-    color: Colors.text.primary,
-  },
-  filterSortContainer: {
-    position: 'relative',
-    zIndex: 100,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  filterSortWrapper: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  searchButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   filterButton: {
-    flexDirection: 'row',
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flex: 1,
-    marginRight: 8,
-  },
-  sortButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flex: 1,
-    marginLeft: 8,
-  },
-  filterSortText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: Colors.text.secondary,
-    flex: 1,
-  },
-  dropdown: {
-    position: 'absolute',
-    top: 45,
-    left: 16,
-    right: 16,
-    backgroundColor: Colors.background.default,
-    borderRadius: 10,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
-    zIndex: 200,
-  },
-  dropdownItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
-  },
-  selectedItem: {
-    backgroundColor: 'rgba(76, 175, 80, 0.08)',
-  },
-  dropdownText: {
-    fontSize: 15,
-    color: Colors.text.secondary,
-  },
-  selectedText: {
-    color: Colors.primary,
-    fontWeight: '500',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: Colors.text.secondary,
-  },
   listContainer: {
     padding: 16,
-    paddingBottom: 80,
   },
   card: {
     backgroundColor: Colors.background.default,
     borderRadius: 12,
-    marginBottom: 16,
     padding: 16,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: Colors.primary + '40',
+    borderColor: Colors.border.light,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 12,
   },
-  vendorInfo: {
-    flex: 1,
+  cardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  vendorName: {
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  paymentNumber: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
-    marginBottom: 2,
   },
-  refNumber: {
-    fontSize: 14,
-    color: Colors.text.secondary,
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
-  amount: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.primary,
+  statusText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  iconButton: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: Colors.background.secondary,
   },
   cardContent: {
-    marginBottom: 12,
+    gap: 8,
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  infoItem: {
-    flexDirection: 'row',
     alignItems: 'center',
   },
-  infoIcon: {
-    marginRight: 6,
-  },
-  infoText: {
+  label: {
     fontSize: 14,
     color: Colors.text.secondary,
   },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  value: {
+    fontSize: 14,
+    color: Colors.text.primary,
   },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  statusText: {
-    fontSize: 12,
+  amount: {
+    fontSize: 16,
     fontWeight: '600',
-  },
-  actions: {
-    flexDirection: 'row',
-  },
-  actionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.background.secondary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
+    color: Colors.primary,
   },
   emptyContainer: {
-    alignItems: 'center',
+    flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
     paddingVertical: 32,
   },
-  emptyTitle: {
-    fontSize: 18,
+  emptyText: {
+    fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
     marginBottom: 8,
   },
-  emptyText: {
+  emptySubtext: {
     fontSize: 14,
     color: Colors.text.secondary,
-    textAlign: 'center',
-    maxWidth: '80%',
   },
   fab: {
     position: 'absolute',
-    bottom: 24,
-    right: 24,
+    right: 16,
+    bottom: 16,
     width: 56,
     height: 56,
     borderRadius: 28,
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
     shadowRadius: 4,
-    elevation: 5,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  searchInput: {
+    flex: 1,
+    padding: 8,
+  },
+  closeSearchButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  filterOption: {
+    padding: 8,
+  },
+  filterOptionSelected: {
+    backgroundColor: Colors.primary,
+  },
+  filterOptionText: {
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
+  filterOptionTextSelected: {
+    fontWeight: '600',
   },
 });

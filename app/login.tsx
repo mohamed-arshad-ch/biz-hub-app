@@ -19,6 +19,7 @@ import { drizzle } from 'drizzle-orm/expo-sqlite';
 import * as Crypto from 'expo-crypto';
 import * as schema from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { useAuthStore } from '../store/auth';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -28,6 +29,7 @@ export default function LoginScreen() {
   const [error, setError] = useState('');
   
   const router = useRouter();
+  const login = useAuthStore((state) => state.login);
   
   // Use SQLite context directly
   const sqlite = useSQLiteContext();
@@ -62,8 +64,20 @@ export default function LoginScreen() {
       
       // Check if user exists and password matches
       if (user && user.password === hashedPassword) {
-        // Login successful - we found the user and password matches
-        // Store the current user ID in a global state or context if needed
+        // Generate a simple token (in production, use a proper JWT)
+        const token = await Crypto.digestStringAsync(
+          Crypto.CryptoDigestAlgorithm.SHA256,
+          `${user.id}-${Date.now()}`
+        );
+
+        // Store user data and token
+        await login({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone || '',
+          avatarUrl: user.avatarUrl || '',
+        }, token);
         
         // Check if user has company info
         const companyInfo = await db.select()

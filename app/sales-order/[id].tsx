@@ -1,41 +1,64 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, StatusBar, ActivityIndicator } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ArrowLeft, Edit, Trash2, User, Calendar, Tag, Clock, Package, DollarSign, FileText, Printer, Hash } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { SalesOrder } from '@/types/sales-order';
 import { salesOrderData } from '@/mocks/salesOrderData';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
+import { getSalesOrderById, deleteSalesOrder } from '@/db/sales-order';
+import { getCustomerById } from '@/db/customer';
+import { getProductById } from '@/db/product';
+import { useAuthStore } from '@/store/auth';
+
 export default function SalesOrderDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const [order, setOrder] = useState<SalesOrder | null>(null);
+  const { user } = useAuthStore();
+  const [order, setOrder] = useState<any>(null);
+  const [customer, setCustomer] = useState<any>(null);
+  const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // In a real app, you would fetch the order data from your backend
-    const fetchOrder = async () => {
-      try {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 300));
-        const foundOrder = salesOrderData.find(o => o.id === id);
-        if (foundOrder) {
-          setOrder(foundOrder);
-        } else {
-          Alert.alert('Error', 'Sales order not found');
-          router.back();
-        }
-      } catch (error) {
-        Alert.alert('Error', 'Failed to load order details');
-      } finally {
-        setLoading(false);
+  const fetchOrder = async () => {
+    try {
+      if (!user || !id) return;
+      setLoading(true);
+      const orderData = await getSalesOrderById(Number(id), user.id);
+      if (!orderData) {
+        Alert.alert('Error', 'Sales order not found');
+        router.back();
+        return;
       }
-    };
+      setOrder(orderData);
+      // Fetch customer
+      const customerData = await getCustomerById(orderData.customerId);
+      setCustomer(customerData);
+      // Fetch product names for items
+      const itemsWithNames = await Promise.all(
+        (orderData.items || []).map(async (item: any) => {
+          const product = await getProductById(item.productId);
+          return {
+            ...item,
+            productName: product ? product.productName : `Product #${item.productId}`
+          };
+        })
+      );
+      setItems(itemsWithNames);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to load order details');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    fetchOrder();
-  }, [id]);
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchOrder();
+    }, [id, user])
+  );
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     Alert.alert(
       'Delete Sales Order',
       'Are you sure you want to delete this sales order?',
@@ -47,9 +70,16 @@ export default function SalesOrderDetailsScreen() {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            // In a real app, you would delete the order from your backend
-            router.back();
+          onPress: async () => {
+            try {
+              if (!user || !id) return;
+              await deleteSalesOrder(Number(id), user.id);
+              Alert.alert('Deleted', 'Sales order deleted successfully', [
+                { text: 'OK', onPress: () => router.replace({ pathname: '/sales-order/sales-order' }) }
+              ]);
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete sales order');
+            }
           },
         },
       ]
@@ -76,7 +106,7 @@ export default function SalesOrderDetailsScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top','left','right','bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
@@ -110,7 +140,7 @@ export default function SalesOrderDetailsScreen() {
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.amountCard}>
             <Text style={styles.amountLabel}>Total Amount</Text>
-            <Text style={styles.amountValue}>${order.total.toFixed(2)}</Text>
+            <Text style={styles.amountValue}>${(order.total / 100).toFixed(2)}</Text>
             {order.status && (
               <View style={[
                 styles.statusBadge,
@@ -145,7 +175,7 @@ export default function SalesOrderDetailsScreen() {
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Customer</Text>
-                <Text style={styles.infoValue}>{order.customerName}</Text>
+                <Text style={styles.infoValue}>{customer ? customer.name : `Customer #${order.customerId}`}</Text>
               </View>
             </View>
             
@@ -162,14 +192,14 @@ export default function SalesOrderDetailsScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Items</Text>
-            {order.items.map((item, index) => (
+            {items.map((item, index) => (
               <View key={index} style={styles.itemContainer}>
                 <View style={styles.itemHeader}>
                   <View style={styles.itemNameContainer}>
                     <Package size={18} color={Colors.text.secondary} style={{ marginRight: 8 }} />
                     <Text style={styles.itemName}>{item.productName}</Text>
                   </View>
-                  <Text style={styles.itemTotal}>${item.total.toFixed(2)}</Text>
+                  <Text style={styles.itemTotal}>${(item.total / 100).toFixed(2)}</Text>
                 </View>
                 <View style={styles.itemDetails}>
                   <View style={styles.itemDetail}>
@@ -178,7 +208,7 @@ export default function SalesOrderDetailsScreen() {
                   </View>
                   <View style={styles.itemDetail}>
                     <Text style={styles.itemDetailLabel}>Unit Price:</Text>
-                    <Text style={styles.itemDetailValue}>${item.unitPrice.toFixed(2)}</Text>
+                    <Text style={styles.itemDetailValue}>${(item.unitPrice / 100).toFixed(2)}</Text>
                   </View>
                 </View>
               </View>
@@ -190,15 +220,15 @@ export default function SalesOrderDetailsScreen() {
             <View style={styles.summaryContainer}>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Subtotal</Text>
-                <Text style={styles.summaryValue}>${order.subtotal.toFixed(2)}</Text>
+                <Text style={styles.summaryValue}>${(order.subtotal / 100).toFixed(2)}</Text>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Tax (10%)</Text>
-                <Text style={styles.summaryValue}>${order.tax.toFixed(2)}</Text>
+                <Text style={styles.summaryLabel}>Tax</Text>
+                <Text style={styles.summaryValue}>${(order.tax / 100).toFixed(2)}</Text>
               </View>
               <View style={[styles.summaryRow, styles.totalRow]}>
                 <Text style={styles.totalRowLabel}>Total</Text>
-                <Text style={styles.totalRowValue}>${order.total.toFixed(2)}</Text>
+                <Text style={styles.totalRowValue}>${(order.total / 100).toFixed(2)}</Text>
               </View>
             </View>
           </View>
@@ -211,7 +241,7 @@ export default function SalesOrderDetailsScreen() {
           )}
         </ScrollView>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 

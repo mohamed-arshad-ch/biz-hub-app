@@ -34,6 +34,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { drizzle } from 'drizzle-orm/expo-sqlite';
 import * as dbCustomer from '@/db/customer';
 import * as schema from '@/db/schema';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Type definitions
 type SortOption = 'name-asc' | 'name-desc' | 'type-asc' | 'type-desc' | 'recent';
@@ -289,7 +290,7 @@ export default function CustomersScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
       <View style={styles.header}>
@@ -461,7 +462,7 @@ export default function CustomersScreen() {
       >
         <Plus size={24} color="#FFFFFF" />
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 

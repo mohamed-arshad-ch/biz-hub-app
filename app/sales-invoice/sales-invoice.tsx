@@ -1,192 +1,142 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, StatusBar } from 'react-native';
-import { useRouter } from 'expo-router';
-import { 
-  Plus, 
-  Search, 
-  Filter, 
-  ArrowLeft, 
-  Calendar, 
-  SortAsc, 
-  SortDesc,
-  ChevronDown, 
-  User, 
-  Share2,
-  Printer,
-  X,
-  FileText
-} from 'lucide-react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, StatusBar, RefreshControl, ActivityIndicator } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { Plus, Search, Filter, ArrowLeft, Calendar, SortAsc, SortDesc, ChevronDown, User, Share2, Printer, X, FileText } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// Define the SalesInvoice interface
-interface SalesInvoice {
-  id: string;
-  invoiceNumber: string;
-  customerName: string;
-  invoiceDate: string;
-  dueDate: string;
-  total: number;
-  subtotal: number;
-  tax: number;
-  status: 'paid' | 'unpaid' | 'overdue' | 'cancelled';
-  items: Array<{
-    productId: string;
-    productName: string;
-    quantity: number;
-    unitPrice: number;
-    total: number;
-  }>;
-  notes?: string;
-}
-
-// Mock data for sales invoices
-const salesInvoiceData: SalesInvoice[] = [
-  {
-    id: '1',
-    invoiceNumber: 'INV-0001',
-    customerName: 'Acme Corporation',
-    invoiceDate: '2023-05-15',
-    dueDate: '2023-06-15',
-    total: 1250.00,
-    subtotal: 1136.36,
-    tax: 113.64,
-    status: 'paid',
-    items: [
-      {
-        productId: 'p1',
-        productName: 'Website Development',
-        quantity: 1,
-        unitPrice: 1000.00,
-        total: 1000.00
-      },
-      {
-        productId: 'p2',
-        productName: 'SEO Services',
-        quantity: 5,
-        unitPrice: 50.00,
-        total: 250.00
-      }
-    ]
-  },
-  {
-    id: '2',
-    invoiceNumber: 'INV-0002',
-    customerName: 'Tech Solutions Inc.',
-    invoiceDate: '2023-05-20',
-    dueDate: '2023-06-20',
-    total: 750.00,
-    subtotal: 681.82,
-    tax: 68.18,
-    status: 'unpaid',
-    items: [
-      {
-        productId: 'p3',
-        productName: 'Consulting Services',
-        quantity: 5,
-        unitPrice: 150.00,
-        total: 750.00
-      }
-    ]
-  },
-  {
-    id: '3',
-    invoiceNumber: 'INV-0003',
-    customerName: 'Global Enterprises',
-    invoiceDate: '2023-04-10',
-    dueDate: '2023-05-10',
-    total: 3500.00,
-    subtotal: 3181.82,
-    tax: 318.18,
-    status: 'overdue',
-    items: [
-      {
-        productId: 'p4',
-        productName: 'Software License',
-        quantity: 1,
-        unitPrice: 2500.00,
-        total: 2500.00
-      },
-      {
-        productId: 'p5',
-        productName: 'Support Package',
-        quantity: 10,
-        unitPrice: 100.00,
-        total: 1000.00
-      }
-    ]
-  },
-  {
-    id: '4',
-    invoiceNumber: 'INV-0004',
-    customerName: 'Startups Ltd.',
-    invoiceDate: '2023-05-25',
-    dueDate: '2023-06-25',
-    total: 500.00,
-    subtotal: 454.55,
-    tax: 45.45,
-    status: 'cancelled',
-    items: [
-      {
-        productId: 'p6',
-        productName: 'Marketing Materials',
-        quantity: 1,
-        unitPrice: 500.00,
-        total: 500.00
-      }
-    ]
-  }
-];
+import { useAuthStore } from '@/store/auth';
+import { getSalesInvoices } from '@/db/sales-invoice';
+import { getAllCustomers } from '@/db/customer';
+import type { SalesInvoice } from '@/db/schema';
+import type { Customer } from '@/db/schema';
 
 type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc';
 type FilterOption = 'all' | 'paid' | 'unpaid' | 'overdue' | 'cancelled';
 
 export default function SalesInvoiceScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
-  const [invoices, setInvoices] = useState<SalesInvoice[]>(salesInvoiceData);
+  const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [showSortOptions, setShowSortOptions] = useState(false);
   const [showFilterOptions, setShowFilterOptions] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('date-desc');
   const [filterBy, setFilterBy] = useState<FilterOption>('all');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [allInvoices, setAllInvoices] = useState<SalesInvoice[]>([]);
+
+  useEffect(() => {
+    loadInvoices();
+    loadCustomers();
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadInvoices();
+      loadCustomers();
+    }, [sortBy])
+  );
+
+  const loadInvoices = async () => {
+    try {
+      if (!user) return;
+      setLoading(true);
+      let sortParam: 'newest' | 'oldest' = 'newest';
+      if (sortBy === 'date-desc') sortParam = 'newest';
+      else if (sortBy === 'date-asc') sortParam = 'oldest';
+      const fetchedInvoices = await getSalesInvoices(user.id, sortParam);
+      setAllInvoices(fetchedInvoices);
+      setInvoices(fetchedInvoices);
+    } catch (error) {
+      console.error('Error loading invoices:', error);
+      Alert.alert('Error', 'Failed to load sales invoices');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadCustomers = async () => {
+    try {
+      const fetchedCustomers = await getAllCustomers();
+      setCustomers(fetchedCustomers);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+    }
+  };
+
+  const refreshInvoices = async () => {
+    setRefreshing(true);
+    await loadInvoices();
+    setRefreshing(false);
+  };
+
+  // Helper to get customer name by id
+  const getCustomerName = (customerId: number) => {
+    const customer = customers.find(c => c.id === customerId);
+    return customer ? customer.name : `Customer #${customerId}`;
+  };
+
+  // Apply search, filter, and sort
+  useEffect(() => {
+    let filtered = [...allInvoices];
+    // Filter by status
+    if (filterBy !== 'all') {
+      filtered = filtered.filter(invoice => invoice.status === filterBy);
+    }
+    // Search by invoice number or customer name
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter(invoice =>
+        (invoice.invoiceNumber ?? '').toLowerCase().includes(q) ||
+        (getCustomerName(invoice.customerId) ?? '').toLowerCase().includes(q)
+      );
+    }
+    // Only sort by amount here; date sort is handled in DB
+    if (sortBy === 'amount-desc') {
+      filtered.sort((a, b) => b.total - a.total);
+    } else if (sortBy === 'amount-asc') {
+      filtered.sort((a, b) => a.total - b.total);
+    }
+    setInvoices(filtered);
+  }, [allInvoices, customers, searchQuery, filterBy, sortBy]);
 
   const handleSort = (option: SortOption) => {
     setSortBy(option);
     setShowSortOptions(false);
-    
-    // Sort the invoices based on selected option
-    const sortedInvoices = [...invoices].sort((a, b) => {
-      if (option === 'date-desc') {
-        return new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
-      } else if (option === 'date-asc') {
-        return new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime();
-      } else if (option === 'amount-desc') {
-        return b.total - a.total;
-      } else {
-        return a.total - b.total;
-      }
-    });
-    
-    setInvoices(sortedInvoices);
+    if (option === 'date-desc' || option === 'date-asc') {
+      loadInvoices();
+    } else {
+      // For amount sort, do client-side sort
+      const sortedInvoices = [...invoices].sort((a, b) => {
+        if (option === 'amount-desc') {
+          return b.total - a.total;
+        } else {
+          return a.total - b.total;
+        }
+      });
+      setInvoices(sortedInvoices);
+    }
   };
 
   const handleFilter = (option: FilterOption) => {
     setFilterBy(option);
     setShowFilterOptions(false);
-    
     // Filter the invoices based on selected option
     if (option === 'all') {
-      setInvoices(salesInvoiceData);
+      loadInvoices();
     } else {
-      const filteredInvoices = salesInvoiceData.filter(invoice => invoice.status === option);
+      const filteredInvoices = allInvoices.filter(invoice => invoice.status === option);
       setInvoices(filteredInvoices);
     }
   };
-  
-  const handlePrint = (id: string) => {
+
+  const handlePrint = (id: number) => {
     Alert.alert('Print', 'Printing sales invoice...');
   };
-  
-  const handleShare = (id: string) => {
+
+  const handleShare = (id: number) => {
     Alert.alert('Share', 'Sharing sales invoice...');
   };
 
@@ -210,15 +160,14 @@ export default function SalesInvoiceScreen() {
       style={styles.invoiceItem}
       onPress={() => router.push({
         pathname: '/sales-invoice/[id]',
-        params: { id: item.id }
+        params: { id: item.id.toString() }
       })}
     >
       <View style={styles.invoiceContent}>
         <View style={styles.invoiceMainInfo}>
-          <Text style={styles.customerName}>{item.customerName}</Text>
-          <Text style={styles.amount}>${item.total.toFixed(2)}</Text>
+          <Text style={styles.customerName}>{getCustomerName(item.customerId)}</Text>
+          <Text style={styles.amount}>${(item.total / 100).toFixed(2)}</Text>
         </View>
-        
         <View style={styles.invoiceDetails}>
           <View style={styles.detailRow}>
             <Calendar size={16} color={Colors.text.secondary} style={styles.detailIcon} />
@@ -233,24 +182,22 @@ export default function SalesInvoiceScreen() {
             </Text>
           </View>
         </View>
-        
         <View style={styles.invoiceFooter}>
           <View style={[
             styles.statusBadge,
             { 
-              backgroundColor: getStatusColor(item.status).bg
+              backgroundColor: getStatusColor(item.status ?? 'unpaid').bg
             }
           ]}>
             <Text style={[
               styles.statusText,
               { 
-                color: getStatusColor(item.status).text
+                color: getStatusColor(item.status ?? 'unpaid').text
               }
             ]}>
-              {item.status.toUpperCase()}
+              {(item.status ?? 'unpaid').toUpperCase()}
             </Text>
           </View>
-          
           <View style={styles.actionIcons}>
             <TouchableOpacity 
               style={styles.actionBtn}
@@ -268,7 +215,7 @@ export default function SalesInvoiceScreen() {
         </View>
       </View>
     </TouchableOpacity>
-  ), []);
+  ), [customers]);
 
   return (
     <View style={styles.container}>
@@ -280,25 +227,23 @@ export default function SalesInvoiceScreen() {
         <Text style={styles.title}>Sales Invoices</Text>
         <View style={{width: 40}} />
       </View>
-
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
           <Search size={18} color={Colors.text.secondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search invoices..."
+            placeholder="Search by invoice number or customer name"
             placeholderTextColor={Colors.text.tertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
+            <TouchableOpacity onPress={() => setSearchQuery("")}> 
               <X size={18} color={Colors.text.secondary} />
             </TouchableOpacity>
           )}
         </View>
       </View>
-      
       <View style={styles.filterSortContainer}>
         <View style={styles.filterSortWrapper}>
           <TouchableOpacity 
@@ -314,7 +259,6 @@ export default function SalesInvoiceScreen() {
             </Text>
             <ChevronDown size={16} color={Colors.text.secondary} />
           </TouchableOpacity>
-          
           <TouchableOpacity 
             style={styles.sortButton}
             onPress={() => {
@@ -337,7 +281,6 @@ export default function SalesInvoiceScreen() {
             <ChevronDown size={16} color={Colors.text.secondary} />
           </TouchableOpacity>
         </View>
-        
         {showFilterOptions && (
           <View style={styles.dropdown}>
             <TouchableOpacity 
@@ -372,7 +315,6 @@ export default function SalesInvoiceScreen() {
             </TouchableOpacity>
           </View>
         )}
-        
         {showSortOptions && (
           <View style={styles.dropdown}>
             <TouchableOpacity 
@@ -402,31 +344,28 @@ export default function SalesInvoiceScreen() {
           </View>
         )}
       </View>
-
-      <FlatList
-        data={invoices.filter(invoice => {
-          if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            return (
-              invoice.invoiceNumber.toLowerCase().includes(query) ||
-              invoice.customerName.toLowerCase().includes(query) ||
-              String(invoice.total).includes(query)
-            );
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={invoices}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderInvoiceItem}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={refreshInvoices} />
           }
-          return true;
-        })}
-        keyExtractor={(item) => item.id}
-        renderItem={renderInvoiceItem}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No invoices found</Text>
-            <Text style={styles.emptySubtext}>Create a new invoice to get started</Text>
-          </View>
-        }
-      />
-      
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No invoices found</Text>
+              <Text style={styles.emptySubtext}>Create a new invoice to get started</Text>
+            </View>
+          }
+        />
+      )}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => router.push('/sales-invoice/new')}

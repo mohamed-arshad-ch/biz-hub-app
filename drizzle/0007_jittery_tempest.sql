@@ -1,0 +1,32 @@
+CREATE TABLE `products` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`user_id` integer NOT NULL,
+	`product_name` text NOT NULL,
+	`sku` text NOT NULL,
+	`barcode` text,
+	`category` text,
+	`brand` text,
+	`is_active` integer DEFAULT true,
+	`cost_price` integer NOT NULL,
+	`selling_price` integer NOT NULL,
+	`tax_rate` integer DEFAULT 0,
+	`stock_quantity` integer NOT NULL,
+	`unit` text DEFAULT 'piece',
+	`reorder_level` integer DEFAULT 0,
+	`vendor` text,
+	`location` text,
+	`short_description` text,
+	`full_description` text,
+	`weight` integer DEFAULT 0,
+	`length` integer DEFAULT 0,
+	`width` integer DEFAULT 0,
+	`height` integer DEFAULT 0,
+	`tags` text,
+	`notes` text,
+	`images` text,
+	`created_at` text DEFAULT CURRENT_TIMESTAMP,
+	`updated_at` text DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `products_sku_unique` ON `products` (`sku`);

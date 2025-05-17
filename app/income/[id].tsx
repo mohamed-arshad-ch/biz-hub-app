@@ -28,37 +28,48 @@ import {
 } from "lucide-react-native";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from "@/constants/colors";
-import { getIncomeById, deleteIncome } from "@/mocks/incomeData";
+import { getIncomeById, deleteIncome } from "@/db/income";
 import { formatCurrency, formatDate } from "@/utils/formatters";
-import { IncomeRecord } from "@/types/income";
+import { useAuthStore } from "@/store/auth";
 import SnackBar from "@/components/SnackBar";
 
 export default function IncomeDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [income, setIncome] = useState<IncomeRecord | null>(null);
+  const user = useAuthStore(state => state.user);
+  const insets = useSafeAreaInsets();
+  const [income, setIncome] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [snackBarVisible, setSnackBarVisible] = useState(false);
   const [snackBarMessage, setSnackBarMessage] = useState("");
-  const [deletedIncome, setDeletedIncome] = useState<IncomeRecord | null>(null);
+  const [deletedIncome, setDeletedIncome] = useState<any>(null);
 
   useEffect(() => {
-    if (id) {
-      // Simulate API call
-      setTimeout(() => {
-        const incomeData = getIncomeById("i1");
-        if (incomeData) {
-          setIncome(incomeData);
-        }
-        setLoading(false);
-      }, 500);
+    if (id && user) {
+      loadIncomeDetails();
     }
-  }, [id]);
+  }, [id, user]);
+
+  const loadIncomeDetails = async () => {
+    if (!user || !id) return;
+    
+    try {
+      const incomeData = await getIncomeById(parseInt(id), user.id);
+      if (incomeData) {
+        setIncome(incomeData);
+      }
+    } catch (error) {
+      console.error('Error loading income details:', error);
+      Alert.alert('Error', 'Failed to load income details');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEdit = () => {
     if (income) {
-      router.push(`/income/edit/1`);
+      router.push(`/income/edit/${income.id}`);
     }
   };
 
@@ -67,7 +78,7 @@ export default function IncomeDetailScreen() {
     
     Alert.alert(
       "Delete Income",
-      `Are you sure you want to delete this income record from ${income.source}? This action cannot be undone.`,
+      "Are you sure you want to delete this income record? This action cannot be undone.",
       [
         {
           text: "Cancel",
@@ -83,32 +94,23 @@ export default function IncomeDetailScreen() {
   };
 
   const performDelete = async () => {
-    if (!income) return;
+    if (!income || !user) return;
     
     setIsDeleting(true);
     setDeletedIncome(income);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await deleteIncome(income.id, user.id);
+      setIsDeleting(false);
       
-      // Delete the income
-      const success = deleteIncome(income.id);
+      // Show snackbar with undo option
+      setSnackBarMessage("Income record deleted");
+      setSnackBarVisible(true);
       
-      if (success) {
-        setIsDeleting(false);
-        
-        // Show snackbar with undo option
-        setSnackBarMessage(`Income record from ${income.source} deleted`);
-        setSnackBarVisible(true);
-        
-        // Navigate back after a short delay
-        setTimeout(() => {
-          router.back();
-        }, 300);
-      } else {
-        throw new Error("Failed to delete income record");
-      }
+      // Navigate back after a short delay
+      setTimeout(() => {
+        router.back();
+      }, 300);
     } catch (error) {
       setIsDeleting(false);
       Alert.alert(
@@ -130,11 +132,7 @@ export default function IncomeDetailScreen() {
     
     // In a real app, this would restore the deleted income in the database
     // For now, we'll just show a message
-    if (Platform.OS === "android") {
-      Alert.alert("Income Restored", "The income record has been restored successfully.");
-    } else {
-      Alert.alert("Income Restored", "The income record has been restored successfully.");
-    }
+    Alert.alert("Income Restored", "The income record has been restored successfully.");
     
     setSnackBarVisible(false);
     router.replace(`/income/${deletedIncome.id}`);
@@ -147,14 +145,13 @@ export default function IncomeDetailScreen() {
       await Share.share({
         message: `Income Details
 
-Source: ${income.source}
 Amount: ${formatCurrency(income.amount)}
 Date: ${formatDate(income.date)}
-Category: ${income.category}
+Description: ${income.description || "N/A"}
 Payment Method: ${income.paymentMethod || "N/A"}
-Reference: ${income.reference || "N/A"}
-Notes: ${income.notes || "N/A"}`,
-        title: `Income from ${income.source}`,
+Reference Number: ${income.referenceNumber || "N/A"}
+Status: ${income.status}`,
+        title: "Income Details",
       });
     } catch (error) {
       console.error("Error sharing income details:", error);
@@ -165,22 +162,9 @@ Notes: ${income.notes || "N/A"}`,
     Alert.alert('Print', 'Printing income record...');
   };
 
-  // Get category color based on category name
-  const getCategoryColor = (category: string): string => {
-    const categoryColors: Record<string, string> = {
-      'Salary': '#4CAF50',
-      'Investment': '#2196F3',
-      'Business': '#FBBC04',
-      'Freelance': '#9C27B0',
-      'Other': '#757575'
-    };
-    
-    return categoryColors[category] || '#757575';
-  };
-
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { paddingTop: insets.top }]}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <ActivityIndicator size="large" color={Colors.primary} />
         <Text style={styles.loadingText}>Loading income details...</Text>
@@ -190,7 +174,7 @@ Notes: ${income.notes || "N/A"}`,
 
   if (isDeleting) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { paddingTop: insets.top }]}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <ActivityIndicator size="large" color="#FF3B30" />
         <Text style={styles.loadingText}>Deleting income record...</Text>
@@ -200,24 +184,24 @@ Notes: ${income.notes || "N/A"}`,
 
   if (!income) {
     return (
-      <View style={styles.errorContainer}>
+      <View style={[styles.errorContainer, { paddingTop: insets.top }]}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
         <Text style={styles.errorText}>Income record not found</Text>
         <TouchableOpacity 
-          style={styles.backButton}
+          style={styles.errorBackButton}
           onPress={() => router.back()}
         >
-          <Text style={styles.backButtonText}>Go Back</Text>
+          <Text style={styles.errorBackButtonText}>Go Back</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerBackButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Income Details</Text>
@@ -237,91 +221,70 @@ Notes: ${income.notes || "N/A"}`,
         </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
+      >
         <View style={styles.amountCard}>
           <Text style={styles.amountLabel}>Amount</Text>
           <Text style={styles.amountValue}>{formatCurrency(income.amount)}</Text>
-          <View style={[
-            styles.categoryBadge,
-            { backgroundColor: `${getCategoryColor(income.category)}20` }
-          ]}>
-            <Tag size={16} color={getCategoryColor(income.category)} style={styles.categoryIcon} />
-            <Text style={[
-              styles.categoryText,
-              { color: getCategoryColor(income.category) }
-            ]}>
-              {income.category.toUpperCase()}
-            </Text>
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusText}>{income.status}</Text>
           </View>
         </View>
-        
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Income Information</Text>
-          
-          <View style={styles.infoItem}>
-            <View style={styles.infoIconContainer}>
-              <User size={20} color={Colors.primary} />
+
+        <View style={styles.detailsCard}>
+          <View style={styles.detailRow}>
+            <View style={styles.detailIcon}>
+              <Calendar size={20} color={Colors.text.secondary} />
             </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Source</Text>
-              <Text style={styles.infoValue}>{income.source}</Text>
+            <View style={styles.detailContent}>
+              <Text style={styles.detailLabel}>Date</Text>
+              <Text style={styles.detailValue}>{formatDate(income.date)}</Text>
             </View>
           </View>
-          
-          <View style={styles.infoItem}>
-            <View style={styles.infoIconContainer}>
-              <Calendar size={20} color={Colors.primary} />
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Income Date</Text>
-              <Text style={styles.infoValue}>{formatDate(income.date)}</Text>
-            </View>
-          </View>
-          
-          {income.paymentMethod && (
-            <View style={styles.infoItem}>
-              <View style={styles.infoIconContainer}>
-                <CreditCard size={20} color={Colors.primary} />
+
+          {income.description && (
+            <View style={styles.detailRow}>
+              <View style={styles.detailIcon}>
+                <FileText size={20} color={Colors.text.secondary} />
               </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Payment Method</Text>
-                <Text style={styles.infoValue}>{income.paymentMethod}</Text>
+              <View style={styles.detailContent}>
+                <Text style={styles.detailLabel}>Description</Text>
+                <Text style={styles.detailValue}>{income.description}</Text>
               </View>
             </View>
           )}
-          
-          {income.reference && (
-            <View style={styles.infoItem}>
-              <View style={styles.infoIconContainer}>
-                <Hash size={20} color={Colors.primary} />
+
+          <View style={styles.detailRow}>
+            <View style={styles.detailIcon}>
+              <CreditCard size={20} color={Colors.text.secondary} />
+            </View>
+            <View style={styles.detailContent}>
+              <Text style={styles.detailLabel}>Payment Method</Text>
+              <Text style={styles.detailValue}>{income.paymentMethod || "Not specified"}</Text>
+            </View>
+          </View>
+
+          {income.referenceNumber && (
+            <View style={styles.detailRow}>
+              <View style={styles.detailIcon}>
+                <Hash size={20} color={Colors.text.secondary} />
               </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Reference Number</Text>
-                <Text style={styles.infoValue}>{income.reference}</Text>
+              <View style={styles.detailContent}>
+                <Text style={styles.detailLabel}>Reference Number</Text>
+                <Text style={styles.detailValue}>{income.referenceNumber}</Text>
               </View>
             </View>
           )}
         </View>
-        
-        {income.notes && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Notes</Text>
-            <View style={styles.notesContainer}>
-              <View style={styles.infoIconContainer}>
-                <FileText size={20} color={Colors.primary} />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.notesText}>{income.notes}</Text>
-              </View>
-            </View>
-          </View>
-        )}
       </ScrollView>
-      
+
       <SnackBar
         visible={snackBarVisible}
         message={snackBarMessage}
-        action="UNDO"
+        action="Undo"
         onAction={handleUndoDelete}
         onDismiss={() => setSnackBarVisible(false)}
       />
@@ -344,7 +307,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
-  backButton: {
+  headerBackButton: {
     width: 40,
     height: 40,
     justifyContent: 'center',
@@ -357,33 +320,26 @@ const styles = StyleSheet.create({
   },
   headerButtons: {
     flexDirection: 'row',
+    alignItems: 'center',
   },
   headerButton: {
     width: 40,
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 8,
   },
   content: {
     flex: 1,
-    padding: 16,
   },
   amountCard: {
     backgroundColor: Colors.background.default,
-    borderRadius: 16,
     padding: 20,
-    marginBottom: 16,
-    alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    margin: 16,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.primary + '20',
+    borderColor: Colors.border.light,
+    alignItems: 'center',
   },
   amountLabel: {
     fontSize: 16,
@@ -393,107 +349,88 @@ const styles = StyleSheet.create({
   amountValue: {
     fontSize: 32,
     fontWeight: '700',
-    color: Colors.primary,
-    marginBottom: 16,
+    color: Colors.text.primary,
+    marginBottom: 12,
   },
-  categoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
+  statusBadge: {
+    backgroundColor: Colors.primary + '20',
     paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 16,
   },
-  categoryIcon: {
-    marginRight: 6,
+  statusText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '500',
   },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  section: {
+  detailsCard: {
     backgroundColor: Colors.background.default,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    margin: 16,
+    marginTop: 0,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.border.light,
+    padding: 16,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    marginBottom: 16,
-  },
-  infoItem: {
+  detailRow: {
     flexDirection: 'row',
-    marginBottom: 16,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
   },
-  infoIconContainer: {
+  detailIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.primary + '10',
+    backgroundColor: Colors.background.secondary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 12,
   },
-  infoContent: {
+  detailContent: {
     flex: 1,
-    justifyContent: 'center',
   },
-  infoLabel: {
+  detailLabel: {
     fontSize: 14,
     color: Colors.text.secondary,
     marginBottom: 4,
   },
-  infoValue: {
+  detailValue: {
     fontSize: 16,
     color: Colors.text.primary,
-    fontWeight: '500',
-  },
-  notesContainer: {
-    flexDirection: 'row',
-  },
-  notesText: {
-    fontSize: 16,
-    color: Colors.text.primary,
-    lineHeight: 24,
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: Colors.background.default,
   },
   loadingText: {
-    marginTop: 16,
+    marginTop: 12,
     fontSize: 16,
     color: Colors.text.secondary,
   },
   errorContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: Colors.background.default,
-    padding: 16,
+    padding: 20,
   },
   errorText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.negative || "#FF3B30",
+    fontSize: 16,
+    color: Colors.text.secondary,
     marginBottom: 16,
   },
-  backButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 16,
+  errorBackButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  errorBackButtonText: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });

@@ -1,6 +1,6 @@
 export interface PaymentIn {
   id: string;
-  customerId: string;
+  customerId: number;
   customerName: string;
   amount: number;
   paymentDate: string;
@@ -13,7 +13,7 @@ export interface PaymentIn {
 }
 
 export interface PaymentInFormData {
-  customerId: string;
+  customerId: number;
   amount: number;
   paymentDate: string;
   paymentMethod: string;

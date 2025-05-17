@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -11,7 +11,8 @@ import {
   KeyboardAvoidingView, 
   Platform,
   Modal,
-  FlatList
+  FlatList,
+  ActivityIndicator
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { 
@@ -30,14 +31,20 @@ import {
   DollarSign
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { getCustomersData } from '@/mocks/customersData';
-import { getProductsData } from '@/mocks/productsData';
 import { Customer } from '@/types/customer';
 import { Product } from '@/types/product';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSQLiteContext } from 'expo-sqlite';
+import { drizzle } from 'drizzle-orm/expo-sqlite';
+import * as schema from '@/db/schema';
+import * as dbCustomer from '@/db/customer';
+import * as dbProduct from '@/db/product';
+import { useAuthStore } from '@/store/auth';
+import { createSalesInvoice } from '@/db/sales-invoice';
+
 // Define the SalesInvoiceItem interface
 interface SalesInvoiceItem {
-  productId: string;
+  productId: number | null;
   productName: string;
   quantity: number;
   unitPrice: number;
@@ -67,6 +74,9 @@ const STATUS_OPTIONS = [
 
 export default function NewSalesInvoiceScreen() {
   const router = useRouter();
+  const sqlite = useSQLiteContext();
+  const db = drizzle(sqlite, { schema });
+  const { user } = useAuthStore();
   const [formData, setFormData] = useState<SalesInvoiceFormData>({
     customerId: '',
     invoiceNumber: `INV-${Date.now().toString().slice(-4)}`,
@@ -85,89 +95,193 @@ export default function NewSalesInvoiceScreen() {
   const [showProductSheet, setShowProductSheet] = useState<number | null>(null);
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   
-  // Search functionality for customers
-  const [customers] = useState<Customer[]>(getCustomersData());
+  // Customer data state
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
+  
+  // Product data state
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+
+  // Filter customers based on search
   const filteredCustomers = customers.filter(customer => 
-    customer.name.toLowerCase().includes(customerSearch.toLowerCase())
+    customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+    (customer.email && customer.email.toLowerCase().includes(customerSearch.toLowerCase())) ||
+    (customer.phone && customer.phone.includes(customerSearch))
   );
   
-  const [products] = useState<Product[]>(getProductsData());
-  // Search functionality for products
-  const [productSearch, setProductSearch] = useState('');
+  // Filter products based on search
   const filteredProducts = products.filter(product => 
-    product.name.toLowerCase().includes(productSearch.toLowerCase())
+    product.productName.toLowerCase().includes(productSearch.toLowerCase()) ||
+    (product.sku && product.sku.toLowerCase().includes(productSearch.toLowerCase()))
   );
+
+  // Load customers when bottom sheet is opened
+  useEffect(() => {
+    if (showCustomerSheet) {
+      loadCustomers();
+    }
+  }, [showCustomerSheet]);
+
+  // Load products when bottom sheet is opened
+  useEffect(() => {
+    if (showProductSheet !== null) {
+      loadProducts();
+    }
+  }, [showProductSheet]);
+
+  const loadCustomers = async () => {
+    try {
+      setLoadingCustomers(true);
+      const dbCustomers = await dbCustomer.getAllCustomers();
+      const mappedCustomers: Customer[] = dbCustomers.map(c => ({
+        id: c.id,
+        userId: c.userId,
+        name: c.name,
+        company: c.company,
+        email: c.email,
+        phone: c.phone,
+        address: c.address,
+        city: c.city,
+        state: c.state,
+        zipCode: c.zipCode,
+        country: c.country,
+        contactPerson: c.contactPerson,
+        category: c.category,
+        status: (c.status === 'active' || c.status === 'inactive' || c.status === 'blocked') ? c.status : 'active',
+        notes: c.notes,
+        creditLimit: c.creditLimit,
+        paymentTerms: c.paymentTerms,
+        taxId: c.taxId,
+        tags: c.tags,
+        outstandingBalance: c.outstandingBalance,
+        totalPurchases: c.totalPurchases,
+        createdAt: c.createdAt
+      }));
+      setCustomers(mappedCustomers);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+      Alert.alert('Error', 'Failed to load customers');
+    } finally {
+      setLoadingCustomers(false);
+    }
+  };
+
+  const loadProducts = async () => {
+    try {
+      setLoadingProducts(true);
+      const dbProducts = await dbProduct.getAllProducts();
+      const mappedProducts: Product[] = dbProducts.map(p => ({
+        id: p.id,
+        userId: p.userId,
+        productName: p.productName,
+        sku: p.sku,
+        barcode: p.barcode,
+        category: p.category,
+        brand: p.brand,
+        isActive: p.isActive ?? true,
+        costPrice: p.costPrice,
+        sellingPrice: p.sellingPrice,
+        taxRate: p.taxRate,
+        stockQuantity: p.stockQuantity,
+        unit: p.unit,
+        reorderLevel: p.reorderLevel,
+        vendor: p.vendor,
+        location: p.location,
+        shortDescription: p.shortDescription,
+        fullDescription: p.fullDescription,
+        weight: p.weight,
+        length: p.length,
+        width: p.width,
+        height: p.height,
+        tags: p.tags,
+        notes: p.notes,
+        images: p.images,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt
+      }));
+      setProducts(mappedProducts);
+    } catch (error) {
+      console.error('Error loading products:', error);
+      Alert.alert('Error', 'Failed to load products');
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
 
   const handleAddItem = () => {
     const newItem: SalesInvoiceItem = {
-      productId: '',
+      productId: null,
       productName: '',
       quantity: 1,
       unitPrice: 0,
       total: 0
     };
-    setFormData({
-      ...formData,
-      items: [...formData.items, newItem]
+    setFormData(prev => {
+      const items = [...prev.items, newItem];
+      return { ...prev, items };
     });
   };
   
   const handleRemoveItem = (index: number) => {
-    const newItems = [...formData.items];
-    newItems.splice(index, 1);
-    
-    const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1; // 10% tax rate
-    
-    setFormData({
-      ...formData,
-      items: newItems,
-      subtotal,
-      tax,
-      total: subtotal + tax
+    setFormData(prev => {
+      const newItems = [...prev.items];
+      newItems.splice(index, 1);
+      const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
+      const tax = subtotal * 0.1;
+      return {
+        ...prev,
+        items: newItems,
+        subtotal,
+        tax,
+        total: subtotal + tax
+      };
     });
   };
 
   const handleItemChange = (index: number, field: keyof SalesInvoiceItem, value: string | number) => {
-    const newItems = [...formData.items];
-    
-    if (field === 'productId') {
-      const selectedProduct = products.find(p => p.id === value);
-      if (selectedProduct) {
+    setFormData(prev => {
+      const newItems = [...prev.items];
+      if (field === 'productId') {
+        const productIdNum = typeof value === 'string' ? parseInt(value, 10) : value;
+        const selectedProduct = products.find(p => p.id === productIdNum);
+        if (selectedProduct) {
+          newItems[index] = {
+            ...newItems[index],
+            productId: selectedProduct.id,
+            productName: selectedProduct.productName,
+            unitPrice: selectedProduct.sellingPrice,
+            total: selectedProduct.sellingPrice * newItems[index].quantity
+          };
+        }
+      } else {
+        let updatedValue = value;
+        if (field === 'quantity' || field === 'unitPrice') {
+          updatedValue = Number(value);
+        }
         newItems[index] = {
           ...newItems[index],
-          productId: selectedProduct.id,
-          productName: selectedProduct.name,
-          unitPrice: selectedProduct.sellingPrice,
-          total: selectedProduct.sellingPrice * newItems[index].quantity
+          [field]: updatedValue,
         };
+        // recalculate total
+        newItems[index].total = newItems[index].unitPrice * newItems[index].quantity;
       }
-    } else {
-      newItems[index] = {
-        ...newItems[index],
-        [field]: value,
-        total: field === 'quantity' || field === 'unitPrice'
-          ? (field === 'quantity' ? Number(value) : newItems[index].quantity) *
-            (field === 'unitPrice' ? Number(value) : newItems[index].unitPrice)
-          : newItems[index].total
+      const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
+      const tax = subtotal * 0.1;
+      return {
+        ...prev,
+        items: newItems,
+        subtotal,
+        tax,
+        total: subtotal + tax
       };
-    }
-
-    const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1; // 10% tax rate
-
-    setFormData({
-      ...formData,
-      items: newItems,
-      subtotal,
-      tax,
-      total: subtotal + tax
     });
   };
   
   const selectCustomer = (customer: Customer) => {
-    setFormData({ ...formData, customerId: customer.id });
+    setFormData({ ...formData, customerId: customer.id.toString() });
     setShowCustomerSheet(false);
     setCustomerSearch('');
   };
@@ -204,7 +318,7 @@ export default function NewSalesInvoiceScreen() {
       onPress={() => selectCustomer(item)}
     >
       <Text style={styles.sheetItemText}>{item.name}</Text>
-      {formData.customerId === item.id && (
+      {formData.customerId === item.id.toString() && (
         <Check size={18} color={Colors.primary} />
       )}
     </TouchableOpacity>
@@ -216,7 +330,7 @@ export default function NewSalesInvoiceScreen() {
       onPress={() => selectProduct(showProductSheet as number, item)}
     >
       <View style={{flex: 1}}>
-        <Text style={styles.sheetItemText}>{item.name}</Text>
+        <Text style={styles.sheetItemText}>{item.productName}</Text>
         <Text style={styles.sheetItemPrice}>${item.sellingPrice.toFixed(2)}</Text>
       </View>
       {showProductSheet !== null && formData.items[showProductSheet]?.productId === item.id && (
@@ -225,35 +339,57 @@ export default function NewSalesInvoiceScreen() {
     </TouchableOpacity>
   );
 
-  const handleSave = () => {
-    // Validate form data
+  const handleSave = async () => {
+    if (!user) {
+      Alert.alert('Error', 'User not found. Please log in again.');
+      return;
+    }
     if (!formData.customerId) {
-      Alert.alert('Error', 'Please select a customer');
+      Alert.alert('Validation Error', 'Please select a customer.');
       return;
     }
-    
     if (formData.items.length === 0) {
-      Alert.alert('Error', 'Please add at least one item');
+      Alert.alert('Validation Error', 'Please add at least one item.');
       return;
     }
-    
-    const invalidItems = formData.items.filter(item => !item.productId || item.quantity <= 0);
-    if (invalidItems.length > 0) {
-      Alert.alert('Error', 'Please complete all item details');
-      return;
+    for (const item of formData.items) {
+      if (!item.productId || !item.productName || !item.quantity || !item.unitPrice) {
+        Alert.alert('Validation Error', 'Please complete all item details.');
+        return;
+      }
     }
-
-    // Here you would typically save the data to your backend
-    Alert.alert(
-      'Success',
-      'Sales invoice saved successfully',
-      [
-        {
-          text: 'OK',
-          onPress: () => router.back()
-        }
-      ]
-    );
+    try {
+      // Prepare amounts in cents
+      const subtotal = Math.round(formData.subtotal * 100);
+      const tax = Math.round(formData.tax * 100);
+      const total = Math.round(formData.total * 100);
+      // Prepare items in cents and correct types
+      const items = formData.items.map(item => ({
+        productId: item.productId ?? 0,
+        quantity: item.quantity,
+        unitPrice: Math.round(item.unitPrice * 100),
+        total: Math.round(item.total * 100),
+        notes: undefined,
+      }));
+      // Save to DB
+      await createSalesInvoice({
+        userId: user.id,
+        customerId: Number(formData.customerId),
+        invoiceNumber: formData.invoiceNumber,
+        invoiceDate: formData.invoiceDate,
+        dueDate: formData.dueDate,
+        subtotal,
+        tax,
+        total,
+        status: formData.status ?? 'unpaid',
+        notes: formData.notes,
+      }, items as any);
+      Alert.alert('Success', 'Invoice saved successfully!');
+      router.replace('/sales-invoice/sales-invoice');
+    } catch (error) {
+      console.error('Error saving invoice:', error);
+      Alert.alert('Error', 'Failed to save invoice.');
+    }
   };
 
   return (
@@ -288,7 +424,7 @@ export default function NewSalesInvoiceScreen() {
                   !formData.customerId && styles.placeholderText
                 ]}
               >
-                {customers.find(c => c.id === formData.customerId)?.name || 'Select Customer'}
+                {customers.find(c => c.id.toString() === formData.customerId)?.name || 'Select Customer'}
               </Text>
               <ChevronDown size={16} color={Colors.text.secondary} />
             </TouchableOpacity>
@@ -411,7 +547,7 @@ export default function NewSalesInvoiceScreen() {
                       <TextInput
                         style={styles.input}
                         value={item.quantity.toString()}
-                        onChangeText={(text) => handleItemChange(index, 'quantity', parseFloat(text) || 0)}
+                        onChangeText={(text) => handleItemChange(index, 'quantity', text)}
                         keyboardType="numeric"
                         placeholder="0"
                         placeholderTextColor={Colors.text.tertiary}
@@ -426,7 +562,7 @@ export default function NewSalesInvoiceScreen() {
                       <TextInput
                         style={styles.input}
                         value={item.unitPrice.toString()}
-                        onChangeText={(text) => handleItemChange(index, 'unitPrice', parseFloat(text) || 0)}
+                        onChangeText={(text) => handleItemChange(index, 'unitPrice', text)}
                         keyboardType="numeric"
                         placeholder="0.00"
                         placeholderTextColor={Colors.text.tertiary}
@@ -526,7 +662,7 @@ export default function NewSalesInvoiceScreen() {
             <FlatList
               data={filteredCustomers}
               renderItem={renderCustomerItem}
-              keyExtractor={(item) => item.id}
+              keyExtractor={(item) => item.id.toString()}
               style={styles.sheetList}
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={
@@ -574,7 +710,7 @@ export default function NewSalesInvoiceScreen() {
             <FlatList
               data={filteredProducts}
               renderItem={renderProductItem}
-              keyExtractor={(item) => item.id}
+              keyExtractor={(item) => item.id.toString()}
               style={styles.sheetList}
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={

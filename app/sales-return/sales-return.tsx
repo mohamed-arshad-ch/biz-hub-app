@@ -1,161 +1,173 @@
-import React, { useState, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  FlatList, 
-  TouchableOpacity, 
-  Alert, 
-  TextInput, 
-  StatusBar,
-  Animated 
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { 
-  Plus, 
-  Search, 
-  Filter, 
-  ArrowLeft, 
-  Calendar, 
-  User, 
-  Package, 
-  ChevronDown, 
-  ArrowUpDown,
-  SortAsc,
-  SortDesc,
-  X,
-  Printer,
-  Share2
-} from 'lucide-react-native';
-import { salesReturnData } from '@/mocks/salesReturnData';
-import { SalesReturn } from '@/types/sales-return';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, StatusBar, RefreshControl, ActivityIndicator } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { Plus, Search, Filter, Calendar, SortAsc, SortDesc, ChevronDown, X, FileText, ArrowLeft, Share2, Printer } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// Define sort and filter option types
+import { useAuthStore } from '@/store/auth';
+import { getSalesReturns } from '@/db/sales-return';
+
 type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc';
-type FilterOption = 'all' | 'completed' | 'approved' | 'pending' | 'rejected';
+type FilterOption = 'all' | 'draft' | 'pending' | 'approved' | 'rejected' | 'completed';
 
 export default function SalesReturnScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
-  const [returns, setReturns] = useState<SalesReturn[]>(salesReturnData);
+  const [returns, setReturns] = useState<any[]>([]);
   const [showSortOptions, setShowSortOptions] = useState(false);
   const [showFilterOptions, setShowFilterOptions] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('date-desc');
   const [filterBy, setFilterBy] = useState<FilterOption>('all');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [allReturns, setAllReturns] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadReturns();
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadReturns();
+    }, [sortBy])
+  );
+
+  const loadReturns = async () => {
+    try {
+      if (!user) return;
+      setLoading(true);
+      let sortParam: 'newest' | 'oldest' = 'newest';
+      if (sortBy === 'date-desc') sortParam = 'newest';
+      else if (sortBy === 'date-asc') sortParam = 'oldest';
+      const fetchedReturns = await getSalesReturns(user.id, sortParam);
+      setAllReturns(fetchedReturns);
+      setReturns(fetchedReturns);
+    } catch (error) {
+      console.error('Error loading returns:', error);
+      Alert.alert('Error', 'Failed to load sales returns');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshReturns = async () => {
+    setRefreshing(true);
+    await loadReturns();
+    setRefreshing(false);
+  };
+
+  // Apply search, filter, and sort
+  useEffect(() => {
+    let filtered = [...allReturns];
+    // Filter by status
+    if (filterBy !== 'all') {
+      filtered = filtered.filter(returnItem => returnItem.status === filterBy);
+    }
+    // Search by return number
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter(returnItem =>
+        (returnItem.returnNumber ?? '').toLowerCase().includes(q)
+      );
+    }
+    // Only sort by amount here; date sort is handled in DB
+    if (sortBy === 'amount-desc') {
+      filtered.sort((a, b) => b.total - a.total);
+    } else if (sortBy === 'amount-asc') {
+      filtered.sort((a, b) => a.total - b.total);
+    }
+    setReturns(filtered);
+  }, [allReturns, searchQuery, filterBy, sortBy]);
 
   const handleSort = (option: SortOption) => {
     setSortBy(option);
     setShowSortOptions(false);
-    
-    // Sort the returns based on selected option
-    const sortedReturns = [...returns].sort((a, b) => {
-      if (option === 'date-desc') {
-        return new Date(b.returnDate).getTime() - new Date(a.returnDate).getTime();
-      } else if (option === 'date-asc') {
-        return new Date(a.returnDate).getTime() - new Date(b.returnDate).getTime();
-      } else if (option === 'amount-desc') {
-        return b.total - a.total;
-      } else {
-        return a.total - b.total;
-      }
-    });
-    
-    setReturns(sortedReturns);
+    if (option === 'date-desc' || option === 'date-asc') {
+      loadReturns();
+    } else {
+      // For amount sort, do client-side sort
+      const sortedReturns = [...returns].sort((a, b) => {
+        if (option === 'amount-desc') {
+          return b.total - a.total;
+        } else {
+          return a.total - b.total;
+        }
+      });
+      setReturns(sortedReturns);
+    }
   };
 
   const handleFilter = (option: FilterOption) => {
     setFilterBy(option);
     setShowFilterOptions(false);
-    
     // Filter the returns based on selected option
     if (option === 'all') {
-      setReturns(salesReturnData);
+      loadReturns();
     } else {
-      const filteredReturns = salesReturnData.filter(returnItem => returnItem.status === option);
+      const filteredReturns = allReturns.filter(returnItem => returnItem.status === option);
       setReturns(filteredReturns);
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completed':
-        return { bg: 'rgba(76, 175, 80, 0.1)', text: Colors.status.completed };
-      case 'approved':
-        return { bg: 'rgba(76, 175, 80, 0.1)', text: Colors.status.active };
+      case 'draft':
+        return { bg: 'rgba(251, 188, 4, 0.1)', text: Colors.warning };
       case 'pending':
-        return { bg: 'rgba(251, 188, 4, 0.1)', text: Colors.status.pending };
+        return { bg: 'rgba(33, 150, 243, 0.1)', text: Colors.info };
+      case 'approved':
+        return { bg: 'rgba(76, 175, 80, 0.1)', text: Colors.primary };
       case 'rejected':
-        return { bg: 'rgba(234, 67, 53, 0.1)', text: Colors.status.cancelled };
+        return { bg: 'rgba(244, 67, 54, 0.1)', text: Colors.negative };
+      case 'completed':
+        return { bg: 'rgba(76, 175, 80, 0.1)', text: Colors.primary };
       default:
-        return { bg: 'rgba(142, 142, 147, 0.1)', text: Colors.text.secondary };
+        return { bg: 'rgba(209, 209, 214, 0.1)', text: Colors.text.secondary };
     }
   };
 
-  const handlePrint = (id: string) => {
-    Alert.alert('Print', 'Printing return document...');
-  };
-
-  const handleShare = (id: string) => {
-    Alert.alert('Share', 'Sharing return details...');
-  };
-
-  const renderReturnItem = useCallback(({ item }: { item: SalesReturn }) => (
-    <TouchableOpacity
-      style={styles.returnItem}
-      onPress={() => router.push({
-        pathname: '/sales-return/[id]',
-        params: { id: item.id }
-      })}
-    >
-      <View style={styles.returnContent}>
-        <View style={styles.returnMainInfo}>
-          <Text style={styles.customerName}>{item.customerName}</Text>
-          <Text style={styles.amount}>${item.total.toFixed(2)}</Text>
-        </View>
-        
-        <View style={styles.returnDetails}>
-          <View style={styles.detailRow}>
-            <Package size={16} color={Colors.text.secondary} style={styles.detailIcon} />
-            <Text style={styles.detailText}>Return #{item.returnNumber}</Text>
+  const renderReturnItem = useCallback(({ item }: { item: any }) => {
+    const statusColors = getStatusColor(item.status);
+    return (
+      <TouchableOpacity 
+        style={styles.card}
+        onPress={() => router.push(`/sales-return/${item.id}`)}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderLeft}>
+            <Text style={styles.returnNumber}>#{item.returnNumber}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: statusColors.bg }]}>
+              <Text style={[styles.statusText, { color: statusColors.text }]}>
+                {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+              </Text>
+            </View>
           </View>
-          <View style={styles.detailRow}>
-            <Calendar size={16} color={Colors.text.secondary} style={styles.detailIcon} />
-            <Text style={styles.detailText}>{new Date(item.returnDate).toLocaleDateString()}</Text>
-          </View>
-        </View>
-        
-        <View style={styles.returnFooter}>
-          <View style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(item.status).bg }
-          ]}>
-            <Text style={[
-              styles.statusText,
-              { color: getStatusColor(item.status).text }
-            ]}>
-              {item.status.toUpperCase()}
-            </Text>
-          </View>
-          
-          <View style={styles.actionIcons}>
-            <TouchableOpacity 
-              style={styles.actionBtn}
-              onPress={() => handleShare(item.id)}
-            >
+          <View style={styles.cardHeaderRight}>
+            <TouchableOpacity style={styles.iconButton}>
               <Share2 size={18} color={Colors.text.secondary} />
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.actionBtn}
-              onPress={() => handlePrint(item.id)}
-            >
+            <TouchableOpacity style={styles.iconButton}>
               <Printer size={18} color={Colors.text.secondary} />
             </TouchableOpacity>
           </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  ), []);
+        <View style={styles.cardContent}>
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Invoice:</Text>
+            <Text style={styles.value}>#{item.invoiceNumber}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Date:</Text>
+            <Text style={styles.value}>{new Date(item.returnDate).toLocaleDateString()}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Amount:</Text>
+            <Text style={styles.amount}>${(item.total / 100).toFixed(2)}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [router]);
 
   return (
     <View style={styles.container}>
@@ -165,27 +177,32 @@ export default function SalesReturnScreen() {
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Sales Returns</Text>
-        <View style={{width: 40}} />
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.searchButton}>
+            <Search size={20} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.filterButton}>
+            <Filter size={20} color={Colors.text.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
-
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
           <Search size={18} color={Colors.text.secondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search returns..."
+            placeholder="Search by return number"
             placeholderTextColor={Colors.text.tertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
+            <TouchableOpacity onPress={() => setSearchQuery("")}> 
               <X size={18} color={Colors.text.secondary} />
             </TouchableOpacity>
           )}
         </View>
       </View>
-      
       <View style={styles.filterSortContainer}>
         <View style={styles.filterSortWrapper}>
           <TouchableOpacity 
@@ -201,7 +218,6 @@ export default function SalesReturnScreen() {
             </Text>
             <ChevronDown size={16} color={Colors.text.secondary} />
           </TouchableOpacity>
-          
           <TouchableOpacity 
             style={styles.sortButton}
             onPress={() => {
@@ -224,7 +240,6 @@ export default function SalesReturnScreen() {
             <ChevronDown size={16} color={Colors.text.secondary} />
           </TouchableOpacity>
         </View>
-        
         {showFilterOptions && (
           <View style={styles.dropdown}>
             <TouchableOpacity 
@@ -234,16 +249,10 @@ export default function SalesReturnScreen() {
               <Text style={[styles.dropdownText, filterBy === 'all' && styles.selectedText]}>All</Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'completed' && styles.selectedItem]}
-              onPress={() => handleFilter('completed')}
+              style={[styles.dropdownItem, filterBy === 'draft' && styles.selectedItem]}
+              onPress={() => handleFilter('draft')}
             >
-              <Text style={[styles.dropdownText, filterBy === 'completed' && styles.selectedText]}>Completed</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'approved' && styles.selectedItem]}
-              onPress={() => handleFilter('approved')}
-            >
-              <Text style={[styles.dropdownText, filterBy === 'approved' && styles.selectedText]}>Approved</Text>
+              <Text style={[styles.dropdownText, filterBy === 'draft' && styles.selectedText]}>Draft</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={[styles.dropdownItem, filterBy === 'pending' && styles.selectedItem]}
@@ -252,14 +261,25 @@ export default function SalesReturnScreen() {
               <Text style={[styles.dropdownText, filterBy === 'pending' && styles.selectedText]}>Pending</Text>
             </TouchableOpacity>
             <TouchableOpacity 
+              style={[styles.dropdownItem, filterBy === 'approved' && styles.selectedItem]}
+              onPress={() => handleFilter('approved')}
+            >
+              <Text style={[styles.dropdownText, filterBy === 'approved' && styles.selectedText]}>Approved</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
               style={[styles.dropdownItem, filterBy === 'rejected' && styles.selectedItem]}
               onPress={() => handleFilter('rejected')}
             >
               <Text style={[styles.dropdownText, filterBy === 'rejected' && styles.selectedText]}>Rejected</Text>
             </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.dropdownItem, filterBy === 'completed' && styles.selectedItem]}
+              onPress={() => handleFilter('completed')}
+            >
+              <Text style={[styles.dropdownText, filterBy === 'completed' && styles.selectedText]}>Completed</Text>
+            </TouchableOpacity>
           </View>
         )}
-        
         {showSortOptions && (
           <View style={styles.dropdown}>
             <TouchableOpacity 
@@ -289,25 +309,28 @@ export default function SalesReturnScreen() {
           </View>
         )}
       </View>
-
-      <FlatList
-        data={returns.filter(returnItem => {
-          if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            return (
-              returnItem.customerName.toLowerCase().includes(query) ||
-              returnItem.returnNumber.toLowerCase().includes(query) ||
-              String(returnItem.total).includes(query)
-            );
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={returns}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderReturnItem}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={refreshReturns} />
           }
-          return true;
-        })}
-        keyExtractor={(item) => item.id}
-        renderItem={renderReturnItem}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-      />
-      
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No returns found</Text>
+              <Text style={styles.emptySubtext}>Create a new return to get started</Text>
+            </View>
+          }
+        />
+      )}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => router.push('/sales-return/new')}
@@ -325,8 +348,8 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
     backgroundColor: Colors.background.default,
@@ -343,6 +366,28 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: Colors.text.primary,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  filterButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   searchContainer: {
     paddingHorizontal: 16,
@@ -373,16 +418,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flex: 1,
-    marginRight: 8,
-  },
   sortButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -401,33 +436,34 @@ const styles = StyleSheet.create({
   },
   dropdown: {
     position: 'absolute',
-    top: 45,
+    top: '100%',
     left: 16,
     right: 16,
-    backgroundColor: 'white',
-    borderRadius: 10,
-    shadowColor: "#000",
+    backgroundColor: Colors.background.default,
+    borderRadius: 12,
+    padding: 8,
+    marginTop: 4,
+    shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 2,
     },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
     elevation: 5,
-    zIndex: 200,
+    zIndex: 1000,
   },
   dropdownItem: {
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
+    borderRadius: 8,
   },
   selectedItem: {
-    backgroundColor: 'rgba(76, 175, 80, 0.08)',
+    backgroundColor: Colors.primary + '20',
   },
   dropdownText: {
-    fontSize: 15,
-    color: Colors.text.secondary,
+    fontSize: 16,
+    color: Colors.text.primary,
   },
   selectedText: {
     color: Colors.primary,
@@ -436,92 +472,111 @@ const styles = StyleSheet.create({
   listContainer: {
     padding: 16,
   },
-  returnItem: {
+  card: {
     backgroundColor: Colors.background.default,
     borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
-  },
-  returnContent: {
     padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
   },
-  returnMainInfo: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  customerName: {
+  cardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  returnNumber: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
-  },
-  amount: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  returnDetails: {
-    marginBottom: 12,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  detailIcon: {
     marginRight: 8,
   },
-  detailText: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-  },
-  returnFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
   statusBadge: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 4,
   },
   statusText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
   },
-  actionIcons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  actionBtn: {
-    width: 36, 
-    height: 36,
+  iconButton: {
+    width: 32,
+    height: 32,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 8,
-    borderRadius: 18,
-    backgroundColor: Colors.background.secondary,
+  },
+  cardContent: {
+    gap: 8,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  label: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    width: 80,
+  },
+  value: {
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
+  amount: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: Colors.text.secondary,
   },
   fab: {
     position: 'absolute',
-    bottom: 24,
-    right: 24,
+    right: 16,
+    bottom: 16,
     width: 56,
     height: 56,
     borderRadius: 28,
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: "#000",
+    elevation: 4,
+    shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 2,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
 }); 

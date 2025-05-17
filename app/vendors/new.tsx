@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   StyleSheet, 
   Text, 
@@ -11,7 +11,8 @@ import {
   Alert,
   ActivityIndicator,
   StatusBar,
-  Switch
+  Switch,
+  SafeAreaView
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { 
@@ -32,17 +33,24 @@ import {
   FileText,
   AlertCircle
 } from "lucide-react-native";
+import { SafeAreaView as SafeAreaViewSafeAreaContext } from 'react-native-safe-area-context';
 
 import Colors from "@/constants/colors";
 import { validateEmail, validatePhone } from "@/utils/validation";
 import SnackBar from "@/components/SnackBar";
-import { Vendor } from "@/types/vendor";
+import { useSQLiteContext } from 'expo-sqlite';
+import { drizzle } from 'drizzle-orm/expo-sqlite';
+import * as schema from '@/db/schema';
+import * as dbVendor from '@/db/vendor';
 
 export default function AddVendorScreen() {
   const router = useRouter();
+  const sqlite = useSQLiteContext();
+  const db = drizzle(sqlite, { schema });
   const [isSaving, setIsSaving] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [userId, setUserId] = useState<number | null>(null);
   
   // Form sections expanded state
   const [expandedSections, setExpandedSections] = useState({
@@ -73,6 +81,14 @@ export default function AddVendorScreen() {
   
   // Form validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const user = await db.select().from(schema.users).limit(1).get();
+      if (user && user.id) setUserId(user.id);
+    };
+    fetchUser();
+  }, []);
   
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections({
@@ -157,35 +173,36 @@ export default function AddVendorScreen() {
       setSnackbarVisible(true);
       return;
     }
+
+    if (!userId) {
+      setSnackbarMessage("No user found. Please log in again.");
+      setSnackbarVisible(true);
+      return;
+    }
     
     setIsSaving(true);
     
     try {
       // Create new vendor object with form data
-      const newVendor: Vendor = {
-        id: `vendor-${Date.now()}`, // Generate a temporary ID (would be replaced with server-generated ID)
+      const newVendor = {
         name: formData.name.trim(),
         company: formData.company.trim() || formData.name.trim(),
-        email: formData.email.trim() || undefined,
-        phone: formData.phone.trim() || undefined,
-        address: formData.address.trim() || undefined,
-        website: formData.website.trim() || undefined,
-        notes: formData.notes.trim() || undefined,
-        category: formData.category.trim() || undefined,
-        tags: formData.tags.map(tag => tag.trim()),
-        paymentTerms: formData.paymentTerms.trim() || undefined,
-        creditLimit: formData.creditLimit.trim() ? parseFloat(formData.creditLimit) : undefined,
-        status: formData.status === "active" ? "active" : "inactive",
-        outstandingBalance: 0,
-        totalPurchases: 0,
-        createdAt: new Date(),
-        updatedAt: new Date()
+        email: formData.email.trim() || null,
+        phone: formData.phone.trim() || null,
+        address: formData.address.trim() || null,
+        website: formData.website.trim() || null,
+        notes: formData.notes.trim() || null,
+        category: formData.category.trim() || null,
+        tags: formData.tags.join(','),
+        paymentTerms: formData.paymentTerms.trim() || null,
+        status: formData.status,
+        userId,
       };
       
-      // Simulate saving to database
-      setTimeout(() => {
-        // In a real implementation, would save to AsyncStorage or backend
-        setIsSaving(false);
+      // Save to database
+      const savedVendor = await dbVendor.addVendor(newVendor);
+      
+      if (savedVendor) {
         setSnackbarMessage("Vendor added successfully");
         setSnackbarVisible(true);
         
@@ -193,11 +210,14 @@ export default function AddVendorScreen() {
         setTimeout(() => {
           router.replace("/vendors");
         }, 1500);
-      }, 800);
+      } else {
+        throw new Error("Failed to save vendor");
+      }
     } catch (error) {
       console.error("Error adding vendor:", error);
       setSnackbarMessage("Failed to add vendor");
       setSnackbarVisible(true);
+    } finally {
       setIsSaving(false);
     }
   };
@@ -221,332 +241,333 @@ export default function AddVendorScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
-    >
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-      
-      {/* Modern Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleCancel} style={styles.backButton}>
-          <ArrowLeft size={24} color={Colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.title}>Add Vendor</Text>
-        <TouchableOpacity
-          onPress={handleSave}
-          disabled={isSaving}
-          style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
-        >
-          {isSaving ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.saveButtonText}>Save</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-      
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
+    <SafeAreaViewSafeAreaContext style={styles.container} edges={['top']}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
       >
-        {/* Basic Information Section */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onPress={() => toggleSection("basic")}
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+        
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleCancel} style={styles.backButton}>
+            <ArrowLeft size={24} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Add Vendor</Text>
+          <TouchableOpacity 
+            onPress={handleSave} 
+            style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+            disabled={isSaving}
           >
-            <Text style={styles.sectionTitle}>Basic Information</Text>
-            {expandedSections.basic ? (
-              <ChevronUp size={20} color={Colors.text.primary} />
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <ChevronDown size={20} color={Colors.text.primary} />
+              <Text style={styles.saveButtonText}>Save</Text>
             )}
           </TouchableOpacity>
-          
-          {expandedSections.basic && (
-            <View style={styles.sectionContent}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Vendor Name *</Text>
-                <TextInput
-                  style={[styles.input, errors.name && styles.inputError]}
-                  value={formData.name}
-                  onChangeText={(text) => handleInputChange("name", text)}
-                  placeholder="Enter vendor name"
-                  placeholderTextColor="#9aa0a6"
-                />
-                {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Company Name *</Text>
-                <TextInput
-                  style={[styles.input, errors.company && styles.inputError]}
-                  value={formData.company}
-                  onChangeText={(text) => handleInputChange("company", text)}
-                  placeholder="Enter company name"
-                  placeholderTextColor="#9aa0a6"
-                />
-                {errors.company && <Text style={styles.errorText}>{errors.company}</Text>}
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Category</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formData.category}
-                  onChangeText={(text) => handleInputChange("category", text)}
-                  placeholder="Enter vendor category"
-                  placeholderTextColor="#9aa0a6"
-                />
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Status</Text>
-                <View style={styles.statusOptions}>
-                  {["active", "inactive", "blocked"].map((status) => (
-                    <TouchableOpacity
-                      key={status}
-                      style={[
-                        styles.statusOption,
-                        formData.status === status && styles.statusOptionSelected
-                      ]}
-                      onPress={() => handleInputChange("status", status)}
-                    >
-                      <View style={[
-                        styles.statusDot, 
-                        { backgroundColor: 
-                          status === 'active' ? Colors.status.active :
-                          status === 'inactive' ? Colors.status.inactive :
-                          Colors.status.blocked
-                        }
-                      ]} />
-                      <Text style={[
-                        styles.statusText,
-                        formData.status === status && styles.statusTextSelected
-                      ]}>
-                        {status.charAt(0).toUpperCase() + status.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            </View>
-          )}
         </View>
         
-        {/* Contact Information Section */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onPress={() => toggleSection("contact")}
-          >
-            <Text style={styles.sectionTitle}>Contact Information</Text>
-            {expandedSections.contact ? (
-              <ChevronUp size={20} color={Colors.text.primary} />
-            ) : (
-              <ChevronDown size={20} color={Colors.text.primary} />
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Basic Information Section */}
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => toggleSection("basic")}
+            >
+              <Text style={styles.sectionTitle}>Basic Information</Text>
+              {expandedSections.basic ? (
+                <ChevronUp size={20} color={Colors.text.primary} />
+              ) : (
+                <ChevronDown size={20} color={Colors.text.primary} />
+              )}
+            </TouchableOpacity>
+            
+            {expandedSections.basic && (
+              <View style={styles.sectionContent}>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Vendor Name *</Text>
+                  <TextInput
+                    style={[styles.input, errors.name && styles.inputError]}
+                    value={formData.name}
+                    onChangeText={(text) => handleInputChange("name", text)}
+                    placeholder="Enter vendor name"
+                    placeholderTextColor="#9aa0a6"
+                  />
+                  {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
+                </View>
+                
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Company Name *</Text>
+                  <TextInput
+                    style={[styles.input, errors.company && styles.inputError]}
+                    value={formData.company}
+                    onChangeText={(text) => handleInputChange("company", text)}
+                    placeholder="Enter company name"
+                    placeholderTextColor="#9aa0a6"
+                  />
+                  {errors.company && <Text style={styles.errorText}>{errors.company}</Text>}
+                </View>
+                
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Category</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.category}
+                    onChangeText={(text) => handleInputChange("category", text)}
+                    placeholder="Enter vendor category"
+                    placeholderTextColor="#9aa0a6"
+                  />
+                </View>
+                
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Status</Text>
+                  <View style={styles.statusOptions}>
+                    {["active", "inactive", "blocked"].map((status) => (
+                      <TouchableOpacity
+                        key={status}
+                        style={[
+                          styles.statusOption,
+                          formData.status === status && styles.statusOptionSelected
+                        ]}
+                        onPress={() => handleInputChange("status", status)}
+                      >
+                        <View style={[
+                          styles.statusDot, 
+                          { backgroundColor: 
+                            status === 'active' ? Colors.status.active :
+                            status === 'inactive' ? Colors.status.inactive :
+                            Colors.status.blocked
+                          }
+                        ]} />
+                        <Text style={[
+                          styles.statusText,
+                          formData.status === status && styles.statusTextSelected
+                        ]}>
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </View>
             )}
-          </TouchableOpacity>
+          </View>
           
-          {expandedSections.contact && (
-            <View style={styles.sectionContent}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Phone</Text>
-                <View style={styles.inputWithIcon}>
-                  <Phone size={18} color={Colors.text.secondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={[styles.inputWithIconField, errors.phone && styles.inputError]}
-                    value={formData.phone}
-                    onChangeText={(text) => handleInputChange("phone", text)}
-                    placeholder="Enter phone number"
-                    placeholderTextColor="#9aa0a6"
-                    keyboardType="phone-pad"
-                  />
+          {/* Contact Information Section */}
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => toggleSection("contact")}
+            >
+              <Text style={styles.sectionTitle}>Contact Information</Text>
+              {expandedSections.contact ? (
+                <ChevronUp size={20} color={Colors.text.primary} />
+              ) : (
+                <ChevronDown size={20} color={Colors.text.primary} />
+              )}
+            </TouchableOpacity>
+            
+            {expandedSections.contact && (
+              <View style={styles.sectionContent}>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Phone</Text>
+                  <View style={styles.inputWithIcon}>
+                    <Phone size={18} color={Colors.text.secondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.inputWithIconField, errors.phone && styles.inputError]}
+                      value={formData.phone}
+                      onChangeText={(text) => handleInputChange("phone", text)}
+                      placeholder="Enter phone number"
+                      placeholderTextColor="#9aa0a6"
+                      keyboardType="phone-pad"
+                    />
+                  </View>
+                  {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
                 </View>
-                {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Email</Text>
-                <View style={styles.inputWithIcon}>
-                  <Mail size={18} color={Colors.text.secondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={[styles.inputWithIconField, errors.email && styles.inputError]}
-                    value={formData.email}
-                    onChangeText={(text) => handleInputChange("email", text)}
-                    placeholder="Enter email address"
-                    placeholderTextColor="#9aa0a6"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
+                
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Email</Text>
+                  <View style={styles.inputWithIcon}>
+                    <Mail size={18} color={Colors.text.secondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.inputWithIconField, errors.email && styles.inputError]}
+                      value={formData.email}
+                      onChangeText={(text) => handleInputChange("email", text)}
+                      placeholder="Enter email address"
+                      placeholderTextColor="#9aa0a6"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </View>
+                  {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                 </View>
-                {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Website</Text>
-                <View style={styles.inputWithIcon}>
-                  <Globe size={18} color={Colors.text.secondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.inputWithIconField}
-                    value={formData.website}
-                    onChangeText={(text) => handleInputChange("website", text)}
-                    placeholder="Enter website"
-                    placeholderTextColor="#9aa0a6"
-                    autoCapitalize="none"
-                  />
+                
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Website</Text>
+                  <View style={styles.inputWithIcon}>
+                    <Globe size={18} color={Colors.text.secondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.inputWithIconField}
+                      value={formData.website}
+                      onChangeText={(text) => handleInputChange("website", text)}
+                      placeholder="Enter website"
+                      placeholderTextColor="#9aa0a6"
+                      autoCapitalize="none"
+                    />
+                  </View>
+                </View>
+                
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Address</Text>
+                  <View style={styles.inputWithIcon}>
+                    <MapPin size={18} color={Colors.text.secondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.inputWithIconField, styles.textArea]}
+                      value={formData.address}
+                      onChangeText={(text) => handleInputChange("address", text)}
+                      placeholder="Enter address"
+                      placeholderTextColor="#9aa0a6"
+                      multiline
+                      numberOfLines={3}
+                      textAlignVertical="top"
+                    />
+                  </View>
                 </View>
               </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Address</Text>
-                <View style={styles.inputWithIcon}>
-                  <MapPin size={18} color={Colors.text.secondary} style={styles.inputIcon} />
+            )}
+          </View>
+          
+          {/* Financial Information Section */}
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => toggleSection("financial")}
+            >
+              <Text style={styles.sectionTitle}>Financial Information</Text>
+              {expandedSections.financial ? (
+                <ChevronUp size={20} color={Colors.text.primary} />
+              ) : (
+                <ChevronDown size={20} color={Colors.text.primary} />
+              )}
+            </TouchableOpacity>
+            
+            {expandedSections.financial && (
+              <View style={styles.sectionContent}>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Payment Terms</Text>
+                  <View style={styles.inputWithIcon}>
+                    <Clock size={18} color={Colors.text.secondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.inputWithIconField}
+                      value={formData.paymentTerms}
+                      onChangeText={(text) => handleInputChange("paymentTerms", text)}
+                      placeholder="e.g. Net 30"
+                      placeholderTextColor="#9aa0a6"
+                    />
+                  </View>
+                </View>
+                
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Credit Limit</Text>
+                  <View style={styles.inputWithIcon}>
+                    <CreditCard size={18} color={Colors.text.secondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.inputWithIconField, errors.creditLimit && styles.inputError]}
+                      value={formData.creditLimit}
+                      onChangeText={(text) => handleInputChange("creditLimit", text)}
+                      placeholder="0.00"
+                      placeholderTextColor="#9aa0a6"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  {errors.creditLimit && <Text style={styles.errorText}>{errors.creditLimit}</Text>}
+                </View>
+              </View>
+            )}
+          </View>
+          
+          {/* Additional Information Section */}
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => toggleSection("additional")}
+            >
+              <Text style={styles.sectionTitle}>Additional Information</Text>
+              {expandedSections.additional ? (
+                <ChevronUp size={20} color={Colors.text.primary} />
+              ) : (
+                <ChevronDown size={20} color={Colors.text.primary} />
+              )}
+            </TouchableOpacity>
+            
+            {expandedSections.additional && (
+              <View style={styles.sectionContent}>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Tags</Text>
+                  <View style={styles.tagsContainer}>
+                    {formData.tags.map((tag, index) => (
+                      <View key={index} style={styles.tag}>
+                        <Text style={styles.tagText}>{tag}</Text>
+                        <TouchableOpacity
+                          style={styles.tagDeleteButton}
+                          onPress={() => removeTag(index)}
+                        >
+                          <X size={14} color={Colors.text.secondary} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                  
+                  <View style={styles.tagInput}>
+                    <TextInput
+                      style={styles.tagInputField}
+                      value={newTag}
+                      onChangeText={setNewTag}
+                      placeholder="Add a tag"
+                      placeholderTextColor="#9aa0a6"
+                      onSubmitEditing={addTag}
+                    />
+                    <TouchableOpacity 
+                      style={[styles.addTagButton, !newTag.trim() && styles.disabledButton]} 
+                      onPress={addTag}
+                      disabled={!newTag.trim()}
+                    >
+                      <Plus size={18} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Notes</Text>
                   <TextInput
-                    style={[styles.inputWithIconField, styles.textArea]}
-                    value={formData.address}
-                    onChangeText={(text) => handleInputChange("address", text)}
-                    placeholder="Enter address"
+                    style={[styles.input, styles.textArea]}
+                    value={formData.notes}
+                    onChangeText={(text) => handleInputChange("notes", text)}
+                    placeholder="Add notes about the vendor"
                     placeholderTextColor="#9aa0a6"
                     multiline
-                    numberOfLines={3}
+                    numberOfLines={4}
                     textAlignVertical="top"
                   />
                 </View>
               </View>
-            </View>
-          )}
-        </View>
-        
-        {/* Financial Information Section */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onPress={() => toggleSection("financial")}
-          >
-            <Text style={styles.sectionTitle}>Financial Information</Text>
-            {expandedSections.financial ? (
-              <ChevronUp size={20} color={Colors.text.primary} />
-            ) : (
-              <ChevronDown size={20} color={Colors.text.primary} />
             )}
-          </TouchableOpacity>
+          </View>
           
-          {expandedSections.financial && (
-            <View style={styles.sectionContent}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Payment Terms</Text>
-                <View style={styles.inputWithIcon}>
-                  <Clock size={18} color={Colors.text.secondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.inputWithIconField}
-                    value={formData.paymentTerms}
-                    onChangeText={(text) => handleInputChange("paymentTerms", text)}
-                    placeholder="e.g. Net 30"
-                    placeholderTextColor="#9aa0a6"
-                  />
-                </View>
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Credit Limit</Text>
-                <View style={styles.inputWithIcon}>
-                  <CreditCard size={18} color={Colors.text.secondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={[styles.inputWithIconField, errors.creditLimit && styles.inputError]}
-                    value={formData.creditLimit}
-                    onChangeText={(text) => handleInputChange("creditLimit", text)}
-                    placeholder="0.00"
-                    placeholderTextColor="#9aa0a6"
-                    keyboardType="numeric"
-                  />
-                </View>
-                {errors.creditLimit && <Text style={styles.errorText}>{errors.creditLimit}</Text>}
-              </View>
-            </View>
-          )}
-        </View>
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
         
-        {/* Additional Information Section */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onPress={() => toggleSection("additional")}
-          >
-            <Text style={styles.sectionTitle}>Additional Information</Text>
-            {expandedSections.additional ? (
-              <ChevronUp size={20} color={Colors.text.primary} />
-            ) : (
-              <ChevronDown size={20} color={Colors.text.primary} />
-            )}
-          </TouchableOpacity>
-          
-          {expandedSections.additional && (
-            <View style={styles.sectionContent}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Tags</Text>
-                <View style={styles.tagsContainer}>
-                  {formData.tags.map((tag, index) => (
-                    <View key={index} style={styles.tag}>
-                      <Text style={styles.tagText}>{tag}</Text>
-                      <TouchableOpacity
-                        style={styles.tagDeleteButton}
-                        onPress={() => removeTag(index)}
-                      >
-                        <X size={14} color={Colors.text.secondary} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-                
-                <View style={styles.tagInput}>
-                  <TextInput
-                    style={styles.tagInputField}
-                    value={newTag}
-                    onChangeText={setNewTag}
-                    placeholder="Add a tag"
-                    placeholderTextColor="#9aa0a6"
-                    onSubmitEditing={addTag}
-                  />
-                  <TouchableOpacity 
-                    style={[styles.addTagButton, !newTag.trim() && styles.disabledButton]} 
-                    onPress={addTag}
-                    disabled={!newTag.trim()}
-                  >
-                    <Plus size={18} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-              
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Notes</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  value={formData.notes}
-                  onChangeText={(text) => handleInputChange("notes", text)}
-                  placeholder="Add notes about the vendor"
-                  placeholderTextColor="#9aa0a6"
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                />
-              </View>
-            </View>
-          )}
-        </View>
-        
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
-      
-      <SnackBar
-        visible={snackbarVisible}
-        message={snackbarMessage}
-        onDismiss={() => setSnackbarVisible(false)}
-      />
-    </KeyboardAvoidingView>
+        <SnackBar
+          visible={snackbarVisible}
+          message={snackbarMessage}
+          onDismiss={() => setSnackbarVisible(false)}
+        />
+      </KeyboardAvoidingView>
+    </SafeAreaViewSafeAreaContext>
   );
 }
 

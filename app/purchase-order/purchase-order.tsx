@@ -25,10 +25,27 @@ import {
   X,
   Check,
   MoreVertical,
-  ArrowLeft
+  ArrowLeft,
+  ChevronDown,
+  FileText,
+  Package,
+  DollarSign,
+  Calendar,
+  User,
+  CheckCircle,
+  XCircle,
+  AlertCircle
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { db } from '../../db';
+import { purchaseOrders, vendors } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { useAuthStore } from '@/store/auth';
+import { formatCurrency } from '../../utils/format';
+import { format } from 'date-fns';
+
 // Mock data for purchase orders
 const purchaseOrderData = [
   {
@@ -118,156 +135,130 @@ type FilterOption = 'all' | 'pending' | 'processing' | 'completed' | 'cancelled'
 
 // Interface for PurchaseOrder
 interface PurchaseOrder {
-  id: string;
+  id: number;
   orderNumber: string;
-  vendorId: string;
+  vendorId: number;
   vendorName: string;
   orderDate: string;
-  deliveryDate: string;
+  status: string;
+  total: number;
   subtotal: number;
   tax: number;
-  total: number;
-  status: string;
-  items: {
-    id: string;
-    productId: string;
-    productName: string;
-    quantity: number;
-    unitPrice: number;
-    total: number;
-  }[];
+  discount: number;
+  notes: string;
+  shippingAddress: string;
+  billingAddress: string;
+  paymentTerms: string;
+  dueDate: string;
 }
 
 export default function PurchaseOrderScreen() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
+  const { user } = useAuthStore();
+  const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [filteredOrders, setFilteredOrders] = useState<PurchaseOrder[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [showSortModal, setShowSortModal] = useState(false);
-  const [showFilterModal, setShowFilterModal] = useState(false);
-  const [currentSort, setCurrentSort] = useState<SortOption>('newest');
-  const [currentFilter, setCurrentFilter] = useState<FilterOption>('all');
-  const [showActionsModal, setShowActionsModal] = useState(false);
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-
-  const sortOptions: { value: SortOption; label: string }[] = [
-    { value: 'newest', label: 'Newest First' },
-    { value: 'oldest', label: 'Oldest First' },
-    { value: 'highest', label: 'Highest Amount' },
-    { value: 'lowest', label: 'Lowest Amount' }
-  ];
-
-  const filterOptions: { value: FilterOption; label: string }[] = [
-    { value: 'all', label: 'All Orders' },
-    { value: 'pending', label: 'Pending' },
-    { value: 'processing', label: 'Processing' },
-    { value: 'completed', label: 'Completed' },
-    { value: 'cancelled', label: 'Cancelled' }
-  ];
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [dateFilter, setDateFilter] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    loadOrders();
+  }, [user]);
 
   useEffect(() => {
-    applyFiltersAndSort();
-  }, [searchQuery, currentSort, currentFilter, orders]);
+    filterAndSortOrders();
+  }, [orders, searchQuery, statusFilter, dateFilter, sortBy, sortOrder]);
 
-  const fetchOrders = () => {
-    setLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setOrders(purchaseOrderData);
+  const loadOrders = async () => {
+    if (!user) return;
+
+    try {
+      const result = await db
+        .select({
+          id: purchaseOrders.id,
+          orderNumber: purchaseOrders.orderNumber,
+          orderDate: purchaseOrders.orderDate,
+          status: purchaseOrders.status,
+          total: purchaseOrders.total,
+          subtotal: purchaseOrders.subtotal,
+          tax: purchaseOrders.tax,
+          discount: purchaseOrders.discount,
+          notes: purchaseOrders.notes,
+          shippingAddress: purchaseOrders.shippingAddress,
+          billingAddress: purchaseOrders.billingAddress,
+          paymentTerms: purchaseOrders.paymentTerms,
+          dueDate: purchaseOrders.dueDate,
+          vendorId: purchaseOrders.vendorId,
+          vendorName: vendors.name,
+        })
+        .from(purchaseOrders)
+        .leftJoin(vendors, eq(purchaseOrders.vendorId, vendors.id))
+        .where(eq(purchaseOrders.userId, user.id));
+
+      setOrders(result.map(order => ({
+        ...order,
+        vendorName: order.vendorName || 'Unknown Vendor',
+        status: order.status || 'pending',
+        tax: order.tax || 0,
+        discount: order.discount || 0,
+        notes: order.notes || '',
+        shippingAddress: order.shippingAddress || '',
+        billingAddress: order.billingAddress || '',
+        paymentTerms: order.paymentTerms || '',
+        dueDate: order.dueDate || ''
+      })));
+    } catch (error) {
+      console.error('Error loading purchase orders:', error);
+      Alert.alert('Error', 'Failed to load purchase orders');
+    } finally {
       setLoading(false);
-      setRefreshing(false);
-    }, 500);
+    }
   };
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchOrders();
-  };
-
-  const applyFiltersAndSort = () => {
+  const filterAndSortOrders = () => {
     let filtered = [...orders];
 
     // Apply search filter
     if (searchQuery) {
+      const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
         order =>
-          order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          order.vendorName.toLowerCase().includes(searchQuery.toLowerCase())
+          order.orderNumber.toLowerCase().includes(query) ||
+          order.vendorName.toLowerCase().includes(query)
       );
     }
 
     // Apply status filter
-    if (currentFilter !== 'all') {
-      filtered = filtered.filter(order => order.status === currentFilter);
+    if (statusFilter) {
+      filtered = filtered.filter(order => order.status === statusFilter);
+    }
+
+    // Apply date filter
+    if (dateFilter) {
+      const today = new Date();
+      const filterDate = new Date(dateFilter);
+      filtered = filtered.filter(order => {
+        const orderDate = new Date(order.orderDate);
+        return orderDate.toDateString() === filterDate.toDateString();
+      });
     }
 
     // Apply sorting
-    switch (currentSort) {
-      case 'newest':
-        filtered.sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
-        break;
-      case 'oldest':
-        filtered.sort((a, b) => new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime());
-        break;
-      case 'highest':
-        filtered.sort((a, b) => b.total - a.total);
-        break;
-      case 'lowest':
-        filtered.sort((a, b) => a.total - b.total);
-        break;
-      default:
-        break;
-    }
+    filtered.sort((a, b) => {
+      if (sortBy === 'date') {
+        return sortOrder === 'asc'
+          ? new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime()
+          : new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime();
+      } else {
+        return sortOrder === 'asc' ? a.total - b.total : b.total - a.total;
+      }
+    });
 
     setFilteredOrders(filtered);
-  };
-
-  const handleSortSelect = (sortOption: SortOption) => {
-    setCurrentSort(sortOption);
-    setShowSortModal(false);
-  };
-
-  const handleFilterSelect = (filterOption: FilterOption) => {
-    setCurrentFilter(filterOption);
-    setShowFilterModal(false);
-  };
-
-  const handleDeleteOrder = (id: string) => {
-    Alert.alert(
-      'Delete Order',
-      'Are you sure you want to delete this purchase order?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            // Here you would typically call an API to delete the order
-            setOrders(orders.filter(order => order.id !== id));
-            Alert.alert('Success', 'Purchase order deleted successfully');
-          },
-        },
-      ]
-    );
-  };
-
-  const handlePrintOrder = (id: string) => {
-    // Here you would typically call a printing service
-    Alert.alert('Print', 'Printing purchase order...');
-  };
-
-  const handleShowActions = (id: string) => {
-    setSelectedOrderId(id);
-    setShowActionsModal(true);
   };
 
   const getStatusColor = (status: string) => {
@@ -285,227 +276,175 @@ export default function PurchaseOrderScreen() {
     }
   };
 
-  const renderOrder = ({ item }: { item: PurchaseOrder }) => {
-    return (
-      <View style={styles.orderCardContainer}>
-        <TouchableOpacity
-          style={styles.orderCard}
-          onPress={() => router.push(`/purchase-order/${item.id}`)}
-        >
-          <View style={styles.orderHeader}>
-            <View style={styles.orderNumberContainer}>
-              <Text style={styles.orderNumber}>{item.orderNumber}</Text>
-              <Text style={styles.orderDate}>
-                {new Date(item.orderDate).toLocaleDateString()}
-              </Text>
-            </View>
-            <View style={[
-              styles.statusBadge, 
-              { backgroundColor: getStatusColor(item.status).bg }
-            ]}>
-              <Text style={[
-                styles.statusText, 
-                { color: getStatusColor(item.status).text }
-              ]}>
-                {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-              </Text>
-            </View>
-          </View>
-          
-          <View style={styles.divider} />
-          
-          <View style={styles.orderDetails}>
-            <Text style={styles.vendorName}>{item.vendorName}</Text>
-            <Text style={styles.itemCount}>
-              {item.items.length} {item.items.length === 1 ? 'item' : 'items'}
+  const renderOrderItem = ({ item }: { item: PurchaseOrder }) => (
+    <TouchableOpacity
+      style={styles.orderCard}
+      onPress={() => router.push(`/purchase-order/${item.id}`)}
+    >
+      <View style={styles.orderHeader}>
+        <View style={styles.orderInfo}>
+          <Text style={styles.orderNumber}>{item.orderNumber}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status).bg }]}>
+            <Text style={[styles.statusText, { color: getStatusColor(item.status).text }]}>
+              {item.status.toUpperCase()}
             </Text>
           </View>
-          
-          <View style={styles.orderFooter}>
-            <Text style={styles.totalLabel}>Total Amount</Text>
-            <Text style={styles.totalValue}>${item.total.toFixed(2)}</Text>
-          </View>
-          
-          <View style={styles.chevronContainer}>
-            <ChevronRight size={20} color={Colors.text.secondary} />
-          </View>
-        </TouchableOpacity>
-        
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.editButton]}
-            onPress={() => router.push(`/purchase-order/edit/${item.id}`)}
-          >
-            <Pencil size={16} color={Colors.primary} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.actionButton, styles.printButton]}
-            onPress={() => handlePrintOrder(item.id)}
-          >
-            <Printer size={16} color={Colors.text.secondary} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.actionButton, styles.deleteButton]}
-            onPress={() => handleDeleteOrder(item.id)}
-          >
-            <Trash size={16} color="#FF3B30" />
-          </TouchableOpacity>
+        </View>
+        <Text style={styles.orderDate}>
+          {format(new Date(item.orderDate), 'MMM dd, yyyy')}
+        </Text>
+      </View>
+
+      <View style={styles.orderDetails}>
+        <View style={styles.detailRow}>
+          <User size={16} color={Colors.text.secondary} />
+          <Text style={styles.detailText}>{item.vendorName}</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <DollarSign size={16} color={Colors.text.secondary} />
+          <Text style={styles.detailText}>{formatCurrency(item.total)}</Text>
         </View>
       </View>
-    );
-  };
 
-  if (loading && !refreshing) {
+      <View style={styles.orderFooter}>
+        <View style={styles.footerItem}>
+          <Calendar size={16} color={Colors.text.secondary} />
+          <Text style={styles.footerText}>
+            Due: {item.dueDate ? format(new Date(item.dueDate), 'MMM dd, yyyy') : 'N/A'}
+          </Text>
+        </View>
+        <View style={styles.footerItem}>
+          <FileText size={16} color={Colors.text.secondary} />
+          <Text style={styles.footerText}>{item.paymentTerms || 'No terms'}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
+  if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading orders...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+      
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={Colors.text.primary} />
+        <Text style={styles.title}>Purchase Orders</Text>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => router.push('/purchase-order/new')}
+        >
+          <Plus size={20} color="#fff" />
+          <Text style={styles.addButtonText}>New Order</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Purchase Invoices</Text>
-        <View style={{width: 40}} />
       </View>
 
+      {/* Search and Filters */}
       <View style={styles.searchContainer}>
-        <Search size={20} color={Colors.text.secondary} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search orders..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      </View>
-
-      <View style={styles.filtersContainer}>
+        <View style={styles.searchInputContainer}>
+          <Search size={20} color={Colors.text.secondary} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search orders..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
         <TouchableOpacity
           style={styles.filterButton}
-          onPress={() => setShowFilterModal(true)}
+          onPress={() => setShowFilters(!showFilters)}
         >
-          <Filter size={16} color={Colors.primary} />
-          <Text style={styles.filterButtonText}>
-            {filterOptions.find(option => option.value === currentFilter)?.label || 'Filter'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.sortButton}
-          onPress={() => setShowSortModal(true)}
-        >
-          <ArrowUpDown size={16} color={Colors.primary} />
-          <Text style={styles.sortButtonText}>
-            {sortOptions.find(option => option.value === currentSort)?.label || 'Sort'}
-          </Text>
+          <Filter size={20} color={Colors.primary} />
         </TouchableOpacity>
       </View>
 
+      {/* Filters Panel */}
+      {showFilters && (
+        <View style={styles.filtersPanel}>
+          <View style={styles.filterSection}>
+            <Text style={styles.filterLabel}>Status</Text>
+            <View style={styles.filterOptions}>
+              {['all', 'pending', 'processing', 'completed', 'cancelled'].map((status) => (
+                <TouchableOpacity
+                  key={status}
+                  style={[
+                    styles.filterOption,
+                    statusFilter === status && styles.filterOptionActive,
+                  ]}
+                  onPress={() => setStatusFilter(status === 'all' ? null : status)}
+                >
+                  <Text
+                    style={[
+                      styles.filterOptionText,
+                      statusFilter === status && styles.filterOptionTextActive,
+                    ]}
+                  >
+                    {status.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.filterSection}>
+            <Text style={styles.filterLabel}>Sort By</Text>
+            <View style={styles.sortOptions}>
+              <TouchableOpacity
+                style={styles.sortButton}
+                onPress={() => {
+                  setSortBy('date');
+                  setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                }}
+              >
+                <Calendar size={16} color={Colors.primary} />
+                <Text style={styles.sortButtonText}>Date</Text>
+                <ChevronDown
+                  size={16}
+                  color={Colors.primary}
+                  style={[
+                    styles.sortIcon,
+                    sortBy === 'date' && sortOrder === 'asc' && styles.sortIconRotated,
+                  ]}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sortButton}
+                onPress={() => {
+                  setSortBy('amount');
+                  setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                }}
+              >
+                <DollarSign size={16} color={Colors.primary} />
+                <Text style={styles.sortButtonText}>Amount</Text>
+                <ChevronDown
+                  size={16}
+                  color={Colors.primary}
+                  style={[
+                    styles.sortIcon,
+                    sortBy === 'amount' && sortOrder === 'asc' && styles.sortIconRotated,
+                  ]}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Orders List */}
       <FlatList
         data={filteredOrders}
-        keyExtractor={(item) => item.id}
-        renderItem={renderOrder}
-        contentContainerStyle={styles.ordersList}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No purchase orders found</Text>
-          </View>
-        }
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />
-        }
+        renderItem={renderOrderItem}
+        keyExtractor={(item) => item.id.toString()}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
       />
-
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/purchase-order/new')}
-      >
-        <Plus size={24} color="#FFF" />
-      </TouchableOpacity>
-
-      {/* Sort Modal */}
-      <Modal
-        visible={showSortModal}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowSortModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Sort By</Text>
-              <TouchableOpacity
-                onPress={() => setShowSortModal(false)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.modalContent}>
-              {sortOptions.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={styles.modalItem}
-                  onPress={() => handleSortSelect(option.value)}
-                >
-                  <Text style={styles.modalItemText}>{option.label}</Text>
-                  {currentSort === option.value && (
-                    <Check size={20} color={Colors.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Filter Modal */}
-      <Modal
-        visible={showFilterModal}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowFilterModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filter Orders</Text>
-              <TouchableOpacity
-                onPress={() => setShowFilterModal(false)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.modalContent}>
-              {filterOptions.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={styles.modalItem}
-                  onPress={() => handleFilterSelect(option.value)}
-                >
-                  <Text style={styles.modalItemText}>{option.label}</Text>
-                  {currentFilter === option.value && (
-                    <Check size={20} color={Colors.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -520,257 +459,192 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.background.default,
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: Colors.text.secondary,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    padding: 16,
     backgroundColor: Colors.background.default,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   title: {
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: '600',
     color: Colors.text.primary,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  addButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   searchContainer: {
     flexDirection: 'row',
+    padding: 16,
+    gap: 8,
+  },
+  searchInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.background.secondary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
     borderRadius: 8,
-    marginHorizontal: 16,
-    marginVertical: 8,
+    paddingHorizontal: 12,
   },
   searchInput: {
     flex: 1,
+    height: 40,
     marginLeft: 8,
     fontSize: 16,
     color: Colors.text.primary,
   },
-  filtersContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
   filterButton: {
-    flexDirection: 'row',
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: `${Colors.primary}10`,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    backgroundColor: Colors.background.secondary,
     borderRadius: 8,
   },
-  filterButtonText: {
+  filtersPanel: {
+    backgroundColor: Colors.background.default,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  filterSection: {
+    marginBottom: 16,
+  },
+  filterLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.primary,
-    marginLeft: 4,
+    color: Colors.text.secondary,
+    marginBottom: 8,
+  },
+  filterOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: Colors.background.secondary,
+  },
+  filterOptionActive: {
+    backgroundColor: Colors.primary,
+  },
+  filterOptionText: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+  },
+  filterOptionTextActive: {
+    color: '#fff',
+  },
+  sortOptions: {
+    flexDirection: 'row',
+    gap: 8,
   },
   sortButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: `${Colors.primary}10`,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
+    backgroundColor: Colors.background.secondary,
   },
   sortButtonText: {
     fontSize: 14,
-    fontWeight: '600',
     color: Colors.primary,
     marginLeft: 4,
+    marginRight: 4,
   },
-  ordersList: {
-    paddingHorizontal: 16,
-    paddingBottom: 80,
+  sortIcon: {
+    transform: [{ rotate: '0deg' }],
   },
-  orderCardContainer: {
-    marginBottom: 8,
+  sortIconRotated: {
+    transform: [{ rotate: '180deg' }],
+  },
+  listContent: {
+    padding: 16,
   },
   orderCard: {
     backgroundColor: Colors.background.default,
-    borderRadius: 12,
+    borderRadius: 8,
     padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   orderHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  orderNumberContainer: {
-    flex: 1,
+  orderInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   orderNumber: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
-    marginBottom: 4,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   orderDate: {
     fontSize: 14,
     color: Colors.text.secondary,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  statusText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border.light,
-    marginVertical: 12,
-  },
   orderDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 12,
   },
-  vendorName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: Colors.text.primary,
-    flex: 1,
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
   },
-  itemCount: {
+  detailText: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: Colors.text.primary,
+    marginLeft: 8,
   },
   orderFooter: {
     flexDirection: 'row',
-    alignItems: 'center',
-  },
-  totalLabel: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    marginRight: 8,
-  },
-  totalValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  chevronContainer: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-  },
-  separator: {
-    height: 8,
-  },
-  emptyContainer: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: Colors.text.secondary,
-    textAlign: 'center',
-  },
-  fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 8,
-    paddingHorizontal: 4,
-  },
-  actionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-    borderWidth: 1,
-  },
-  editButton: {
-    backgroundColor: `${Colors.primary}10`,
-    borderColor: `${Colors.primary}30`,
-  },
-  printButton: {
-    backgroundColor: `${Colors.text.secondary}10`,
-    borderColor: `${Colors.text.secondary}30`,
-  },
-  deleteButton: {
-    backgroundColor: '#FF3B3010',
-    borderColor: '#FF3B3030',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    width: '80%',
-    backgroundColor: Colors.background.default,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    paddingTop: 12,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.text.primary,
-  },
-  modalContent: {
-    padding: 16,
-  },
-  modalItem: {
+  footerItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
   },
-  modalItemText: {
-    fontSize: 16,
-    color: Colors.text.primary,
+  footerText: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginLeft: 4,
   },
 }); 

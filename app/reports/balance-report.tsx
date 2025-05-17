@@ -1,61 +1,137 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Calendar, Download, Printer, Share2, Filter, ChevronLeft, DollarSign } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
+import { useAuthStore } from '@/store/auth';
+import { getLedgerEntriesByAccount } from '@/db/ledger';
+import { getAllAccountGroups } from '@/db/account-group';
+import type { AccountGroup } from '@/db/schema';
+
+interface BalanceSheetData {
+  assets: {
+    category: string;
+    items: { name: string; amount: number }[];
+  }[];
+  liabilities: {
+    category: string;
+    items: { name: string; amount: number }[];
+  }[];
+  equity: { name: string; amount: number }[];
+}
 
 export default function BalanceSheetScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [dateRange, setDateRange] = useState('This Month');
-  
-  // Mock data for balance sheet
-  const assets = [
-    { category: 'Current Assets', items: [
-      { name: 'Cash and Cash Equivalents', amount: 25000 },
-      { name: 'Accounts Receivable', amount: 18500 },
-      { name: 'Inventory', amount: 32000 },
-      { name: 'Prepaid Expenses', amount: 3500 },
-    ]},
-    { category: 'Fixed Assets', items: [
-      { name: 'Property and Equipment', amount: 85000 },
-      { name: 'Less: Accumulated Depreciation', amount: -15000 },
-      { name: 'Intangible Assets', amount: 12000 },
-    ]},
-    { category: 'Other Assets', items: [
-      { name: 'Long-term Investments', amount: 20000 },
-      { name: 'Deposits', amount: 5000 },
-    ]},
-  ];
+  const [loading, setLoading] = useState(true);
+  const [balanceSheetData, setBalanceSheetData] = useState<BalanceSheetData>({
+    assets: [],
+    liabilities: [],
+    equity: []
+  });
 
-  const liabilities = [
-    { category: 'Current Liabilities', items: [
-      { name: 'Accounts Payable', amount: 12500 },
-      { name: 'Short-term Loans', amount: 15000 },
-      { name: 'Accrued Expenses', amount: 4500 },
-      { name: 'Taxes Payable', amount: 7500 },
-    ]},
-    { category: 'Long-term Liabilities', items: [
-      { name: 'Long-term Loans', amount: 45000 },
-      { name: 'Deferred Tax Liabilities', amount: 3000 },
-    ]},
-  ];
+  useEffect(() => {
+    if (user) {
+      loadBalanceSheetData();
+    }
+  }, [user, dateRange]);
 
-  const equity = [
-    { name: 'Owner\'s Capital', amount: 50000 },
-    { name: 'Retained Earnings', amount: 48500 },
-  ];
+  const loadBalanceSheetData = async () => {
+    if (!user) return;
+    
+    try {
+      setLoading(true);
+      
+      // Get all ledger entries
+      const entries = await getLedgerEntriesByAccount(user.id, 0);
+      
+      // Get account groups
+      const accountGroups = await getAllAccountGroups(user.id);
+      
+      // Initialize balance sheet data structure
+      const data: BalanceSheetData = {
+        assets: [],
+        liabilities: [],
+        equity: []
+      };
+      
+      // Group entries by account type
+      const groupedEntries = accountGroups.reduce((acc: BalanceSheetData, group: AccountGroup) => {
+        const groupEntries = entries.filter(entry => entry.accountId === group.id);
+        const total = groupEntries.reduce((sum, entry) => {
+          if (entry.entryType === 'debit') {
+            return sum + entry.amount;
+          } else {
+            return sum - entry.amount;
+          }
+        }, 0);
+        
+        const item = {
+          name: group.name,
+          amount: total
+        };
+        
+        switch (group.type) {
+          case 'asset':
+            const assetCategory = acc.assets.find((cat: { category: string }) => cat.category === 'Current Assets');
+            if (assetCategory) {
+              assetCategory.items.push(item);
+            } else {
+              acc.assets.push({
+                category: 'Current Assets',
+                items: [item]
+              });
+            }
+            break;
+          case 'liability':
+            const liabilityCategory = acc.liabilities.find((cat: { category: string }) => cat.category === 'Current Liabilities');
+            if (liabilityCategory) {
+              liabilityCategory.items.push(item);
+            } else {
+              acc.liabilities.push({
+                category: 'Current Liabilities',
+                items: [item]
+              });
+            }
+            break;
+          case 'equity':
+            acc.equity.push(item);
+            break;
+        }
+        
+        return acc;
+      }, data);
+      
+      setBalanceSheetData(groupedEntries);
+    } catch (error) {
+      console.error('Error loading balance sheet data:', error);
+      Alert.alert('Error', 'Failed to load balance sheet data');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Calculate totals
-  const totalAssets = assets.reduce((sum, category) => 
+  const totalAssets = balanceSheetData.assets.reduce((sum, category) => 
     sum + category.items.reduce((catSum, item) => catSum + item.amount, 0), 0);
   
-  const totalLiabilities = liabilities.reduce((sum, category) => 
+  const totalLiabilities = balanceSheetData.liabilities.reduce((sum, category) => 
     sum + category.items.reduce((catSum, item) => catSum + item.amount, 0), 0);
   
-  const totalEquity = equity.reduce((sum, item) => sum + item.amount, 0);
+  const totalEquity = balanceSheetData.equity.reduce((sum, item) => sum + item.amount, 0);
 
   const dateRangeOptions = ['This Month', 'This Quarter', 'This Year', 'Custom'];
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading balance sheet data...</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -97,7 +173,7 @@ export default function BalanceSheetScreen() {
             <DollarSign size={24} color={Colors.primary} />
             <Text style={styles.summaryTitle}>Balance Sheet Summary</Text>
           </View>
-          <Text style={styles.summaryPeriod}>As of June 30, 2023</Text>
+          <Text style={styles.summaryPeriod}>As of {new Date().toLocaleDateString()}</Text>
           
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Total Assets</Text>
@@ -133,7 +209,7 @@ export default function BalanceSheetScreen() {
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Assets</Text>
           
-          {assets.map((category, index) => (
+          {balanceSheetData.assets.map((category, index) => (
             <View key={index} style={styles.categoryContainer}>
               <Text style={styles.categoryTitle}>{category.category}</Text>
               
@@ -170,7 +246,7 @@ export default function BalanceSheetScreen() {
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Liabilities</Text>
           
-          {liabilities.map((category, index) => (
+          {balanceSheetData.liabilities.map((category, index) => (
             <View key={index} style={styles.categoryContainer}>
               <Text style={styles.categoryTitle}>{category.category}</Text>
               
@@ -206,7 +282,7 @@ export default function BalanceSheetScreen() {
           <View style={styles.categoryContainer}>
             <Text style={styles.categoryTitle}>Owner's Equity</Text>
             
-            {equity.map((item, itemIndex) => (
+            {balanceSheetData.equity.map((item, itemIndex) => (
               <View key={itemIndex} style={styles.itemRow}>
                 <Text style={styles.itemName}>{item.name}</Text>
                 <Text style={styles.itemAmount}>
@@ -270,6 +346,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: Colors.text.secondary,
   },
   header: {
     flexDirection: 'row',
@@ -477,11 +563,10 @@ const styles = StyleSheet.create({
   finalSummaryValue: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: Colors.primary,
+    color: '#333',
   },
   dateRangeSelector: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     padding: 16,
     backgroundColor: 'white',
     borderTopWidth: 1,
@@ -490,20 +575,18 @@ const styles = StyleSheet.create({
   dateRangeOption: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
     marginRight: 8,
-    marginBottom: 8,
-    backgroundColor: '#f1f3f5',
+    borderRadius: 16,
+    backgroundColor: '#f5f5f5',
   },
   dateRangeOptionActive: {
-    backgroundColor: `${Colors.primary}20`,
+    backgroundColor: Colors.primary,
   },
   dateRangeOptionText: {
-    fontSize: 13,
-    color: '#555',
+    fontSize: 14,
+    color: '#666',
   },
   dateRangeOptionTextActive: {
-    color: Colors.primary,
-    fontWeight: '500',
+    color: 'white',
   },
 });

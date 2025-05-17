@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, StatusBar, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, TextInput, FlatList } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, User, Calendar, CreditCard, Hash, FileText, ChevronDown, Check, DollarSign, X, Search } from 'lucide-react-native';
+import { ArrowLeft, User, Calendar, CreditCard, Hash, FileText, ChevronDown, Check, DollarSign, X, Search, Plus } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { PaymentInFormData } from '@/types/payment-in';
-import { paymentInData } from '@/mocks/paymentInData';
-import { getCustomersData } from '@/mocks/customersData';
-import { Customer } from '@/types/customer';
+import { useAuthStore } from '@/store/auth';
+import { getPaymentInById, updatePaymentIn } from '@/db/payment-in';
+import * as dbCustomer from '@/db/customer';
+import * as dbInvoice from '@/db/sales-invoice';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 const PAYMENT_METHODS = [
   'Bank Transfer',
   'Cash',
@@ -23,86 +25,215 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' }
 ];
 
+interface Customer {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zipCode: string | null;
+  status: 'active' | 'inactive' | 'blocked' | null;
+  userId: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+  totalPurchases: number | null;
+  company?: string | null;
+}
+
+interface PaymentInFormData {
+  paymentNumber: string;
+  customerId: number;
+  paymentDate: string;
+  paymentMethod: string;
+  referenceNumber: string;
+  status: 'pending' | 'completed' | 'cancelled';
+  amount: number;
+  notes: string;
+  items: {
+    invoiceId: number;
+    amount: number;
+    notes?: string;
+  }[];
+}
+
 export default function EditPaymentInScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const [formData, setFormData] = useState<PaymentInFormData>({
-    customerId: '',
-    amount: 0,
+  const { user } = useAuthStore();
+  const insets = useSafeAreaInsets();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+
+  const [paymentData, setPaymentData] = useState<PaymentInFormData>({
+    paymentNumber: '',
+    customerId: 0,
     paymentDate: new Date().toISOString().split('T')[0],
     paymentMethod: '',
     referenceNumber: '',
+    status: 'pending',
+    amount: 0,
     notes: '',
-    status: 'pending'
+    items: [],
   });
-  
-  const [loading, setLoading] = useState(true);
   
   // Bottom sheet visibility states
   const [showCustomerSheet, setShowCustomerSheet] = useState(false);
   const [showPaymentMethodSheet, setShowPaymentMethodSheet] = useState(false);
   const [showStatusSheet, setShowStatusSheet] = useState(false);
   
-  // Search functionality for customers
-  const [customers] = useState<Customer[]>(getCustomersData());
+  // Customer data state
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
+  
+  // Filter customers based on search
   const filteredCustomers = customers.filter(customer => 
-    customer.name.toLowerCase().includes(customerSearch.toLowerCase())
+    customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+    (customer.email && customer.email.toLowerCase().includes(customerSearch.toLowerCase())) ||
+    (customer.phone && customer.phone.includes(customerSearch))
   );
 
+  // Load customers when bottom sheet is opened
   useEffect(() => {
-    // In a real app, you would fetch the payment data from your backend
-    const payment = paymentInData.find(p => p.id === id);
-    if (payment) {
-      setFormData({
-        customerId: payment.customerId,
-        amount: payment.amount,
-        paymentDate: payment.paymentDate,
-        paymentMethod: payment.paymentMethod,
-        referenceNumber: payment.referenceNumber || '',
-        notes: payment.notes || '',
-        status: payment.status
-      });
-      setLoading(false);
-    } else {
-      Alert.alert('Error', 'Payment not found');
-      router.back();
+    if (showCustomerSheet) {
+      loadCustomers();
     }
-  }, [id]);
+  }, [showCustomerSheet]);
 
-  const handleSave = () => {
-    // Validate form data
-    if (!formData.customerId || !formData.amount || !formData.paymentMethod) {
+  const loadCustomers = async () => {
+    try {
+      setLoadingCustomers(true);
+      const dbCustomers = await dbCustomer.getAllCustomers();
+      setCustomers(dbCustomers as Customer[]);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+      Alert.alert('Error', 'Failed to load customers');
+    } finally {
+      setLoadingCustomers(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user || !id) return;
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const paymentData = await getPaymentInById(parseInt(id as string), user.id);
+        if (!paymentData) {
+          Alert.alert('Error', 'Payment not found');
+          router.back();
+          return;
+        }
+        setPaymentData({
+          paymentNumber: paymentData.paymentNumber,
+          customerId: paymentData.customerId,
+          paymentDate: paymentData.paymentDate,
+          paymentMethod: paymentData.paymentMethod,
+          referenceNumber: paymentData.referenceNumber || '',
+          status: paymentData.status as 'pending' | 'completed' | 'cancelled',
+          amount: paymentData.amount,
+          notes: paymentData.notes || '',
+          items: paymentData.items.map(item => ({
+            invoiceId: item.invoiceId,
+            amount: item.amount,
+            notes: item.notes || undefined
+          })),
+        });
+
+        // Fetch customer data
+        const customerData = await dbCustomer.getCustomerById(paymentData.customerId);
+        if (customerData) {
+          setSelectedCustomer(customerData as Customer);
+        }
+
+        // Fetch all customers
+        const custs = await dbCustomer.getAllCustomers();
+        setCustomers(custs as Customer[]);
+
+        // Fetch invoice data for each item
+        const invoicePromises = paymentData.items.map((item: any) => 
+          dbInvoice.getSalesInvoiceById(item.invoiceId, user.id)
+        );
+        const invoiceData = await Promise.all(invoicePromises);
+        setInvoices(invoiceData);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        Alert.alert('Error', 'Failed to load payment details');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [user, id]);
+
+  useEffect(() => {
+    if (!paymentData.customerId || !user) return;
+    const fetchInvoices = async () => {
+      try {
+        const invs = await dbInvoice.getSalesInvoices(user.id);
+        setPaymentData(prev => ({
+          ...prev,
+          items: prev.items.map((item: any) => ({
+            ...item,
+            invoice: invs.find(inv => inv.id === item.invoiceId)
+          }))
+        }));
+      } catch (error) {
+        console.error('Error fetching invoices:', error);
+        Alert.alert('Error', 'Failed to load invoices');
+      }
+    };
+    fetchInvoices();
+  }, [paymentData.customerId, user]);
+
+  const handleSave = async () => {
+    if (!user || !id) return;
+    if (!paymentData.customerId || !paymentData.amount || !paymentData.paymentMethod) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
+    if (paymentData.items.length === 0) {
+      Alert.alert('Error', 'Please add at least one invoice');
+      return;
+    }
 
-    // Here you would typically update the data in your backend
-    Alert.alert(
-      'Success',
-      'Payment updated successfully',
-      [
-        {
-          text: 'OK',
-          onPress: () => router.back()
-        }
-      ]
-    );
+    try {
+      setSaving(true);
+      await updatePaymentIn(parseInt(id as string), user.id, paymentData, paymentData.items);
+      Alert.alert('Success', 'Payment updated successfully');
+      router.back();
+    } catch (error) {
+      console.error('Error updating payment:', error);
+      Alert.alert('Error', 'Failed to update payment');
+    } finally {
+      setSaving(false);
+    }
   };
   
   const selectCustomer = (customer: Customer) => {
-    setFormData({ ...formData, customerId: customer.id });
+    setPaymentData(prev => ({
+      ...prev,
+      customerId: customer.id
+    }));
     setShowCustomerSheet(false);
     setCustomerSearch('');
   };
   
   const selectPaymentMethod = (method: string) => {
-    setFormData({ ...formData, paymentMethod: method });
+    setPaymentData({ ...paymentData, paymentMethod: method });
     setShowPaymentMethodSheet(false);
   };
   
   const selectStatus = (status: string) => {
-    setFormData({ ...formData, status: status as PaymentInFormData['status'] });
+    setPaymentData({ ...paymentData, status: status as PaymentInFormData['status'] });
     setShowStatusSheet(false);
   };
   
@@ -124,295 +255,312 @@ export default function EditPaymentInScreen() {
       style={styles.sheetItem}
       onPress={() => selectCustomer(item)}
     >
-      <Text style={styles.sheetItemText}>{item.name}</Text>
-      {formData.customerId === item.id && (
-        <Check size={18} color={Colors.primary} />
+      <View style={styles.customerItemContent}>
+        <Text style={styles.customerName}>{item.name}</Text>
+        {item.company && (
+          <Text style={styles.customerCompany}>{item.company}</Text>
+        )}
+      </View>
+      {paymentData.customerId === item.id && (
+        <Check size={24} color="#007AFF" />
       )}
     </TouchableOpacity>
   );
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading payment details...</Text>
-      </View>
+      <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={100}
-    >
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={Colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.title}>Edit Payment</Text>
-        <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
-          <Text style={styles.saveButtonText}>Save</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
       >
-        <View style={styles.card}>
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <User size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Customer <Text style={{ color: Colors.primary }}>*</Text></Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.selectContainer}
-              onPress={() => setShowCustomerSheet(true)}
-            >
-              <Text style={[
-                styles.selectText, 
-                !formData.customerId && styles.placeholderText
-              ]}>
-                {customers.find(c => c.id === formData.customerId)?.name || 'Select customer'}
-              </Text>
-              <ChevronDown size={18} color={Colors.text.secondary} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <DollarSign size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Amount <Text style={{ color: Colors.primary }}>*</Text></Text>
-            </View>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="0.00"
-                keyboardType="numeric"
-                value={formData.amount > 0 ? formData.amount.toString() : ''}
-                onChangeText={(value) => setFormData({ ...formData, amount: parseFloat(value) || 0 })}
-              />
-            </View>
-          </View>
-
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <Calendar size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Payment Date <Text style={{ color: Colors.primary }}>*</Text></Text>
-            </View>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                value={formData.paymentDate}
-                onChangeText={(value) => setFormData({ ...formData, paymentDate: value })}
-              />
-            </View>
-          </View>
-
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <CreditCard size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Payment Method <Text style={{ color: Colors.primary }}>*</Text></Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.selectContainer}
-              onPress={() => setShowPaymentMethodSheet(true)}
-            >
-              <Text style={[
-                styles.selectText, 
-                !formData.paymentMethod && styles.placeholderText
-              ]}>
-                {formData.paymentMethod || 'Select payment method'}
-              </Text>
-              <ChevronDown size={18} color={Colors.text.secondary} />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <Hash size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Reference Number</Text>
-            </View>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter reference number"
-                value={formData.referenceNumber}
-                onChangeText={(value) => setFormData({ ...formData, referenceNumber: value })}
-              />
-            </View>
-          </View>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <ArrowLeft size={24} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Edit Payment</Text>
+          <TouchableOpacity 
+            style={styles.saveButton}
+            onPress={handleSave}
+            disabled={saving}
+          >
+            <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</Text>
+          </TouchableOpacity>
         </View>
-        
-        <View style={styles.card}>
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <Text style={styles.label}>Status</Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.selectContainer}
-              onPress={() => setShowStatusSheet(true)}
-            >
-              <View style={[styles.statusIndicator, { 
-                backgroundColor: getStatusColor(formData.status).bg
-              }]}>
-                <Text style={[styles.statusIndicatorText, { 
-                  color: getStatusColor(formData.status).text
-                }]}>
-                  {STATUS_OPTIONS.find(option => option.value === formData.status)?.label}
-                </Text>
+
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.card}>
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <User size={16} color={Colors.primary} style={styles.labelIcon} />
+                <Text style={styles.label}>Customer <Text style={{ color: Colors.primary }}>*</Text></Text>
               </View>
-              <ChevronDown size={18} color={Colors.text.secondary} />
-            </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.selectContainer}
+                onPress={() => setShowCustomerSheet(true)}
+              >
+                <Text style={[
+                  styles.selectText, 
+                  !paymentData.customerId && styles.placeholderText
+                ]}>
+                  {customers.find(c => c.id === paymentData.customerId)?.name || 'Select customer'}
+                </Text>
+                <ChevronDown size={18} color={Colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <DollarSign size={16} color={Colors.primary} style={styles.labelIcon} />
+                <Text style={styles.label}>Amount <Text style={{ color: Colors.primary }}>*</Text></Text>
+              </View>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0.00"
+                  keyboardType="numeric"
+                  value={paymentData.amount > 0 ? paymentData.amount.toString() : ''}
+                  onChangeText={(value) => setPaymentData({ ...paymentData, amount: parseFloat(value) || 0 })}
+                />
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <Calendar size={16} color={Colors.primary} style={styles.labelIcon} />
+                <Text style={styles.label}>Payment Date <Text style={{ color: Colors.primary }}>*</Text></Text>
+              </View>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="YYYY-MM-DD"
+                  value={paymentData.paymentDate}
+                  onChangeText={(value) => setPaymentData({ ...paymentData, paymentDate: value })}
+                />
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <CreditCard size={16} color={Colors.primary} style={styles.labelIcon} />
+                <Text style={styles.label}>Payment Method <Text style={{ color: Colors.primary }}>*</Text></Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.selectContainer}
+                onPress={() => setShowPaymentMethodSheet(true)}
+              >
+                <Text style={[
+                  styles.selectText, 
+                  !paymentData.paymentMethod && styles.placeholderText
+                ]}>
+                  {paymentData.paymentMethod || 'Select payment method'}
+                </Text>
+                <ChevronDown size={18} color={Colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <Hash size={16} color={Colors.primary} style={styles.labelIcon} />
+                <Text style={styles.label}>Reference Number</Text>
+              </View>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter reference number"
+                  value={paymentData.referenceNumber}
+                  onChangeText={(value) => setPaymentData({ ...paymentData, referenceNumber: value })}
+                />
+              </View>
+            </View>
           </View>
           
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <FileText size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Notes</Text>
-            </View>
-            <View style={styles.textareaContainer}>
-              <TextInput
-                style={styles.textarea}
-                placeholder="Add notes or details about this payment"
-                multiline={true}
-                numberOfLines={4}
-                textAlignVertical="top"
-                value={formData.notes}
-                onChangeText={(value) => setFormData({ ...formData, notes: value })}
-              />
-            </View>
-          </View>
-        </View>
-      </ScrollView>
-      
-      {/* Customer selection bottom sheet */}
-      <Modal
-        visible={showCustomerSheet}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => {
-          setShowCustomerSheet(false);
-          setCustomerSearch('');
-        }}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheet}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>Select Customer</Text>
+          <View style={styles.card}>
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <Text style={styles.label}>Status</Text>
+              </View>
               <TouchableOpacity 
-                onPress={() => {
-                  setShowCustomerSheet(false);
-                  setCustomerSearch('');
-                }}
+                style={styles.selectContainer}
+                onPress={() => setShowStatusSheet(true)}
               >
-                <X size={24} color={Colors.text.primary} />
+                <View style={[styles.statusIndicator, { 
+                  backgroundColor: getStatusColor(paymentData.status).bg
+                }]}>
+                  <Text style={[styles.statusIndicatorText, { 
+                    color: getStatusColor(paymentData.status).text
+                  }]}>
+                    {STATUS_OPTIONS.find(option => option.value === paymentData.status)?.label}
+                  </Text>
+                </View>
+                <ChevronDown size={18} color={Colors.text.secondary} />
               </TouchableOpacity>
             </View>
             
-            <View style={styles.searchContainer}>
-              <Search size={20} color={Colors.text.secondary} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search customers..."
-                value={customerSearch}
-                onChangeText={setCustomerSearch}
-              />
-              {customerSearch ? (
-                <TouchableOpacity onPress={() => setCustomerSearch('')}>
-                  <X size={18} color={Colors.text.secondary} />
-                </TouchableOpacity>
-              ) : null}
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <FileText size={16} color={Colors.primary} style={styles.labelIcon} />
+                <Text style={styles.label}>Notes</Text>
+              </View>
+              <View style={styles.textareaContainer}>
+                <TextInput
+                  style={styles.textarea}
+                  placeholder="Add notes or details about this payment"
+                  multiline={true}
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                  value={paymentData.notes}
+                  onChangeText={(value) => setPaymentData({ ...paymentData, notes: value })}
+                />
+              </View>
             </View>
-            
-            <FlatList
-              data={filteredCustomers}
-              keyExtractor={(item) => item.id}
-              renderItem={renderCustomerItem}
-              contentContainerStyle={styles.bottomSheetContent}
-            />
           </View>
-        </View>
-      </Modal>
-      
-      {/* Payment method selection bottom sheet */}
-      <Modal
-        visible={showPaymentMethodSheet}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowPaymentMethodSheet(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheet}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>Select Payment Method</Text>
-              <TouchableOpacity onPress={() => setShowPaymentMethodSheet(false)}>
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-            
-            <ScrollView contentContainerStyle={styles.bottomSheetContent}>
-              {PAYMENT_METHODS.map(method => (
-                <TouchableOpacity
-                  key={method}
-                  style={styles.sheetItem}
-                  onPress={() => selectPaymentMethod(method)}
+        </ScrollView>
+        
+        {/* Customer selection bottom sheet */}
+        <Modal
+          visible={showCustomerSheet}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => {
+            setShowCustomerSheet(false);
+            setCustomerSearch('');
+          }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.bottomSheet}>
+              <View style={styles.bottomSheetHeader}>
+                <Text style={styles.bottomSheetTitle}>Select Customer</Text>
+                <TouchableOpacity 
+                  onPress={() => {
+                    setShowCustomerSheet(false);
+                    setCustomerSearch('');
+                  }}
                 >
-                  <Text style={styles.sheetItemText}>{method}</Text>
-                  {formData.paymentMethod === method && (
-                    <Check size={18} color={Colors.primary} />
-                  )}
+                  <X size={24} color={Colors.text.primary} />
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-      
-      {/* Status selection bottom sheet */}
-      <Modal
-        visible={showStatusSheet}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowStatusSheet(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheet}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>Select Status</Text>
-              <TouchableOpacity onPress={() => setShowStatusSheet(false)}>
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
+              </View>
+              
+              <View style={styles.searchContainer}>
+                <Search size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search customers..."
+                  value={customerSearch}
+                  onChangeText={setCustomerSearch}
+                />
+                {customerSearch ? (
+                  <TouchableOpacity onPress={() => setCustomerSearch('')}>
+                    <X size={18} color={Colors.text.secondary} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              
+              {loadingCustomers ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={Colors.primary} />
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredCustomers}
+                  keyExtractor={(item) => item.id.toString()}
+                  renderItem={renderCustomerItem}
+                  contentContainerStyle={styles.bottomSheetContent}
+                  ListEmptyComponent={() => (
+                    <View style={styles.emptyContainer}>
+                      <Text style={styles.emptyText}>No customers found</Text>
+                    </View>
+                  )}
+                />
+              )}
             </View>
-            
-            <ScrollView contentContainerStyle={styles.bottomSheetContent}>
-              {STATUS_OPTIONS.map(option => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={styles.sheetItem}
-                  onPress={() => selectStatus(option.value)}
-                >
-                  <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                    <View style={[styles.statusDot, { 
-                      backgroundColor: getStatusColor(option.value).text
-                    }]} />
-                    <Text style={styles.sheetItemText}>{option.label}</Text>
-                  </View>
-                  {formData.status === option.value && (
-                    <Check size={18} color={Colors.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
           </View>
-        </View>
-      </Modal>
-    </KeyboardAvoidingView>
+        </Modal>
+        
+        {/* Payment method selection bottom sheet */}
+        <Modal
+          visible={showPaymentMethodSheet}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowPaymentMethodSheet(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.bottomSheet}>
+              <View style={styles.bottomSheetHeader}>
+                <Text style={styles.bottomSheetTitle}>Select Payment Method</Text>
+                <TouchableOpacity onPress={() => setShowPaymentMethodSheet(false)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView contentContainerStyle={styles.bottomSheetContent}>
+                {PAYMENT_METHODS.map(method => (
+                  <TouchableOpacity
+                    key={method}
+                    style={styles.sheetItem}
+                    onPress={() => selectPaymentMethod(method)}
+                  >
+                    <Text style={styles.sheetItemText}>{method}</Text>
+                    {paymentData.paymentMethod === method && (
+                      <Check size={18} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+        
+        {/* Status selection bottom sheet */}
+        <Modal
+          visible={showStatusSheet}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowStatusSheet(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.bottomSheet}>
+              <View style={styles.bottomSheetHeader}>
+                <Text style={styles.bottomSheetTitle}>Select Status</Text>
+                <TouchableOpacity onPress={() => setShowStatusSheet(false)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView contentContainerStyle={styles.bottomSheetContent}>
+                {STATUS_OPTIONS.map(option => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={styles.sheetItem}
+                    onPress={() => selectStatus(option.value)}
+                  >
+                    <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                      <View style={[styles.statusDot, { 
+                        backgroundColor: getStatusColor(option.value).text
+                      }]} />
+                      <Text style={styles.sheetItemText}>{option.label}</Text>
+                    </View>
+                    {paymentData.status === option.value && (
+                      <Check size={18} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -622,5 +770,25 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  customerItemContent: {
+    flex: 1,
+  },
+  customerName: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    marginBottom: 2,
+  },
+  customerCompany: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  emptyContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: Colors.text.secondary,
   },
 }); 

@@ -19,6 +19,7 @@ import { drizzle } from 'drizzle-orm/expo-sqlite';
 import * as Crypto from 'expo-crypto';
 import * as schema from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { useAuthStore } from '../store/auth';
 
 export default function Register() {
   const [name, setName] = useState('');
@@ -36,6 +37,7 @@ export default function Register() {
   }>({});
 
   const router = useRouter();
+  const login = useAuthStore((state) => state.login);
   
   // Use SQLite context directly
   const sqlite = useSQLiteContext();
@@ -109,6 +111,21 @@ export default function Register() {
       }).returning().get();
 
       if (result) {
+        // Generate a simple token (in production, use a proper JWT)
+        const token = await Crypto.digestStringAsync(
+          Crypto.CryptoDigestAlgorithm.SHA256,
+          `${result.id}-${Date.now()}`
+        );
+
+        // Store user data and token
+        await login({
+          id: result.id,
+          name: result.name,
+          email: result.email,
+          phone: result.phone || '',
+          avatarUrl: result.avatarUrl || '',
+        }, token);
+
         // Pass the email to company-info screen
         router.push({
           pathname: '/company-info',

@@ -32,13 +32,19 @@ import {
 import { useSQLiteContext } from 'expo-sqlite';
 import { drizzle } from 'drizzle-orm/expo-sqlite';
 import * as schema from '@/db/schema';
+import * as FileSystem from 'expo-file-system';
+import { setupDatabase } from '@/db/setup';
+import { DATABASE_NAME } from '@/db';
 
 import Colors from '@/constants/colors';
+import type { User } from '@/db/schema';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [dbActionMessage, setDbActionMessage] = useState<string | null>(null);
+  const [dbActionLoading, setDbActionLoading] = useState(false);
 
   const sqlite = useSQLiteContext();
   const db = drizzle(sqlite, { schema });
@@ -46,7 +52,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     const loadUser = async () => {
       const userData = await db.select().from(schema.users).limit(1).get();
-      setUser(userData);
+      setUser(userData ?? null);
     };
     
     loadUser();
@@ -125,7 +131,13 @@ export default function SettingsScreen() {
   ];
 
   // Generic setting item component
-  const SettingItem = ({ icon, title, description, onPress }) => (
+  interface SettingItemProps {
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    onPress: () => void;
+  }
+  const SettingItem: React.FC<SettingItemProps> = ({ icon, title, description, onPress }) => (
     <TouchableOpacity 
       style={styles.settingItem}
       onPress={onPress}
@@ -141,7 +153,16 @@ export default function SettingsScreen() {
   );
 
   // Settings section with heading
-  const SettingsSection = ({ title, items }) => (
+  interface SettingsSectionProps {
+    title: string;
+    items: Array<{
+      icon: React.ReactNode;
+      title: string;
+      description: string;
+      screenPath: string;
+    }>;
+  }
+  const SettingsSection: React.FC<SettingsSectionProps> = ({ title, items }) => (
     <View style={styles.settingsSection}>
       <Text style={styles.sectionTitle}>{title}</Text>
       <View style={styles.sectionCard}>
@@ -159,6 +180,27 @@ export default function SettingsScreen() {
       </View>
     </View>
   );
+
+  // Remove and recreate database (dev only)
+  const handleResetDatabase = async () => {
+    setDbActionLoading(true);
+    setDbActionMessage(null);
+    try {
+      // Delete the SQLite database file
+      const dbPath = `${FileSystem.documentDirectory}SQLite/${DATABASE_NAME}`;
+      const fileInfo = await FileSystem.getInfoAsync(dbPath);
+      if (fileInfo.exists) {
+        await FileSystem.deleteAsync(dbPath, { idempotent: true });
+      }
+      // Recreate/setup database
+      await setupDatabase();
+      setDbActionMessage('Database reset and setup successfully!');
+    } catch (err) {
+      setDbActionMessage('Error resetting database: ' + ((err as any)?.message || String(err)));
+    } finally {
+      setDbActionLoading(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -218,6 +260,24 @@ export default function SettingsScreen() {
         <SettingsSection title="Account" items={accountSettings} />
         <SettingsSection title="Financial" items={financialSettings} />
         <SettingsSection title="System" items={systemSettings} />
+
+        {/* Dev-only: Remove and recreate database */}
+        {__DEV__ && (
+          <View style={{ marginVertical: 20 }}>
+            <TouchableOpacity
+              style={styles.devButton}
+              onPress={handleResetDatabase}
+              disabled={dbActionLoading}
+            >
+              <Text style={styles.devButtonText}>
+                {dbActionLoading ? 'Resetting Database...' : 'Remove & Recreate Database (DEV ONLY)'}
+              </Text>
+            </TouchableOpacity>
+            {dbActionMessage && (
+              <Text style={styles.devMessage}>{dbActionMessage}</Text>
+            )}
+          </View>
+        )}
 
         {/* Logout Button */}
         <TouchableOpacity 
@@ -422,5 +482,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.text.tertiary,
     marginBottom: 16,
+  },
+  devButton: {
+    backgroundColor: '#e53935',
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  devButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  devMessage: {
+    color: '#e53935',
+    textAlign: 'center',
+    marginTop: 6,
+    fontSize: 14,
   },
 }); 

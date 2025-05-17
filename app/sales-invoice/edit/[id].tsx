@@ -1,149 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
-  Alert, 
-  TextInput, 
-  StatusBar, 
-  KeyboardAvoidingView, 
-  Platform,
-  Modal,
-  FlatList,
-  ActivityIndicator
-} from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, StatusBar, KeyboardAvoidingView, Platform, Modal, FlatList, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { 
-  ArrowLeft, 
-  User, 
-  Calendar, 
-  Hash, 
-  FileText, 
-  Plus, 
-  Minus, 
-  Package, 
-  ChevronDown, 
-  Check,
-  Search,
-  X,
-  DollarSign
-} from 'lucide-react-native';
+import { ArrowLeft, User, Calendar, Hash, FileText, Plus, Minus, Package, ChevronDown, Check, Search, X, DollarSign } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { getCustomersData } from '@/mocks/customersData';
-import { getProductsData } from '@/mocks/productsData';
-import { Customer } from '@/types/customer';
-import { Product } from '@/types/product';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-const salesInvoiceData: SalesInvoice[] = [
-    {
-      id: '1',
-      invoiceNumber: 'INV-0001',
-      customerName: 'Acme Corporation',
-      invoiceDate: '2023-05-15',
-      dueDate: '2023-06-15',
-      total: 1250.00,
-      subtotal: 1136.36,
-      tax: 113.64,
-      status: 'paid',
-      items: [
-        {
-          productId: 'p1',
-          productName: 'Website Development',
-          quantity: 1,
-          unitPrice: 1000.00,
-          total: 1000.00
-        },
-        {
-          productId: 'p2',
-          productName: 'SEO Services',
-          quantity: 5,
-          unitPrice: 50.00,
-          total: 250.00
-        }
-      ]
-    },
-    {
-      id: '2',
-      invoiceNumber: 'INV-0002',
-      customerName: 'Tech Solutions Inc.',
-      invoiceDate: '2023-05-20',
-      dueDate: '2023-06-20',
-      total: 750.00,
-      subtotal: 681.82,
-      tax: 68.18,
-      status: 'unpaid',
-      items: [
-        {
-          productId: 'p3',
-          productName: 'Consulting Services',
-          quantity: 5,
-          unitPrice: 150.00,
-          total: 750.00
-        }
-      ]
-    },
-    {
-      id: '3',
-      invoiceNumber: 'INV-0003',
-      customerName: 'Global Enterprises',
-      invoiceDate: '2023-04-10',
-      dueDate: '2023-05-10',
-      total: 3500.00,
-      subtotal: 3181.82,
-      tax: 318.18,
-      status: 'overdue',
-      items: [
-        {
-          productId: 'p4',
-          productName: 'Software License',
-          quantity: 1,
-          unitPrice: 2500.00,
-          total: 2500.00
-        },
-        {
-          productId: 'p5',
-          productName: 'Support Package',
-          quantity: 10,
-          unitPrice: 100.00,
-          total: 1000.00
-        }
-      ]
-    },
-    {
-      id: '4',
-      invoiceNumber: 'INV-0004',
-      customerName: 'Startups Ltd.',
-      invoiceDate: '2023-05-25',
-      dueDate: '2023-06-25',
-      total: 500.00,
-      subtotal: 454.55,
-      tax: 45.45,
-      status: 'cancelled',
-      items: [
-        {
-          productId: 'p6',
-          productName: 'Marketing Materials',
-          quantity: 1,
-          unitPrice: 500.00,
-          total: 500.00
-        }
-      ]
-    }
-  ];
+import { useAuthStore } from '@/store/auth';
+import { getSalesInvoiceById, updateSalesInvoice } from '@/db/sales-invoice';
+import * as dbCustomer from '@/db/customer';
+import * as dbProduct from '@/db/product';
 
-// Define the SalesInvoiceItem interface
 interface SalesInvoiceItem {
-  id?: string;
-  productId: string;
+  productId: number | null;
   productName: string;
   quantity: number;
   unitPrice: number;
   total: number;
 }
 
-// Define the SalesInvoiceFormData interface
 interface SalesInvoiceFormData {
   customerId: string;
   invoiceNumber: string;
@@ -167,235 +39,193 @@ const STATUS_OPTIONS = [
 export default function EditSalesInvoiceScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
+  const { user } = useAuthStore();
+  const [formData, setFormData] = useState<SalesInvoiceFormData | null>(null);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [formData, setFormData] = useState<SalesInvoiceFormData>({
-    customerId: '',
-    invoiceNumber: '',
-    invoiceDate: '',
-    dueDate: '',
-    items: [],
-    subtotal: 0,
-    tax: 0,
-    total: 0,
-    status: 'unpaid',
-    notes: ''
-  });
-  
-  // Bottom sheet visibility states
   const [showCustomerSheet, setShowCustomerSheet] = useState(false);
   const [showProductSheet, setShowProductSheet] = useState<number | null>(null);
   const [showStatusSheet, setShowStatusSheet] = useState(false);
-  
-  // Search functionality for customers
-  const [customers] = useState<Customer[]>(getCustomersData());
   const [customerSearch, setCustomerSearch] = useState('');
-  const filteredCustomers = customers.filter(customer => 
-    customer.name.toLowerCase().includes(customerSearch.toLowerCase())
-  );
-  
-  const [products] = useState<Product[]>(getProductsData());
-  // Search functionality for products
   const [productSearch, setProductSearch] = useState('');
-  const filteredProducts = products.filter(product => 
-    product.name.toLowerCase().includes(productSearch.toLowerCase())
-  );
 
-  // Fetch invoice data
   useEffect(() => {
-    // Simulate API call to fetch the invoice
-    setTimeout(() => {
-      const foundInvoice = salesInvoiceData.find(inv => inv.id === id);
-      
-      if (foundInvoice) {
+    if (!user || !id) return;
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const inv = await getSalesInvoiceById(Number(id), user.id);
+        if (!inv) throw new Error('Invoice not found');
         setFormData({
-          customerId: foundInvoice.customerName, // In a real app, this would be the customerId
-          invoiceNumber: foundInvoice.invoiceNumber,
-          invoiceDate: foundInvoice.invoiceDate,
-          dueDate: foundInvoice.dueDate,
-          items: foundInvoice.items,
-          subtotal: foundInvoice.subtotal,
-          tax: foundInvoice.tax,
-          total: foundInvoice.total,
-          status: foundInvoice.status,
-          notes: ''
+          customerId: (inv.customerId ?? '').toString(),
+          invoiceNumber: inv.invoiceNumber,
+          invoiceDate: inv.invoiceDate,
+          dueDate: inv.dueDate ?? '',
+          items: (inv.items || []).map((item: any) => ({
+            productId: item.productId,
+            productName: item.productName || '',
+            quantity: item.quantity,
+            unitPrice: item.unitPrice / 100,
+            total: item.total / 100,
+          })),
+          subtotal: inv.subtotal / 100,
+          tax: (inv.tax ?? 0) / 100,
+          total: inv.total / 100,
+          status: (inv.status as SalesInvoiceFormData['status']) ?? 'unpaid',
+          notes: inv.notes ?? '',
         });
-      } else {
-        Alert.alert(
-          'Error',
-          'Invoice not found',
-          [{ text: 'OK', onPress: () => router.back() }]
-        );
+        const dbCustomers = await dbCustomer.getAllCustomers();
+        setCustomers(dbCustomers);
+        const dbProducts = await dbProduct.getAllProducts();
+        setProducts(dbProducts);
+      } catch (e) {
+        Alert.alert('Error', 'Failed to load invoice');
+        router.back();
+      } finally {
+        setLoading(false);
       }
-      
-      setLoading(false);
-    }, 500);
-  }, [id]);
+    };
+    fetchData();
+  }, [id, user]);
 
   const handleAddItem = () => {
+    if (!formData) return;
     const newItem: SalesInvoiceItem = {
-      productId: '',
+      productId: null,
       productName: '',
       quantity: 1,
       unitPrice: 0,
       total: 0
     };
-    setFormData({
-      ...formData,
-      items: [...formData.items, newItem]
-    });
+    setFormData(prev => prev ? { ...prev, items: [...prev.items, newItem] } : prev);
   };
-  
+
   const handleRemoveItem = (index: number) => {
-    const newItems = [...formData.items];
-    newItems.splice(index, 1);
-    
-    const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1; // 10% tax rate
-    
-    setFormData({
-      ...formData,
-      items: newItems,
-      subtotal,
-      tax,
-      total: subtotal + tax
+    if (!formData) return;
+    setFormData(prev => {
+      if (!prev) return prev;
+      const newItems = [...prev.items];
+      newItems.splice(index, 1);
+      const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
+      const tax = subtotal * 0.1;
+      return { ...prev, items: newItems, subtotal, tax, total: subtotal + tax };
     });
   };
 
   const handleItemChange = (index: number, field: keyof SalesInvoiceItem, value: string | number) => {
-    const newItems = [...formData.items];
-    
-    if (field === 'productId') {
-      const selectedProduct = products.find(p => p.id === value);
-      if (selectedProduct) {
+    if (!formData) return;
+    setFormData(prev => {
+      if (!prev) return prev;
+      const newItems = [...prev.items];
+      if (field === 'productId') {
+        const productIdNum = typeof value === 'string' ? parseInt(value, 10) : value;
+        const selectedProduct = products.find(p => p.id === productIdNum);
+        if (selectedProduct) {
+          newItems[index] = {
+            ...newItems[index],
+            productId: selectedProduct.id,
+            productName: selectedProduct.productName,
+            unitPrice: selectedProduct.sellingPrice / 100,
+            total: (selectedProduct.sellingPrice / 100) * newItems[index].quantity
+          };
+        }
+      } else {
+        let updatedValue = value;
+        if (field === 'quantity' || field === 'unitPrice') {
+          updatedValue = Number(value);
+        }
         newItems[index] = {
           ...newItems[index],
-          productId: selectedProduct.id,
-          productName: selectedProduct.name,
-          unitPrice: selectedProduct.sellingPrice,
-          total: selectedProduct.sellingPrice * newItems[index].quantity
+          [field]: updatedValue,
         };
+        newItems[index].total = newItems[index].unitPrice * newItems[index].quantity;
       }
-    } else {
-      newItems[index] = {
-        ...newItems[index],
-        [field]: value,
-        total: field === 'quantity' || field === 'unitPrice'
-          ? (field === 'quantity' ? Number(value) : newItems[index].quantity) *
-            (field === 'unitPrice' ? Number(value) : newItems[index].unitPrice)
-          : newItems[index].total
-      };
-    }
-
-    const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1; // 10% tax rate
-
-    setFormData({
-      ...formData,
-      items: newItems,
-      subtotal,
-      tax,
-      total: subtotal + tax
+      const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
+      const tax = subtotal * 0.1;
+      return { ...prev, items: newItems, subtotal, tax, total: subtotal + tax };
     });
   };
-  
-  const selectCustomer = (customer: Customer) => {
-    setFormData({ ...formData, customerId: customer.id });
+
+  const selectCustomer = (customer: any) => {
+    if (!formData) return;
+    setFormData({ ...formData, customerId: customer.id.toString() });
     setShowCustomerSheet(false);
     setCustomerSearch('');
   };
-  
-  const selectProduct = (index: number, product: Product) => {
+
+  const selectProduct = (index: number, product: any) => {
     handleItemChange(index, 'productId', product.id);
     setShowProductSheet(null);
     setProductSearch('');
   };
-  
+
   const selectStatus = (status: string) => {
+    if (!formData) return;
     setFormData({ ...formData, status: status as SalesInvoiceFormData['status'] });
     setShowStatusSheet(false);
   };
-  
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'paid':
-        return { bg: 'rgba(76, 175, 80, 0.1)', text: Colors.status.completed };
-      case 'unpaid':
-        return { bg: 'rgba(251, 188, 4, 0.1)', text: Colors.status.pending };
-      case 'overdue':
-        return { bg: 'rgba(244, 67, 54, 0.1)', text: Colors.negative };
-      case 'cancelled':
-        return { bg: 'rgba(209, 209, 214, 0.1)', text: Colors.status.cancelled };
-      default:
-        return { bg: 'rgba(209, 209, 214, 0.1)', text: Colors.text.secondary };
-    }
-  };
-  
-  const renderCustomerItem = ({ item }: { item: Customer }) => (
-    <TouchableOpacity
-      style={styles.sheetItem}
-      onPress={() => selectCustomer(item)}
-    >
-      <Text style={styles.sheetItemText}>{item.name}</Text>
-      {formData.customerId === item.id && (
-        <Check size={18} color={Colors.primary} />
-      )}
-    </TouchableOpacity>
-  );
-  
-  const renderProductItem = ({ item }: { item: Product }) => (
-    <TouchableOpacity
-      style={styles.sheetItem}
-      onPress={() => selectProduct(showProductSheet as number, item)}
-    >
-      <View style={{flex: 1}}>
-        <Text style={styles.sheetItemText}>{item.name}</Text>
-        <Text style={styles.sheetItemPrice}>${item.sellingPrice.toFixed(2)}</Text>
-      </View>
-      {showProductSheet !== null && formData.items[showProductSheet]?.productId === item.id && (
-        <Check size={18} color={Colors.primary} />
-      )}
-    </TouchableOpacity>
-  );
 
-  const handleSave = () => {
-    // Validate form data
+  const handleSave = async () => {
+    if (!user || !formData) return;
     if (!formData.customerId) {
-      Alert.alert('Error', 'Please select a customer');
+      Alert.alert('Validation Error', 'Please select a customer.');
       return;
     }
-    
     if (formData.items.length === 0) {
-      Alert.alert('Error', 'Please add at least one item');
+      Alert.alert('Validation Error', 'Please add at least one item.');
       return;
     }
-    
-    const invalidItems = formData.items.filter(item => !item.productId || item.quantity <= 0);
-    if (invalidItems.length > 0) {
-      Alert.alert('Error', 'Please complete all item details');
-      return;
+    for (const item of formData.items) {
+      if (!item.productId || !item.productName || !item.quantity || !item.unitPrice) {
+        Alert.alert('Validation Error', 'Please complete all item details.');
+        return;
+      }
     }
-
-    // Here you would typically save the data to your backend
-    Alert.alert(
-      'Success',
-      'Sales invoice updated successfully',
-      [
-        {
-          text: 'OK',
-          onPress: () => router.back()
-        }
-      ]
-    );
+    try {
+      const subtotal = Math.round(formData.subtotal * 100);
+      const tax = Math.round(formData.tax * 100);
+      const total = Math.round(formData.total * 100);
+      const items = formData.items.map(item => ({
+        productId: item.productId ?? 0,
+        quantity: item.quantity,
+        unitPrice: Math.round(item.unitPrice * 100),
+        total: Math.round(item.total * 100),
+        notes: undefined,
+      }));
+      await updateSalesInvoice(Number(id), user.id, {
+        customerId: Number(formData.customerId),
+        invoiceNumber: formData.invoiceNumber,
+        invoiceDate: formData.invoiceDate,
+        dueDate: formData.dueDate,
+        subtotal,
+        tax,
+        total,
+        status: formData.status ?? 'unpaid',
+        notes: formData.notes,
+      }, items as any);
+      Alert.alert('Success', 'Invoice updated successfully!');
+      router.replace(`/sales-invoice/${id}`);
+    } catch (error) {
+      console.error('Error updating invoice:', error);
+      Alert.alert('Error', 'Failed to update invoice.');
+    }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading invoice data...</Text>
-      </View>
-    );
+  if (loading || !formData) {
+    return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color={Colors.primary} /></View>;
   }
+
+  const filteredCustomers = customers.filter(customer => 
+    customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+    (customer.email && customer.email.toLowerCase().includes(customerSearch.toLowerCase())) ||
+    (customer.phone && customer.phone.includes(customerSearch))
+  );
+
+  const filteredProducts = products.filter(product => 
+    product.productName.toLowerCase().includes(productSearch.toLowerCase()) ||
+    (product.sku && product.sku.toLowerCase().includes(productSearch.toLowerCase()))
+  );
 
   return (
     <KeyboardAvoidingView 
@@ -408,12 +238,11 @@ export default function EditSalesInvoiceScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Edit Invoice</Text>
+        <Text style={styles.title}>Edit Sales Invoice</Text>
         <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
           <Text style={styles.saveButtonText}>Save</Text>
         </TouchableOpacity>
       </View>
-
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
           <View style={styles.formGroup}>
@@ -429,14 +258,14 @@ export default function EditSalesInvoiceScreen() {
                   !formData.customerId && styles.placeholderText
                 ]}
               >
-                {customers.find(c => c.id === formData.customerId)?.name || formData.customerId || 'Select Customer'}
+                {customers.find(c => c.id.toString() === formData.customerId)?.name || 'Select Customer'}
               </Text>
               <ChevronDown size={16} color={Colors.text.secondary} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.row}>
-            <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+            <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}> 
               <Text style={styles.label}>Invoice # <Text style={styles.required}>*</Text></Text>
               <View style={styles.inputContainer}>
                 <Hash size={16} color={Colors.text.secondary} style={styles.inputIcon} />
@@ -449,8 +278,7 @@ export default function EditSalesInvoiceScreen() {
                 />
               </View>
             </View>
-            
-            <View style={[styles.formGroup, { flex: 1 }]}>
+            <View style={[styles.formGroup, { flex: 1 }]}> 
               <Text style={styles.label}>Status <Text style={styles.required}>*</Text></Text>
               <TouchableOpacity 
                 style={styles.selectButton}
@@ -464,9 +292,9 @@ export default function EditSalesInvoiceScreen() {
               </TouchableOpacity>
             </View>
           </View>
-          
+
           <View style={styles.row}>
-            <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+            <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}> 
               <Text style={styles.label}>Invoice Date <Text style={styles.required}>*</Text></Text>
               <View style={styles.inputContainer}>
                 <Calendar size={16} color={Colors.text.secondary} style={styles.inputIcon} />
@@ -479,8 +307,7 @@ export default function EditSalesInvoiceScreen() {
                 />
               </View>
             </View>
-            
-            <View style={[styles.formGroup, { flex: 1 }]}>
+            <View style={[styles.formGroup, { flex: 1 }]}> 
               <Text style={styles.label}>Due Date <Text style={styles.required}>*</Text></Text>
               <View style={styles.inputContainer}>
                 <Calendar size={16} color={Colors.text.secondary} style={styles.inputIcon} />
@@ -525,7 +352,6 @@ export default function EditSalesInvoiceScreen() {
                     <Minus size={16} color={Colors.negative} />
                   </TouchableOpacity>
                 </View>
-                
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Product <Text style={styles.required}>*</Text></Text>
                   <TouchableOpacity 
@@ -544,30 +370,28 @@ export default function EditSalesInvoiceScreen() {
                     <ChevronDown size={16} color={Colors.text.secondary} />
                   </TouchableOpacity>
                 </View>
-                
                 <View style={styles.row}>
-                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}> 
                     <Text style={styles.label}>Quantity <Text style={styles.required}>*</Text></Text>
                     <View style={styles.inputContainer}>
                       <TextInput
                         style={styles.input}
                         value={item.quantity.toString()}
-                        onChangeText={(text) => handleItemChange(index, 'quantity', parseFloat(text) || 0)}
+                        onChangeText={(text) => handleItemChange(index, 'quantity', text)}
                         keyboardType="numeric"
                         placeholder="0"
                         placeholderTextColor={Colors.text.tertiary}
                       />
                     </View>
                   </View>
-                  
-                  <View style={[styles.formGroup, { flex: 1 }]}>
+                  <View style={[styles.formGroup, { flex: 1 }]}> 
                     <Text style={styles.label}>Unit Price <Text style={styles.required}>*</Text></Text>
                     <View style={styles.inputContainer}>
                       <DollarSign size={16} color={Colors.text.secondary} style={styles.inputIcon} />
                       <TextInput
                         style={styles.input}
                         value={item.unitPrice.toString()}
-                        onChangeText={(text) => handleItemChange(index, 'unitPrice', parseFloat(text) || 0)}
+                        onChangeText={(text) => handleItemChange(index, 'unitPrice', text)}
                         keyboardType="numeric"
                         placeholder="0.00"
                         placeholderTextColor={Colors.text.tertiary}
@@ -575,7 +399,6 @@ export default function EditSalesInvoiceScreen() {
                     </View>
                   </View>
                 </View>
-                
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Total</Text>
                   <View style={styles.totalContainer}>
@@ -623,13 +446,6 @@ export default function EditSalesInvoiceScreen() {
             />
           </View>
         </View>
-
-        {/* <TouchableOpacity 
-          style={styles.saveFullButton}
-          onPress={handleSave}
-        >
-          <Text style={styles.saveFullButtonText}>Update Invoice</Text>
-        </TouchableOpacity> */}
       </ScrollView>
 
       {/* Customer Selection Bottom Sheet */}
@@ -647,7 +463,6 @@ export default function EditSalesInvoiceScreen() {
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
-            
             <View style={styles.searchContainer}>
               <Search size={20} color={Colors.text.tertiary} />
               <TextInput
@@ -663,11 +478,20 @@ export default function EditSalesInvoiceScreen() {
                 </TouchableOpacity>
               )}
             </View>
-            
             <FlatList
               data={filteredCustomers}
-              renderItem={renderCustomerItem}
-              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.sheetItem}
+                  onPress={() => selectCustomer(item)}
+                >
+                  <Text style={styles.sheetItemText}>{item.name}</Text>
+                  {formData.customerId === item.id.toString() && (
+                    <Check size={18} color={Colors.primary} />
+                  )}
+                </TouchableOpacity>
+              )}
+              keyExtractor={(item) => item.id.toString()}
               style={styles.sheetList}
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={
@@ -695,7 +519,6 @@ export default function EditSalesInvoiceScreen() {
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
-            
             <View style={styles.searchContainer}>
               <Search size={20} color={Colors.text.tertiary} />
               <TextInput
@@ -711,11 +534,23 @@ export default function EditSalesInvoiceScreen() {
                 </TouchableOpacity>
               )}
             </View>
-            
             <FlatList
               data={filteredProducts}
-              renderItem={renderProductItem}
-              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.sheetItem}
+                  onPress={() => selectProduct(showProductSheet as number, item)}
+                >
+                  <View style={{flex: 1}}>
+                    <Text style={styles.sheetItemText}>{item.productName}</Text>
+                    <Text style={styles.sheetItemPrice}>${item.sellingPrice.toFixed(2)}</Text>
+                  </View>
+                  {showProductSheet !== null && formData.items[showProductSheet]?.productId === item.id && (
+                    <Check size={18} color={Colors.primary} />
+                  )}
+                </TouchableOpacity>
+              )}
+              keyExtractor={(item) => item.id.toString()}
               style={styles.sheetList}
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={
@@ -743,7 +578,6 @@ export default function EditSalesInvoiceScreen() {
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
-            
             <View style={styles.statusList}>
               {STATUS_OPTIONS.map((option) => (
                 <TouchableOpacity
@@ -751,20 +585,20 @@ export default function EditSalesInvoiceScreen() {
                   style={[
                     styles.statusItem,
                     formData.status === option.value && styles.selectedStatusItem,
-                    { backgroundColor: getStatusColor(option.value).bg }
+                    { backgroundColor: Colors.background.secondary }
                   ]}
                   onPress={() => selectStatus(option.value)}
                 >
                   <Text 
                     style={[
                       styles.statusItemText,
-                      { color: getStatusColor(option.value).text }
+                      { color: Colors.text.primary }
                     ]}
                   >
                     {option.label}
                   </Text>
                   {formData.status === option.value && (
-                    <Check size={18} color={getStatusColor(option.value).text} />
+                    <Check size={18} color={Colors.primary} />
                   )}
                 </TouchableOpacity>
               ))}
@@ -816,22 +650,12 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: Colors.text.secondary,
-  },
   section: {
     backgroundColor: Colors.background.default,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-    shadowColor: "#000",
+    shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 1,
@@ -1005,18 +829,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: Colors.primary,
-  },
-  saveFullButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  saveFullButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   modalContainer: {
     flex: 1,

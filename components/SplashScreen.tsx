@@ -68,7 +68,7 @@ export default function SplashScreen() {
         </Animated.View>
         
         <Animated.View style={{ opacity: textOpacity }}>
-          <Text style={styles.title}>BizHub</Text>
+         
           <Text style={styles.tagline}>Business Management Simplified</Text>
         </Animated.View>
       </View>

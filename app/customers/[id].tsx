@@ -12,7 +12,8 @@ import {
   Linking,
   Share,
   Platform,
-  StatusBar
+  StatusBar,
+  SafeAreaView
 } from "react-native";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { 
@@ -47,6 +48,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { drizzle } from 'drizzle-orm/expo-sqlite';
 import * as dbCustomer from '@/db/customer';
 import * as schema from '@/db/schema';
+import { SafeAreaView as SafeAreaViewRN } from 'react-native-safe-area-context';
 
 import Colors from "@/constants/colors";
 import { formatCurrency, formatDate, formatPhoneNumber } from "@/utils/formatters";
@@ -306,8 +308,8 @@ Notes: ${customer.notes || 'N/A'}`,
   }
   
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.secondary} />
+    <SafeAreaViewRN style={styles.container} edges={['top']}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
       {/* Modern Header */}
       <View style={styles.header}>
@@ -554,7 +556,7 @@ Notes: ${customer.notes || 'N/A'}`,
         message={snackbarMessage}
         onDismiss={() => setSnackbarVisible(false)}
       />
-    </View>
+    </SafeAreaViewRN>
   );
 }
 

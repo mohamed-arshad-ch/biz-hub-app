@@ -36,8 +36,20 @@ import {
   Building,
   Briefcase,
   CreditCard,
-  Info
+  Info,
+  AlertCircle,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Save,
+  Building2
 } from "lucide-react-native";
+import { useSQLiteContext } from 'expo-sqlite';
+import { drizzle } from 'drizzle-orm/expo-sqlite';
+import * as dbVendor from '@/db/vendor';
+import * as schema from '@/db/schema';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Colors from "@/constants/colors";
 import { formatCurrency, formatDate, formatPhoneNumber } from "@/utils/formatters";
@@ -172,11 +184,14 @@ const mockVendors: { [key: string]: Vendor } = {
 export default function VendorDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const sqlite = useSQLiteContext();
+  const db = drizzle(sqlite, { schema });
   const [vendor, setVendor] = useState<Vendor | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
   
   useEffect(() => {
     loadVendorData();
@@ -184,24 +199,43 @@ export default function VendorDetailScreen() {
   
   const loadVendorData = async () => {
     if (!id) {
+      setError('Vendor ID is required');
       setIsLoading(false);
       return;
     }
-    
-    setIsLoading(true);
+
     try {
-      // Use mock data instead of AsyncStorage
-      if (mockVendors[id]) {
-        setVendor(mockVendors[id]);
+      setIsLoading(true);
+      const dbVendorData = await dbVendor.getVendorById(Number(id));
+      
+      if (dbVendorData) {
+        setVendor({
+          id: dbVendorData.id.toString(),
+          name: dbVendorData.name,
+          email: dbVendorData.email || '',
+          phone: dbVendorData.phone || '',
+          address: dbVendorData.address || '',
+          city: dbVendorData.city || '',
+          state: dbVendorData.state || '',
+          zipCode: dbVendorData.zipCode || '',
+          country: dbVendorData.country || '',
+          company: dbVendorData.company || '',
+          notes: dbVendorData.notes || '',
+          totalPurchases: dbVendorData.totalPurchases || 0,
+          createdAt: dbVendorData.createdAt ? new Date(dbVendorData.createdAt) : new Date(),
+          category: dbVendorData.category || '',
+          tags: dbVendorData.tags ? dbVendorData.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+          contactPerson: dbVendorData.contactPerson || '',
+          paymentTerms: dbVendorData.paymentTerms || '',
+          status: (dbVendorData.status as 'active' | 'inactive' | 'blocked') || 'active',
+        });
+        setError(null);
       } else {
-        console.error("Vendor not found");
-        setSnackbarMessage("Failed to load vendor details");
-        setSnackbarVisible(true);
+        setError('Vendor not found');
       }
     } catch (error) {
-      console.error("Error loading vendor:", error);
-      setSnackbarMessage("Failed to load vendor details");
-      setSnackbarVisible(true);
+      console.error('Error loading vendor:', error);
+      setError('Failed to load vendor data');
     } finally {
       setIsLoading(false);
     }
@@ -213,10 +247,10 @@ export default function VendorDetailScreen() {
     }
   };
   
-  const handleDeleteVendor = async () => {
+  const handleDeleteVendor = () => {
     Alert.alert(
       "Delete Vendor",
-      `Are you sure you want to delete ${vendor?.name}? This action cannot be undone.`,
+      "Are you sure you want to delete this vendor? This action cannot be undone.",
       [
         {
           text: "Cancel",
@@ -226,24 +260,20 @@ export default function VendorDetailScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            setIsLoading(true);
-            
-            try {
-              // Simulate successful deletion
-              setTimeout(() => {
-                setSnackbarMessage("Vendor deleted successfully");
-                setSnackbarVisible(true);
-                
-                // Navigate back after a short delay
+            if (id) {
+              try {
+                setIsDeleting(true);
+                await dbVendor.deleteVendor(Number(id));
+                showSnackbar("Vendor deleted successfully");
                 setTimeout(() => {
                   router.replace("/vendors");
-                }, 1000);
-              }, 500);
-            } catch (error) {
-              console.error("Error deleting vendor:", error);
-              setSnackbarMessage("Failed to delete vendor");
-              setSnackbarVisible(true);
-              setIsLoading(false);
+                }, 500);
+              } catch (error) {
+                console.error('Error deleting vendor:', error);
+                showSnackbar("Failed to delete vendor");
+              } finally {
+                setIsDeleting(false);
+              }
             }
           }
         }
@@ -278,27 +308,21 @@ export default function VendorDetailScreen() {
     }
   };
   
-  const handleShare = () => {
+  const handleShare = async () => {
     if (!vendor) return;
     
-    const shareInfo = `Vendor: ${vendor.name}
-Email: ${vendor.email || 'N/A'}
-Phone: ${vendor.phone || 'N/A'}
+    try {
+      await Share.share({
+        message: `Vendor: ${vendor.name}
+Email: ${vendor.email}
+Phone: ${vendor.phone}
 Address: ${vendor.address || 'N/A'}
-Website: ${vendor.website || 'N/A'}`;
-    
-    if (Platform.OS === 'android' || Platform.OS === 'ios') {
-      try {
-        Share.share({
-          message: shareInfo,
-          title: "Vendor Details"
-        });
-      } catch (error) {
-        console.error("Error sharing vendor:", error);
-      }
-    } else {
-      // Copy to clipboard or show a message for other platforms
-      showSnackbar("Sharing not available on this platform");
+Company: ${vendor.company || 'N/A'}
+Notes: ${vendor.notes || 'N/A'}`,
+        title: "Vendor Details"
+      });
+    } catch (error) {
+      console.error("Error sharing vendor:", error);
     }
   };
   
@@ -350,7 +374,7 @@ Website: ${vendor.website || 'N/A'}`;
     return (
       <View style={styles.errorContainer}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-        <Info size={48} color={Colors.negative} />
+        <AlertCircle size={48} color={Colors.negative} />
         <Text style={styles.errorText}>{error || 'Vendor not found'}</Text>
         <TouchableOpacity
           style={styles.errorButton}
@@ -363,7 +387,7 @@ Website: ${vendor.website || 'N/A'}`;
   }
   
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
       {/* Modern Header */}
@@ -653,7 +677,7 @@ Website: ${vendor.website || 'N/A'}`;
         message={snackbarMessage}
         onDismiss={() => setSnackbarVisible(false)}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 

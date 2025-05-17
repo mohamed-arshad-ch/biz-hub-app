@@ -1,436 +1,398 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TextInput, 
-  TouchableOpacity, 
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Alert,
-  StatusBar,
-  Modal,
-  FlatList
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, StatusBar, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
-import { 
-  ArrowLeft, 
-  X, 
-  ChevronDown,
-  ChevronRight, 
-  Calendar,
-  Search,
-  User,
-  CreditCard
-} from 'lucide-react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { getVendorsData } from '@/mocks/vendorsData';
+import { ArrowLeft, Plus, X, FileText, Calendar, Hash, Package, DollarSign, ChevronDown } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useAuthStore } from '@/store/auth';
+import { createPaymentOut } from '@/db/payment-out';
+import * as dbVendor from '@/db/vendor';
+import * as dbInvoice from '@/db/purchase-invoice';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// Payment methods
-const PAYMENT_METHODS = [
-  { id: 'cash', name: 'Cash' },
-  { id: 'bank_transfer', name: 'Bank Transfer' },
-  { id: 'credit_card', name: 'Credit Card' },
-  { id: 'check', name: 'Check' },
-  { id: 'online_payment', name: 'Online Payment' },
-];
-
-// Types
-interface Vendor {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-}
-
-interface PaymentOutFormData {
-  vendorId: string;
-  vendorName: string;
-  amount: string;
-  paymentDate: Date;
-  paymentMethod: string;
-  paymentMethodName: string;
-  referenceNumber: string;
-  notes: string;
-}
 
 export default function NewPaymentOutScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
-  
-  // Form data
-  const [formData, setFormData] = useState<PaymentOutFormData>({
-    vendorId: '',
-    vendorName: '',
-    amount: '',
-    paymentDate: new Date(),
+  const [saving, setSaving] = useState(false);
+  const [vendors, setVendors] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [showVendorModal, setShowVendorModal] = useState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedVendor, setSelectedVendor] = useState<any>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+
+  const [paymentData, setPaymentData] = useState({
+    paymentNumber: '',
+    vendorId: 0,
+    paymentDate: new Date().toISOString().split('T')[0],
     paymentMethod: '',
-    paymentMethodName: '',
     referenceNumber: '',
+    status: 'pending',
+    amount: 0,
     notes: '',
   });
-  
-  // Bottom sheet states
-  const [vendorSheetVisible, setVendorSheetVisible] = useState(false);
-  const [methodSheetVisible, setMethodSheetVisible] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  
-  // Search state
-  const [vendorSearchQuery, setVendorSearchQuery] = useState('');
-  const [filteredVendors, setFilteredVendors] = useState<Vendor[]>(getVendorsData());
-  
-  // Filter vendors based on search query
+
+  const [items, setItems] = useState<{
+    invoiceId: number;
+    amount: number;
+    notes?: string;
+  }[]>([]);
+
   useEffect(() => {
-    if (vendorSearchQuery.trim() === '') {
-      setFilteredVendors(getVendorsData());
-    } else {
-      const query = vendorSearchQuery.toLowerCase();
-      const filtered = getVendorsData().filter(
-        (vendor: Vendor) => 
-          vendor.name.toLowerCase().includes(query) ||
-          vendor.email.toLowerCase().includes(query)
-      );
-      setFilteredVendors(filtered);
+    if (!user) return;
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const vends = await dbVendor.getAllVendors();
+        setVendors(vends);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        Alert.alert('Error', 'Failed to load data');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [user]);
+
+  useEffect(() => {
+    if (!selectedVendor || !user) return;
+    const fetchInvoices = async () => {
+      try {
+        const invs = await dbInvoice.getPurchaseInvoices(user.id);
+        setInvoices(invs.filter(inv => inv.vendorId === selectedVendor.id && inv.status === 'unpaid'));
+      } catch (error) {
+        console.error('Error fetching invoices:', error);
+        Alert.alert('Error', 'Failed to load invoices');
+      }
+    };
+    fetchInvoices();
+  }, [selectedVendor, user]);
+
+  const handleSave = async () => {
+    if (!user) return;
+    if (!paymentData.paymentNumber || !paymentData.vendorId || !paymentData.paymentMethod || !paymentData.amount) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
     }
-  }, [vendorSearchQuery]);
-  
-  // Handle vendor selection
-  const handleVendorSelect = (vendor: Vendor) => {
-    setFormData({
-      ...formData,
-      vendorId: vendor.id,
-      vendorName: vendor.name,
-    });
-    setVendorSheetVisible(false);
-  };
-  
-  // Handle payment method selection
-  const handlePaymentMethodSelect = (method: { id: string; name: string }) => {
-    setFormData({
-      ...formData,
-      paymentMethod: method.id,
-      paymentMethodName: method.name,
-    });
-    setMethodSheetVisible(false);
-  };
-  
-  // Handle date change
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setFormData({
-        ...formData,
-        paymentDate: selectedDate,
+    if (items.length === 0) {
+      Alert.alert('Error', 'Please add at least one invoice');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await createPaymentOut({
+        userId: user.id,
+        vendorId: paymentData.vendorId,
+        paymentNumber: paymentData.paymentNumber,
+        paymentDate: paymentData.paymentDate,
+        amount: paymentData.amount,
+        paymentMethod: paymentData.paymentMethod,
+        referenceNumber: paymentData.referenceNumber,
+        notes: paymentData.notes,
+        status: paymentData.status,
+        items: items.map(item => ({
+          invoiceId: item.invoiceId,
+          amount: item.amount
+        }))
       });
+      Alert.alert('Success', 'Payment created successfully');
+      router.back();
+    } catch (error) {
+      console.error('Error creating payment:', error);
+      Alert.alert('Error', 'Failed to create payment');
+    } finally {
+      setSaving(false);
     }
-  };
-  
-  // Handle form change
-  const handleChange = (name: keyof PaymentOutFormData, value: string) => {
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
-  };
-  
-  // Handle form submission
-  const handleSave = () => {
-    // Validate form
-    if (!formData.vendorId) {
-      Alert.alert('Error', 'Please select a vendor');
-      return;
-    }
-    
-    if (!formData.amount || isNaN(Number(formData.amount)) || Number(formData.amount) <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
-      return;
-    }
-    
-    if (!formData.paymentMethod) {
-      Alert.alert('Error', 'Please select a payment method');
-      return;
-    }
-    
-    if (!formData.referenceNumber) {
-      Alert.alert('Error', 'Please enter a reference number');
-      return;
-    }
-    
-    // Save payment
-    setLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
-      Alert.alert(
-        'Success',
-        'Payment has been saved successfully',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back(),
-          },
-        ]
-      );
-    }, 1000);
   };
 
+  const handleAddItem = () => {
+    if (!selectedInvoice) return;
+    const newItem = {
+      invoiceId: selectedInvoice.id,
+      amount: selectedInvoice.total,
+      notes: '',
+    };
+    setItems([...items, newItem]);
+    setPaymentData({
+      ...paymentData,
+      amount: paymentData.amount + selectedInvoice.total,
+    });
+    setSelectedInvoice(null);
+    setShowInvoiceModal(false);
+  };
+
+  const handleRemoveItem = (index: number) => {
+    const item = items[index];
+    setItems(items.filter((_, i) => i !== index));
+    setPaymentData({
+      ...paymentData,
+      amount: paymentData.amount - item.amount,
+    });
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
-    >
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-      
-      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>New Payment</Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity 
+          style={styles.saveButton}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</Text>
+        </TouchableOpacity>
       </View>
-      
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Vendor Selection */}
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Vendor Information</Text>
-          <TouchableOpacity
-            style={styles.selectButton}
-            onPress={() => setVendorSheetVisible(true)}
+          <Text style={styles.label}>Vendor</Text>
+          <TouchableOpacity 
+            style={styles.input}
+            onPress={() => setShowVendorModal(true)}
           >
-            {!formData.vendorId ? (
-              <View style={styles.selectPlaceholder}>
-                <User size={20} color={Colors.text.secondary} />
-                <Text style={styles.selectPlaceholderText}>Select Vendor</Text>
-              </View>
-            ) : (
-              <View style={styles.selectedItem}>
-                <Text style={styles.selectedItemText}>{formData.vendorName}</Text>
-              </View>
-            )}
-            <ChevronRight size={20} color={Colors.text.secondary} />
+            <FileText size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <Text style={styles.inputText}>{selectedVendor?.name || 'Select Vendor'}</Text>
+            <ChevronDown size={16} color={Colors.text.secondary} />
           </TouchableOpacity>
-        </View>
-        
-        {/* Payment Details */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Payment Details</Text>
-          <View style={styles.card}>
-            {/* Amount */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Amount ($)</Text>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0.00"
-                  placeholderTextColor={Colors.text.tertiary}
-                  keyboardType="numeric"
-                  value={formData.amount}
-                  onChangeText={(value) => handleChange('amount', value)}
-                />
-              </View>
-            </View>
-            
-            {/* Payment Date */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Payment Date</Text>
-              <TouchableOpacity
-                style={styles.datePickerButton}
-                onPress={() => setShowDatePicker(true)}
-              >
-                <Calendar size={20} color={Colors.text.secondary} />
-                <Text style={styles.datePickerText}>
-                  {formData.paymentDate.toLocaleDateString()}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            
-            {/* Payment Method */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Payment Method</Text>
-              <TouchableOpacity
-                style={styles.selectButton}
-                onPress={() => setMethodSheetVisible(true)}
-              >
-                {!formData.paymentMethod ? (
-                  <View style={styles.selectPlaceholder}>
-                    <CreditCard size={20} color={Colors.text.secondary} />
-                    <Text style={styles.selectPlaceholderText}>Select Payment Method</Text>
-                  </View>
-                ) : (
-                  <View style={styles.selectedItem}>
-                    <Text style={styles.selectedItemText}>{formData.paymentMethodName}</Text>
-                  </View>
-                )}
-                <ChevronRight size={20} color={Colors.text.secondary} />
-              </TouchableOpacity>
-            </View>
-            
-            {/* Reference Number */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Reference Number</Text>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter reference number"
-                  placeholderTextColor={Colors.text.tertiary}
-                  value={formData.referenceNumber}
-                  onChangeText={(value) => handleChange('referenceNumber', value)}
-                />
-              </View>
-            </View>
-          </View>
-        </View>
-        
-        {/* Notes */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notes</Text>
-          <View style={styles.card}>
+
+          <Text style={styles.label}>Payment Number</Text>
+          <View style={styles.input}>
+            <Hash size={16} color={Colors.text.secondary} style={styles.inputIcon} />
             <TextInput
-              style={styles.notesInput}
-              placeholder="Enter additional notes..."
-              placeholderTextColor={Colors.text.tertiary}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-              value={formData.notes}
-              onChangeText={(value) => handleChange('notes', value)}
+              style={styles.textInput}
+              value={paymentData.paymentNumber}
+              onChangeText={(text) => setPaymentData({ ...paymentData, paymentNumber: text })}
+              placeholder="Enter payment number"
+            />
+          </View>
+
+          <Text style={styles.label}>Status</Text>
+          <TouchableOpacity 
+            style={styles.input}
+            onPress={() => setShowStatusModal(true)}
+          >
+            <FileText size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <Text style={styles.inputText}>{paymentData.status.charAt(0).toUpperCase() + paymentData.status.slice(1)}</Text>
+            <ChevronDown size={16} color={Colors.text.secondary} />
+          </TouchableOpacity>
+
+          <Text style={styles.label}>Payment Date</Text>
+          <View style={styles.input}>
+            <Calendar size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.textInput}
+              value={paymentData.paymentDate}
+              onChangeText={(text) => setPaymentData({ ...paymentData, paymentDate: text })}
+              placeholder="YYYY-MM-DD"
+            />
+          </View>
+
+          <Text style={styles.label}>Payment Method</Text>
+          <View style={styles.input}>
+            <DollarSign size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.textInput}
+              value={paymentData.paymentMethod}
+              onChangeText={(text) => setPaymentData({ ...paymentData, paymentMethod: text })}
+              placeholder="Enter payment method"
+            />
+          </View>
+
+          <Text style={styles.label}>Reference Number</Text>
+          <View style={styles.input}>
+            <Hash size={16} color={Colors.text.secondary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.textInput}
+              value={paymentData.referenceNumber}
+              onChangeText={(text) => setPaymentData({ ...paymentData, referenceNumber: text })}
+              placeholder="Enter reference number"
             />
           </View>
         </View>
-        
-        {/* Save Button */}
-        <TouchableOpacity
-          style={styles.saveButton}
-          onPress={handleSave}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color="#FFF" />
-          ) : (
-            <Text style={styles.saveButtonText}>Save Payment</Text>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Invoices</Text>
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => setShowInvoiceModal(true)}
+              disabled={!selectedVendor}
+            >
+              <Plus size={20} color={Colors.primary} />
+              <Text style={styles.addButtonText}>Add Invoice</Text>
+            </TouchableOpacity>
+          </View>
+
+          {items.length > 0 ? items.map((item, index) => {
+            const invoice = invoices.find(inv => inv.id === item.invoiceId);
+            return (
+              <View key={index} style={styles.itemCard}>
+                <View style={styles.itemHeader}>
+                  <View style={styles.itemInfo}>
+                    <Package size={16} color={Colors.text.secondary} />
+                    <Text style={styles.itemName}>Invoice #{invoice?.invoiceNumber}</Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={styles.removeButton}
+                    onPress={() => handleRemoveItem(index)}
+                  >
+                    <X size={16} color={Colors.negative} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.itemDetails}>
+                  <View style={styles.itemTotal}>
+                    <Text style={styles.itemLabel}>Amount</Text>
+                    <Text style={styles.itemTotalText}>${(item.amount / 100).toFixed(2)}</Text>
+                  </View>
+                </View>
+              </View>
+            );
+          }) : (
+            <Text style={styles.emptyText}>No invoices added</Text>
           )}
-        </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.label}>Notes</Text>
+          <TextInput
+            style={styles.notesInput}
+            value={paymentData.notes}
+            onChangeText={(text) => setPaymentData({ ...paymentData, notes: text })}
+            placeholder="Add notes..."
+            multiline
+            numberOfLines={4}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Summary</Text>
+          <View style={[styles.summaryRow, styles.totalRow]}>
+            <Text style={styles.totalRowLabel}>Total Amount</Text>
+            <Text style={styles.totalRowValue}>${(paymentData.amount / 100).toFixed(2)}</Text>
+          </View>
+        </View>
       </ScrollView>
-      
-      {/* Vendor Selection Sheet */}
+
+      {/* Vendor Selection Modal */}
       <Modal
-        visible={vendorSheetVisible}
+        visible={showVendorModal}
+        transparent
         animationType="slide"
-        transparent={true}
-        onRequestClose={() => setVendorSheetVisible(false)}
+        onRequestClose={() => setShowVendorModal(false)}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Vendor</Text>
-              <TouchableOpacity
-                onPress={() => setVendorSheetVisible(false)}
-                style={styles.modalCloseButton}
-              >
-                <X size={20} color={Colors.text.primary} />
+              <TouchableOpacity onPress={() => setShowVendorModal(false)}>
+                <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
-            
-            <View style={styles.searchContainer}>
-              <Search size={20} color={Colors.text.secondary} style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search vendors..."
-                placeholderTextColor={Colors.text.tertiary}
-                value={vendorSearchQuery}
-                onChangeText={setVendorSearchQuery}
-              />
-              {vendorSearchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setVendorSearchQuery('')}>
-                  <X size={20} color={Colors.text.secondary} />
-                </TouchableOpacity>
-              )}
-            </View>
-            
-            <FlatList
-              data={filteredVendors}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.vendorItem}
-                  onPress={() => handleVendorSelect(item)}
+            <ScrollView>
+              {vendors.map((vendor) => (
+                <TouchableOpacity 
+                  key={vendor.id}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSelectedVendor(vendor);
+                    setPaymentData({ ...paymentData, vendorId: vendor.id });
+                    setShowVendorModal(false);
+                  }}
                 >
-                  <View>
-                    <Text style={styles.vendorName}>{item.name}</Text>
-                    <Text style={styles.vendorEmail}>{item.email}</Text>
-                  </View>
-                  {formData.vendorId === item.id && (
-                    <View style={styles.selectedVendorIndicator} />
-                  )}
+                  <Text style={styles.modalItemText}>{vendor.name}</Text>
                 </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <View style={styles.emptyListContainer}>
-                  <Text style={styles.emptyListText}>No vendors found</Text>
-                </View>
-              }
-            />
+              ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>
-      
-      {/* Payment Method Selection Sheet */}
+
+      {/* Invoice Selection Modal */}
       <Modal
-        visible={methodSheetVisible}
+        visible={showInvoiceModal}
+        transparent
         animationType="slide"
-        transparent={true}
-        onRequestClose={() => setMethodSheetVisible(false)}
+        onRequestClose={() => setShowInvoiceModal(false)}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Payment Method</Text>
-              <TouchableOpacity
-                onPress={() => setMethodSheetVisible(false)}
-                style={styles.modalCloseButton}
-              >
-                <X size={20} color={Colors.text.primary} />
+              <Text style={styles.modalTitle}>Select Invoice</Text>
+              <TouchableOpacity onPress={() => setShowInvoiceModal(false)}>
+                <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
-            
-            <FlatList
-              data={PAYMENT_METHODS}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.vendorItem}
-                  onPress={() => handlePaymentMethodSelect(item)}
+            <ScrollView>
+              {invoices.map((invoice) => (
+                <TouchableOpacity 
+                  key={invoice.id}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setSelectedInvoice(invoice);
+                    handleAddItem();
+                  }}
                 >
-                  <Text style={styles.vendorName}>{item.name}</Text>
-                  {formData.paymentMethod === item.id && (
-                    <View style={styles.selectedVendorIndicator} />
-                  )}
+                  <Text style={styles.modalItemText}>#{invoice.invoiceNumber}</Text>
+                  <Text style={styles.modalItemSubtext}>${(invoice.total / 100).toFixed(2)}</Text>
                 </TouchableOpacity>
-              )}
-            />
+              ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>
-      
-      {/* Date Picker */}
-      {showDatePicker && (
-        <DateTimePicker
-          value={formData.paymentDate}
-          mode="date"
-          display="default"
-          onChange={handleDateChange}
-        />
-      )}
-    </KeyboardAvoidingView>
+
+      {/* Status Selection Modal */}
+      <Modal
+        visible={showStatusModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowStatusModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Status</Text>
+              <TouchableOpacity onPress={() => setShowStatusModal(false)}>
+                <X size={24} color={Colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              {['pending', 'completed', 'cancelled'].map((status) => (
+                <TouchableOpacity 
+                  key={status}
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setPaymentData({ ...paymentData, status });
+                    setShowStatusModal(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{status.charAt(0).toUpperCase() + status.slice(1)}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
@@ -441,15 +403,15 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
     backgroundColor: Colors.background.default,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
-  headerButton: {
+  backButton: {
     width: 40,
     height: 40,
     justifyContent: 'center',
@@ -460,135 +422,178 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+  saveButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  saveButtonText: {
+    color: Colors.background.default,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  content: {
+    flex: 1,
   },
   section: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  card: {
-    backgroundColor: Colors.background.default,
-    borderRadius: 12,
     padding: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
   },
-  inputGroup: {
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 16,
   },
-  inputLabel: {
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  label: {
     fontSize: 14,
     color: Colors.text.secondary,
-    marginBottom: 8,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border.light,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 48,
+    marginBottom: 4,
   },
   input: {
-    flex: 1,
-    height: 48,
-    fontSize: 16,
-    color: Colors.text.primary,
-  },
-  selectButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    height: 48,
-    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: Colors.border.light,
     borderRadius: 8,
-  },
-  selectPlaceholder: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  selectPlaceholderText: {
-    marginLeft: 8,
-    fontSize: 16,
-    color: Colors.text.tertiary,
-  },
-  selectedItem: {
-    flex: 1,
-  },
-  selectedItemText: {
-    fontSize: 16,
-    color: Colors.text.primary,
-  },
-  datePickerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 48,
     paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
-    borderRadius: 8,
+    paddingVertical: 8,
+    marginBottom: 16,
   },
-  datePickerText: {
-    marginLeft: 8,
+  inputIcon: {
+    marginRight: 8,
+  },
+  inputText: {
+    flex: 1,
     fontSize: 16,
     color: Colors.text.primary,
   },
-  notesInput: {
-    height: 100,
+  textInput: {
+    flex: 1,
     fontSize: 16,
     color: Colors.text.primary,
     padding: 0,
   },
-  saveButton: {
-    backgroundColor: Colors.primary,
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary + '20',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  addButtonText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  itemCard: {
+    backgroundColor: Colors.background.secondary,
     borderRadius: 8,
-    height: 48,
+    padding: 12,
+    marginBottom: 8,
+  },
+  itemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  itemInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  itemName: {
+    fontSize: 14,
+    color: Colors.text.primary,
+    fontWeight: '500',
+  },
+  removeButton: {
+    width: 24,
+    height: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
   },
-  saveButtonText: {
-    color: '#FFF',
+  itemDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  itemTotal: {
+    alignItems: 'flex-end',
+  },
+  itemLabel: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 4,
+  },
+  itemTotalText: {
     fontSize: 16,
     fontWeight: '600',
+    color: Colors.primary,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: Colors.text.primary,
+    textAlignVertical: 'top',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  totalRow: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    marginTop: 8,
+    paddingTop: 16,
+  },
+  totalRowLabel: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  totalRowValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.primary,
   },
   modalContainer: {
     flex: 1,
-    justifyContent: 'flex-end',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: Colors.background.default,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
@@ -597,60 +602,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  modalCloseButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    height: 40,
-    fontSize: 16,
-    color: Colors.text.primary,
-  },
-  vendorItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  modalItem: {
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
-  vendorName: {
+  modalItemText: {
     fontSize: 16,
-    fontWeight: '500',
     color: Colors.text.primary,
   },
-  vendorEmail: {
+  modalItemSubtext: {
     fontSize: 14,
     color: Colors.text.secondary,
-    marginTop: 2,
-  },
-  selectedVendorIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.primary,
-  },
-  emptyListContainer: {
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyListText: {
-    fontSize: 16,
-    color: Colors.text.secondary,
+    marginTop: 4,
   },
 }); 

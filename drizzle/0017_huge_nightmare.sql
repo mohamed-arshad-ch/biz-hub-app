@@ -1,0 +1,1 @@
+ALTER TABLE `payment_in_items` ADD `notes` text;

@@ -1,662 +1,497 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
-  Alert, 
-  TextInput, 
-  KeyboardAvoidingView, 
-  Platform,
-  ActivityIndicator,
-  StatusBar,
-  Modal,
-  FlatList
-} from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput, StatusBar, KeyboardAvoidingView, Platform, Modal, FlatList, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { 
-  ArrowLeft, 
-  Save, 
-  Plus, 
-  Trash2, 
-  User, 
-  Calendar, 
-  DollarSign, 
-  FileText, 
-  Package, 
-  Tag,
-  X,
-  Check,
-  ChevronRight,
-  ShoppingCart
-} from 'lucide-react-native';
+import { ArrowLeft, User, Calendar, Hash, FileText, Plus, Minus, Package, ChevronDown, Check, Search, X, DollarSign } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
-import { PurchaseReturnFormData, PurchaseReturnItem } from '@/types/purchase-return';
-import { getVendorsData } from '@/mocks/vendorsData';
-import { Vendor } from '@/types/vendor';
-import { getProductsData } from '@/mocks/productsData';
-import { Product } from '@/types/product';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// Define common return reasons
-const RETURN_REASONS = [
-  { id: 'defective', name: 'Defective Product' },
-  { id: 'damaged', name: 'Damaged During Shipping' },
-  { id: 'wrong_item', name: 'Wrong Item Received' },
-  { id: 'not_needed', name: 'No Longer Needed' },
-  { id: 'other', name: 'Other' }
-];
+import { useAuthStore } from '@/store/auth';
+import { createPurchaseReturn } from '@/db/purchase-return';
+import * as dbVendor from '@/db/vendor';
+import * as dbProduct from '@/db/product';
+import * as dbPurchaseInvoice from '@/db/purchase-invoice';
+
+interface PurchaseReturnItem {
+  productId: number | null;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+interface PurchaseReturnFormData {
+  invoiceId: string;
+  returnNumber: string;
+  returnDate: string;
+  items: PurchaseReturnItem[];
+  subtotal: number;
+  tax: number;
+  total: number;
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'completed';
+  notes: string;
+}
 
 export default function NewPurchaseReturnScreen() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [showVendorModal, setShowVendorModal] = useState(false);
-  const [showProductModal, setShowProductModal] = useState(false);
-  const [showReasonModal, setShowReasonModal] = useState(false);
-  const [currentItemIndex, setCurrentItemIndex] = useState(0);
-  
+  const { user } = useAuthStore();
   const [formData, setFormData] = useState<PurchaseReturnFormData>({
-    vendorId: '',
-    returnNumber: `PR-${Date.now().toString().slice(-4)}`,
+    invoiceId: '',
+    returnNumber: '',
     returnDate: new Date().toISOString().split('T')[0],
-    originalOrderId: '',
-    originalOrderNumber: '',
     items: [],
     subtotal: 0,
     tax: 0,
     total: 0,
     status: 'draft',
-    notes: ''
+    notes: '',
   });
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showInvoiceSheet, setShowInvoiceSheet] = useState(false);
+  const [showProductSheet, setShowProductSheet] = useState<number | null>(null);
+  const [showStatusSheet, setShowStatusSheet] = useState(false);
+  const [invoiceSearch, setInvoiceSearch] = useState('');
+  const [productSearch, setProductSearch] = useState('');
 
   useEffect(() => {
-    // Load vendors and products data
-    setVendors(getVendorsData());
-    setProducts(getProductsData());
-  }, []);
+    if (!user) return;
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const dbInvoices = await dbPurchaseInvoice.getPurchaseInvoices(user.id);
+        setInvoices(dbInvoices);
+        const dbProducts = await dbProduct.getAllProducts();
+        setProducts(dbProducts);
+      } catch (e) {
+        Alert.alert('Error', 'Failed to load data');
+        router.back();
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [user]);
 
   const handleAddItem = () => {
     const newItem: PurchaseReturnItem = {
-      productId: '',
+      productId: null,
       productName: '',
       quantity: 1,
       unitPrice: 0,
-      total: 0,
-      reason: ''
+      total: 0
     };
-    setFormData({
-      ...formData,
-      items: [...formData.items, newItem]
+    setFormData(prev => ({ ...prev, items: [...prev.items, newItem] }));
+  };
+
+  const handleRemoveItem = (index: number) => {
+    setFormData(prev => {
+      const newItems = [...prev.items];
+      newItems.splice(index, 1);
+      const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
+      const tax = subtotal * 0.1;
+      return { ...prev, items: newItems, subtotal, tax, total: subtotal + tax };
     });
   };
 
   const handleItemChange = (index: number, field: keyof PurchaseReturnItem, value: string | number) => {
-    const updatedItems = [...formData.items];
-    updatedItems[index] = {
-      ...updatedItems[index],
-      [field]: value,
-      total: field === 'quantity' || field === 'unitPrice'
-        ? Number(updatedItems[index].quantity) * Number(updatedItems[index].unitPrice)
-        : updatedItems[index].total
-    };
-
-    const subtotal = updatedItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1; // 10% tax
-    const total = subtotal + tax;
-
-    setFormData({
-      ...formData,
-      items: updatedItems,
-      subtotal,
-      tax,
-      total
+    setFormData(prev => {
+      const newItems = [...prev.items];
+      if (field === 'productId') {
+        const productIdNum = typeof value === 'string' ? parseInt(value, 10) : value;
+        const selectedProduct = products.find(p => p.id === productIdNum);
+        if (selectedProduct) {
+          newItems[index] = {
+            ...newItems[index],
+            productId: selectedProduct.id,
+            productName: selectedProduct.productName,
+            unitPrice: selectedProduct.costPrice / 100,
+            total: (selectedProduct.costPrice / 100) * newItems[index].quantity
+          };
+        }
+      } else {
+        let updatedValue = value;
+        if (field === 'quantity' || field === 'unitPrice') {
+          updatedValue = Number(value);
+        }
+        newItems[index] = {
+          ...newItems[index],
+          [field]: updatedValue,
+        };
+        newItems[index].total = newItems[index].unitPrice * newItems[index].quantity;
+      }
+      const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
+      const tax = subtotal * 0.1;
+      return { ...prev, items: newItems, subtotal, tax, total: subtotal + tax };
     });
   };
 
-  const handleRemoveItem = (index: number) => {
-    const updatedItems = formData.items.filter((_, i) => i !== index);
-    const subtotal = updatedItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1;
-    const total = subtotal + tax;
-
-    setFormData({
-      ...formData,
-      items: updatedItems,
-      subtotal,
-      tax,
-      total
-    });
+  const selectInvoice = (invoice: any) => {
+    setFormData({ ...formData, invoiceId: invoice.id.toString() });
+    setShowInvoiceSheet(false);
+    setInvoiceSearch('');
   };
 
-  const handleSelectVendor = (vendorId: string) => {
-    setFormData({ ...formData, vendorId });
-    setShowVendorModal(false);
+  const selectProduct = (index: number, product: any) => {
+    handleItemChange(index, 'productId', product.id);
+    setShowProductSheet(null);
+    setProductSearch('');
   };
 
-  const handleSelectProduct = (index: number, productId: string) => {
-    const selectedProduct = products.find(p => p.id === productId);
-    if (!selectedProduct) return;
-
-    const updatedItems = [...formData.items];
-    updatedItems[index] = {
-      ...updatedItems[index],
-      productId,
-      productName: selectedProduct.name,
-      unitPrice: selectedProduct.purchasePrice,
-      total: selectedProduct.purchasePrice * updatedItems[index].quantity
-    };
-
-    const subtotal = updatedItems.reduce((sum, item) => sum + item.total, 0);
-    const tax = subtotal * 0.1;
-    const total = subtotal + tax;
-
-    setFormData({
-      ...formData,
-      items: updatedItems,
-      subtotal,
-      tax,
-      total
-    });
-    
-    setShowProductModal(false);
+  const selectStatus = (status: string) => {
+    setFormData({ ...formData, status: status as PurchaseReturnFormData['status'] });
+    setShowStatusSheet(false);
   };
 
-  const handleSelectReason = (index: number, reason: string) => {
-    handleItemChange(index, 'reason', reason);
-    setShowReasonModal(false);
-  };
-
-  const openProductModal = (index: number) => {
-    setCurrentItemIndex(index);
-    setShowProductModal(true);
-  };
-
-  const openReasonModal = (index: number) => {
-    setCurrentItemIndex(index);
-    setShowReasonModal(true);
-  };
-
-  const handleSave = () => {
-    // Validate form data
-    if (!formData.vendorId) {
-      Alert.alert('Error', 'Please select a vendor');
+  const handleSave = async () => {
+    if (!user) return;
+    if (!formData.invoiceId) {
+      Alert.alert('Validation Error', 'Please select an invoice.');
       return;
     }
-
-    if (!formData.originalOrderNumber) {
-      Alert.alert('Error', 'Please enter the original order number');
-      return;
-    }
-
     if (formData.items.length === 0) {
-      Alert.alert('Error', 'Please add at least one item');
+      Alert.alert('Validation Error', 'Please add at least one item.');
       return;
     }
-
-    // Check if all items have products and reasons
-    const invalidItems = formData.items.findIndex(
-      item => !item.productId || !item.reason
-    );
-    
-    if (invalidItems !== -1) {
-      Alert.alert('Error', `Please complete details for item ${invalidItems + 1}`);
-      return;
+    for (const item of formData.items) {
+      if (!item.productId || !item.productName || !item.quantity || !item.unitPrice) {
+        Alert.alert('Validation Error', 'Please complete all item details.');
+        return;
+      }
     }
-
-    setLoading(true);
-
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
-      Alert.alert(
-        'Success',
-        'Purchase return saved successfully',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back()
-          }
-        ]
-      );
-    }, 1000);
+    try {
+      const subtotal = Math.round(formData.subtotal * 100);
+      const tax = Math.round(formData.tax * 100);
+      const total = Math.round(formData.total * 100);
+      const items = formData.items.map(item => ({
+        productId: item.productId ?? 0,
+        quantity: item.quantity,
+        unitPrice: Math.round(item.unitPrice * 100),
+        total: Math.round(item.total * 100),
+        notes: undefined,
+      }));
+      await createPurchaseReturn(user.id, {
+        invoiceId: Number(formData.invoiceId),
+        returnNumber: formData.returnNumber,
+        returnDate: formData.returnDate,
+        status: formData.status,
+        subtotal,
+        tax,
+        total,
+        notes: formData.notes,
+        items,
+      });
+      Alert.alert('Success', 'Return created successfully');
+      router.back();
+    } catch (e) {
+      Alert.alert('Error', 'Failed to create return');
+    }
   };
+
+  if (loading) {
+    return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color={Colors.primary} /></View>;
+  }
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.light.background} />
-      
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={Colors.light.text} />
-        </TouchableOpacity>
-        <Text style={styles.title}>New Purchase Return</Text>
-        <TouchableOpacity 
-          onPress={handleSave} 
-          style={styles.saveButton}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color={Colors.primary} />
-          ) : (
-            <Save size={24} color={Colors.primary} />
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView 
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* Basic Information Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Basic Information</Text>
-          
-          {/* Vendor Selection */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Vendor <Text style={styles.requiredMark}>*</Text></Text>
-            <TouchableOpacity 
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <ArrowLeft size={24} color={Colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.title}>New Return</Text>
+          <TouchableOpacity
+            style={styles.saveButton}
+            onPress={handleSave}
+          >
+            <Text style={styles.saveButtonText}>Save</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.section}>
+            <Text style={styles.label}>Invoice</Text>
+            <TouchableOpacity
               style={styles.selectButton}
-              onPress={() => setShowVendorModal(true)}
+              onPress={() => setShowInvoiceSheet(true)}
             >
               <View style={styles.selectButtonContent}>
-                <User size={18} color={Colors.light.tabIconDefault} style={styles.inputIcon} />
-                {formData.vendorId ? (
-                  <Text style={styles.selectText} numberOfLines={1}>
-                    {vendors.find(v => v.id === formData.vendorId)?.name || 'Select Vendor'}
-                  </Text>
-                ) : (
-                  <Text style={styles.placeholderText}>Select Vendor</Text>
-                )}
+                <FileText size={20} color={Colors.text.secondary} />
+                <Text style={styles.selectButtonText}>
+                  {invoices.find(i => i.id.toString() === formData.invoiceId)?.invoiceNumber || 'Select Invoice'}
+                </Text>
               </View>
-              <ChevronRight size={18} color={Colors.light.tabIconDefault} />
+              <ChevronDown size={20} color={Colors.text.secondary} />
             </TouchableOpacity>
           </View>
 
-          {/* Return Number */}
-          <View style={styles.formGroup}>
+          <View style={styles.section}>
             <Text style={styles.label}>Return Number</Text>
-            <View style={styles.inputWrapper}>
-              <Tag size={18} color={Colors.light.tabIconDefault} style={styles.inputIcon} />
+            <View style={styles.inputContainer}>
+              <Hash size={20} color={Colors.text.secondary} />
               <TextInput
                 style={styles.input}
                 value={formData.returnNumber}
-                editable={false}
-                placeholderTextColor={Colors.light.tabIconDefault}
+                onChangeText={(text) => setFormData({ ...formData, returnNumber: text })}
+                placeholder="Enter return number"
               />
             </View>
           </View>
 
-          {/* Original Order Number */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Original Order Number <Text style={styles.requiredMark}>*</Text></Text>
-            <View style={styles.inputWrapper}>
-              <ShoppingCart size={18} color={Colors.light.tabIconDefault} style={styles.inputIcon} />
+          <View style={styles.section}>
+            <Text style={styles.label}>Return Date</Text>
+            <View style={styles.inputContainer}>
+              <Calendar size={20} color={Colors.text.secondary} />
               <TextInput
                 style={styles.input}
-                placeholder="Enter original order number"
-                placeholderTextColor={Colors.light.tabIconDefault}
-                value={formData.originalOrderNumber}
-                onChangeText={(value) => setFormData({ ...formData, originalOrderNumber: value })}
-              />
-            </View>
-          </View>
-
-          {/* Return Date */}
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Return Date <Text style={styles.requiredMark}>*</Text></Text>
-            <View style={styles.inputWrapper}>
-              <Calendar size={18} color={Colors.light.tabIconDefault} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={Colors.light.tabIconDefault}
                 value={formData.returnDate}
-                onChangeText={(value) => setFormData({ ...formData, returnDate: value })}
+                onChangeText={(text) => setFormData({ ...formData, returnDate: text })}
+                placeholder="YYYY-MM-DD"
               />
             </View>
           </View>
-        </View>
 
-        {/* Return Items Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Return Items</Text>
-            <TouchableOpacity 
-              style={styles.addItemButton}
-              onPress={handleAddItem}
+          <View style={styles.section}>
+            <Text style={styles.label}>Status</Text>
+            <TouchableOpacity
+              style={styles.selectButton}
+              onPress={() => setShowStatusSheet(true)}
             >
-              <Plus size={18} color="#FFFFFF" />
-              <Text style={styles.addItemButtonText}>Add Item</Text>
+              <View style={styles.selectButtonContent}>
+                <FileText size={20} color={Colors.text.secondary} />
+                <Text style={styles.selectButtonText}>
+                  {formData.status.charAt(0).toUpperCase() + formData.status.slice(1)}
+                </Text>
+              </View>
+              <ChevronDown size={20} color={Colors.text.secondary} />
             </TouchableOpacity>
           </View>
-          
-          {formData.items.length === 0 ? (
-            <View style={styles.noItemsContainer}>
-              <Package size={40} color={Colors.light.tabIconDefault + '70'} />
-              <Text style={styles.noItemsText}>No items added yet</Text>
-              <Text style={styles.noItemsSubtext}>Tap "Add Item" to add return items</Text>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Items</Text>
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={handleAddItem}
+              >
+                <Plus size={20} color="#fff" />
+              </TouchableOpacity>
             </View>
-          ) : (
-            formData.items.map((item, index) => (
+
+            {formData.items.map((item, index) => (
               <View key={index} style={styles.itemContainer}>
                 <View style={styles.itemHeader}>
-                  <Text style={styles.itemTitle}>Item {index + 1}</Text>
-                  <TouchableOpacity 
+                  <TouchableOpacity
+                    style={styles.selectButton}
+                    onPress={() => setShowProductSheet(index)}
+                  >
+                    <View style={styles.selectButtonContent}>
+                      <Package size={20} color={Colors.text.secondary} />
+                      <Text style={styles.selectButtonText}>
+                        {item.productName || 'Select Product'}
+                      </Text>
+                    </View>
+                    <ChevronDown size={20} color={Colors.text.secondary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.removeButton}
                     onPress={() => handleRemoveItem(index)}
-                    style={styles.removeItemButton}
                   >
-                    <Trash2 size={18} color="#FF3B30" />
+                    <Minus size={20} color={Colors.negative} />
                   </TouchableOpacity>
                 </View>
 
-                {/* Product Selection */}
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Product <Text style={styles.requiredMark}>*</Text></Text>
-                  <TouchableOpacity 
-                    style={styles.selectButton}
-                    onPress={() => openProductModal(index)}
-                  >
-                    <View style={styles.selectButtonContent}>
-                      <Package size={18} color={Colors.light.tabIconDefault} style={styles.inputIcon} />
-                      {item.productId ? (
-                        <Text style={styles.selectText} numberOfLines={1}>
-                          {item.productName}
-                        </Text>
-                      ) : (
-                        <Text style={styles.placeholderText}>Select Product</Text>
-                      )}
-                    </View>
-                    <ChevronRight size={18} color={Colors.light.tabIconDefault} />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Quantity and Unit Price */}
-                <View style={styles.row}>
-                  <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                    <Text style={styles.label}>Quantity <Text style={styles.requiredMark}>*</Text></Text>
-                    <View style={styles.inputWrapper}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="0"
-                        placeholderTextColor={Colors.light.tabIconDefault}
-                        keyboardType="numeric"
-                        value={item.quantity.toString()}
-                        onChangeText={(value) => handleItemChange(index, 'quantity', Number(value) || 0)}
-                      />
-                    </View>
+                <View style={styles.itemDetails}>
+                  <View style={styles.itemInput}>
+                    <Text style={styles.itemLabel}>Quantity</Text>
+                    <TextInput
+                      style={styles.itemTextInput}
+                      value={item.quantity.toString()}
+                      onChangeText={(text) => handleItemChange(index, 'quantity', text)}
+                      keyboardType="numeric"
+                    />
                   </View>
-
-                  <View style={[styles.formGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Unit Price <Text style={styles.requiredMark}>*</Text></Text>
-                    <View style={styles.inputWrapper}>
-                      <DollarSign size={18} color={Colors.light.tabIconDefault} style={styles.inputIcon} />
+                  <View style={styles.itemInput}>
+                    <Text style={styles.itemLabel}>Unit Price</Text>
+                    <View style={styles.priceInput}>
+                      <DollarSign size={16} color={Colors.text.secondary} />
                       <TextInput
-                        style={styles.input}
-                        placeholder="0.00"
-                        placeholderTextColor={Colors.light.tabIconDefault}
-                        keyboardType="numeric"
+                        style={styles.itemTextInput}
                         value={item.unitPrice.toString()}
-                        onChangeText={(value) => handleItemChange(index, 'unitPrice', Number(value) || 0)}
+                        onChangeText={(text) => handleItemChange(index, 'unitPrice', text)}
+                        keyboardType="numeric"
                       />
                     </View>
                   </View>
-                </View>
-
-                {/* Return Reason */}
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Return Reason <Text style={styles.requiredMark}>*</Text></Text>
-                  <TouchableOpacity 
-                    style={styles.selectButton}
-                    onPress={() => openReasonModal(index)}
-                  >
-                    <View style={styles.selectButtonContent}>
-                      <Tag size={18} color={Colors.light.tabIconDefault} style={styles.inputIcon} />
-                      {item.reason ? (
-                        <Text style={styles.selectText} numberOfLines={1}>
-                          {item.reason}
-                        </Text>
-                      ) : (
-                        <Text style={styles.placeholderText}>Select Return Reason</Text>
-                      )}
-                    </View>
-                    <ChevronRight size={18} color={Colors.light.tabIconDefault} />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Item Total */}
-                <View style={styles.itemTotal}>
-                  <Text style={styles.itemTotalLabel}>Item Total</Text>
-                  <Text style={styles.itemTotalValue}>${item.total.toFixed(2)}</Text>
+                  <View style={styles.itemInput}>
+                    <Text style={styles.itemLabel}>Total</Text>
+                    <Text style={styles.itemTotal}>${item.total.toFixed(2)}</Text>
+                  </View>
                 </View>
               </View>
-            ))
-          )}
-        </View>
+            ))}
+          </View>
 
-        {/* Summary Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Summary</Text>
-          
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Subtotal</Text>
-            <Text style={styles.summaryValue}>${formData.subtotal.toFixed(2)}</Text>
-          </View>
-          
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Tax (10%)</Text>
-            <Text style={styles.summaryValue}>${formData.tax.toFixed(2)}</Text>
-          </View>
-          
-          <View style={styles.summaryItemTotal}>
-            <Text style={styles.summaryLabelTotal}>Total</Text>
-            <Text style={styles.summaryValueTotal}>${formData.total.toFixed(2)}</Text>
-          </View>
-        </View>
-
-        {/* Notes Card */}
-        <View style={styles.card}>
-          <View style={styles.notesHeader}>
-            <FileText size={20} color={Colors.primary} />
-            <Text style={styles.cardTitle}>Notes</Text>
-          </View>
-          <View style={styles.textAreaWrapper}>
+          <View style={styles.section}>
+            <Text style={styles.label}>Notes</Text>
             <TextInput
-              style={styles.textArea}
-              placeholder="Enter additional notes here..."
-              placeholderTextColor={Colors.light.tabIconDefault}
+              style={styles.notesInput}
+              value={formData.notes}
+              onChangeText={(text) => setFormData({ ...formData, notes: text })}
+              placeholder="Add notes..."
               multiline
               numberOfLines={4}
-              textAlignVertical="top"
-              value={formData.notes}
-              onChangeText={(value) => setFormData({ ...formData, notes: value })}
             />
           </View>
-        </View>
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity 
-            style={[styles.button, styles.cancelButton]} 
-            onPress={() => router.back()}
-          >
-            <X size={20} color={Colors.light.text} style={styles.buttonIcon} />
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[
-              styles.button, 
-              styles.saveButtonLarge,
-              loading && styles.disabledButton
-            ]} 
-            onPress={handleSave}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
-            ) : (
-              <Check size={20} color="#FFFFFF" style={styles.buttonIcon} />
-            )}
-            <Text style={styles.saveButtonText}>Save Return</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-
-      {/* Vendor Selection Modal */}
-      <Modal
-        visible={showVendorModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowVendorModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Vendor</Text>
-              <TouchableOpacity 
-                style={styles.closeButton} 
-                onPress={() => setShowVendorModal(false)}
-              >
-                <X size={22} color={Colors.light.text} />
-              </TouchableOpacity>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Summary</Text>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Subtotal</Text>
+              <Text style={styles.summaryValue}>${formData.subtotal.toFixed(2)}</Text>
             </View>
-            <FlatList
-              data={vendors}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.modalList}
-              renderItem={({ item }) => (
-                <TouchableOpacity 
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Tax</Text>
+              <Text style={styles.summaryValue}>${formData.tax.toFixed(2)}</Text>
+            </View>
+            <View style={[styles.summaryRow, styles.totalRow]}>
+              <Text style={styles.totalRowLabel}>Total</Text>
+              <Text style={styles.totalRowValue}>${formData.total.toFixed(2)}</Text>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* Invoice Selection Bottom Sheet */}
+        <Modal
+          visible={showInvoiceSheet}
+          animationType="slide"
+          transparent={true}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Invoice</Text>
+                <TouchableOpacity onPress={() => setShowInvoiceSheet(false)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.searchContainer}>
+                <Search size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={invoiceSearch}
+                  onChangeText={setInvoiceSearch}
+                  placeholder="Search invoices..."
+                />
+              </View>
+              <FlatList
+                data={invoices.filter(i => 
+                  i.invoiceNumber.toLowerCase().includes(invoiceSearch.toLowerCase())
+                )}
+                keyExtractor={(item) => item.id.toString()}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.modalItem}
+                    onPress={() => selectInvoice(item)}
+                  >
+                    <Text style={styles.modalItemText}>{item.invoiceNumber}</Text>
+                    {item.id.toString() === formData.invoiceId && (
+                      <Check size={20} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </View>
+        </Modal>
+
+        {/* Product Selection Bottom Sheet */}
+        <Modal
+          visible={showProductSheet !== null}
+          animationType="slide"
+          transparent={true}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Product</Text>
+                <TouchableOpacity onPress={() => setShowProductSheet(null)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.searchContainer}>
+                <Search size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={productSearch}
+                  onChangeText={setProductSearch}
+                  placeholder="Search products..."
+                />
+              </View>
+              <FlatList
+                data={products.filter(p => 
+                  p.productName.toLowerCase().includes(productSearch.toLowerCase())
+                )}
+                keyExtractor={(item) => item.id.toString()}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.modalItem}
+                    onPress={() => selectProduct(showProductSheet!, item)}
+                  >
+                    <Text style={styles.modalItemText}>{item.productName}</Text>
+                    {item.id === formData.items[showProductSheet!]?.productId && (
+                      <Check size={20} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </View>
+        </Modal>
+
+        {/* Status Selection Bottom Sheet */}
+        <Modal
+          visible={showStatusSheet}
+          animationType="slide"
+          transparent={true}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Status</Text>
+                <TouchableOpacity onPress={() => setShowStatusSheet(false)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              {['draft', 'pending', 'approved', 'rejected', 'completed'].map((status) => (
+                <TouchableOpacity
+                  key={status}
                   style={styles.modalItem}
-                  onPress={() => handleSelectVendor(item.id)}
+                  onPress={() => selectStatus(status)}
                 >
-                  <View style={styles.modalItemContent}>
-                    <Text style={styles.modalItemTitle}>{item.name}</Text>
-                    <Text style={styles.modalItemSubtitle}>{item.email}</Text>
-                  </View>
-                  {formData.vendorId === item.id && (
+                  <Text style={styles.modalItemText}>
+                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                  </Text>
+                  {status === formData.status && (
                     <Check size={20} color={Colors.primary} />
                   )}
                 </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
-
-      {/* Product Selection Modal */}
-      <Modal
-        visible={showProductModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowProductModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Product</Text>
-              <TouchableOpacity 
-                style={styles.closeButton} 
-                onPress={() => setShowProductModal(false)}
-              >
-                <X size={22} color={Colors.light.text} />
-              </TouchableOpacity>
+              ))}
             </View>
-            <FlatList
-              data={products}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.modalList}
-              renderItem={({ item }) => (
-                <TouchableOpacity 
-                  style={styles.modalItem}
-                  onPress={() => handleSelectProduct(currentItemIndex, item.id)}
-                >
-                  <View style={styles.modalItemContent}>
-                    <Text style={styles.modalItemTitle}>{item.name}</Text>
-                    <Text style={styles.modalItemSubtitle}>${item.purchasePrice.toFixed(2)}</Text>
-                  </View>
-                  {formData.items[currentItemIndex]?.productId === item.id && (
-                    <Check size={20} color={Colors.primary} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
           </View>
-        </View>
-      </Modal>
-
-      {/* Return Reason Modal */}
-      <Modal
-        visible={showReasonModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowReasonModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Return Reason</Text>
-              <TouchableOpacity 
-                style={styles.closeButton} 
-                onPress={() => setShowReasonModal(false)}
-              >
-                <X size={22} color={Colors.light.text} />
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={RETURN_REASONS}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.modalList}
-              renderItem={({ item }) => (
-                <TouchableOpacity 
-                  style={styles.modalItem}
-                  onPress={() => handleSelectReason(currentItemIndex, item.name)}
-                >
-                  <Text style={styles.modalItemTitle}>{item.name}</Text>
-                  {formData.items[currentItemIndex]?.reason === item.name && (
-                    <Check size={20} color={Colors.primary} />
-                  )}
-                </TouchableOpacity>
-              )}
-              ListFooterComponent={() => (
-                <TouchableOpacity 
-                  style={[styles.modalItem, styles.customReasonItem]}
-                >
-                  <TextInput 
-                    style={styles.customReasonInput}
-                    placeholder="Type custom reason..."
-                    placeholderTextColor={Colors.light.tabIconDefault}
-                    onChangeText={(text) => {
-                      if (text.trim()) {
-                        handleSelectReason(currentItemIndex, text);
-                      }
-                    }}
-                    onSubmitEditing={(e) => {
-                      if (e.nativeEvent.text.trim()) {
-                        handleSelectReason(currentItemIndex, e.nativeEvent.text);
-                      }
-                    }}
-                    autoFocus
-                  />
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
-    </KeyboardAvoidingView>
+        </Modal>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.light.background,
+    backgroundColor: Colors.background.default,
   },
   header: {
     flexDirection: 'row',
@@ -664,9 +499,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: Colors.light.background,
+    backgroundColor: Colors.background.default,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.light.tabIconDefault + '30',
+    borderBottomColor: Colors.border.light,
   },
   backButton: {
     width: 40,
@@ -675,143 +510,91 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    color: Colors.light.text,
+    color: Colors.text.primary,
   },
   saveButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   content: {
     flex: 1,
-  },
-  contentContainer: {
     padding: 16,
-    paddingBottom: 40,
   },
-  card: {
-    backgroundColor: Colors.light.background,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.light.tabIconDefault + '30',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+  section: {
+    marginBottom: 24,
   },
-  cardHeader: {
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
   },
-  cardTitle: {
+  sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  formGroup: {
-    marginBottom: 16,
+    fontWeight: 'bold',
+    color: Colors.text.primary,
   },
   label: {
     fontSize: 14,
-    fontWeight: '500',
-    color: Colors.light.text,
+    color: Colors.text.secondary,
     marginBottom: 8,
   },
-  requiredMark: {
-    color: '#FF3B30',
-  },
-  inputWrapper: {
+  inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: Colors.light.tabIconDefault + '50',
+    borderColor: Colors.border.light,
     borderRadius: 8,
     paddingHorizontal: 12,
-  },
-  inputIcon: {
-    marginRight: 8,
+    height: 48,
   },
   input: {
     flex: 1,
-    paddingVertical: 10,
+    marginLeft: 8,
     fontSize: 16,
-    color: Colors.light.text,
+    color: Colors.text.primary,
   },
   selectButton: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
     borderWidth: 1,
-    borderColor: Colors.light.tabIconDefault + '50',
+    borderColor: Colors.border.light,
     borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 48,
   },
   selectButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
   },
-  selectText: {
+  selectButtonText: {
+    marginLeft: 8,
     fontSize: 16,
-    color: Colors.light.text,
+    color: Colors.text.primary,
   },
-  placeholderText: {
-    fontSize: 16,
-    color: Colors.light.tabIconDefault,
-  },
-  row: {
-    flexDirection: 'row',
-  },
-  addItemButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  addButton: {
+    width: 32,
+    height: 32,
     backgroundColor: Colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  addItemButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginLeft: 4,
-  },
-  noItemsContainer: {
-    alignItems: 'center',
+    borderRadius: 16,
     justifyContent: 'center',
-    padding: 30,
-    borderWidth: 1,
-    borderColor: Colors.light.tabIconDefault + '30',
-    borderRadius: 8,
-    borderStyle: 'dashed',
-  },
-  noItemsText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginTop: 12,
-  },
-  noItemsSubtext: {
-    fontSize: 14,
-    color: Colors.light.tabIconDefault,
-    marginTop: 4,
+    alignItems: 'center',
   },
   itemContainer: {
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.light.tabIconDefault + '30',
-    borderRadius: 10,
-    marginBottom: 16,
-    backgroundColor: Colors.light.background,
+    backgroundColor: Colors.background.secondary,
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
   },
   itemHeader: {
     flexDirection: 'row',
@@ -819,188 +602,135 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  itemTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  removeItemButton: {
+  removeButton: {
     width: 32,
     height: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+  },
+  itemDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  itemInput: {
+    flex: 1,
+  },
+  itemLabel: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    marginBottom: 4,
+  },
+  itemTextInput: {
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 14,
+    color: Colors.text.primary,
+  },
+  priceInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   itemTotal: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.text.primary,
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: Colors.text.primary,
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.light.tabIconDefault + '20',
-    marginTop: 8,
-  },
-  itemTotalLabel: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: Colors.light.text,
-  },
-  itemTotalValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  summaryItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   summaryLabel: {
-    fontSize: 15,
-    color: Colors.light.text,
+    fontSize: 16,
+    color: Colors.text.secondary,
   },
   summaryValue: {
-    fontSize: 15,
-    color: Colors.light.text,
-    fontWeight: '500',
-  },
-  summaryItemTotal: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.light.tabIconDefault + '30',
-    marginTop: 4,
-  },
-  summaryLabelTotal: {
     fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
+    color: Colors.text.primary,
   },
-  summaryValueTotal: {
+  totalRow: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+  },
+  totalRowLabel: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: 'bold',
+    color: Colors.text.primary,
+  },
+  totalRowValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
     color: Colors.primary,
   },
-  notesHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
-  },
-  textAreaWrapper: {
-    borderWidth: 1,
-    borderColor: Colors.light.tabIconDefault + '50',
-    borderRadius: 8,
-  },
-  textArea: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: Colors.light.text,
-    minHeight: 120,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    marginTop: 16,
-    marginBottom: 32,
-    gap: 12,
-  },
-  button: {
-    flex: 1,
-    height: 48,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  cancelButton: {
-    backgroundColor: Colors.light.background,
-    borderWidth: 1,
-    borderColor: Colors.light.tabIconDefault + '50',
-  },
-  saveButtonLarge: {
-    backgroundColor: Colors.primary,
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  buttonIcon: {
-    marginRight: 8,
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  modalOverlay: {
+  modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
-  modal: {
-    width: '90%',
-    maxHeight: '70%',
-    backgroundColor: Colors.light.background,
-    borderRadius: 12,
-    overflow: 'hidden',
+  modalContent: {
+    backgroundColor: Colors.background.default,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.tabIconDefault + '30',
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: Colors.light.text,
+    fontWeight: 'bold',
+    color: Colors.text.primary,
   },
-  closeButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
+  searchContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginBottom: 16,
   },
-  modalList: {
-    padding: 8,
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 16,
+    color: Colors.text.primary,
   },
   modalItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.light.tabIconDefault + '20',
+    borderBottomColor: Colors.border.light,
   },
-  modalItemContent: {
-    flex: 1,
-  },
-  modalItemTitle: {
+  modalItemText: {
     fontSize: 16,
-    fontWeight: '500',
-    color: Colors.light.text,
-  },
-  modalItemSubtitle: {
-    fontSize: 14,
-    color: Colors.light.tabIconDefault,
-    marginTop: 4,
-  },
-  customReasonItem: {
-    borderBottomWidth: 0,
-  },
-  customReasonInput: {
-    flex: 1,
-    fontSize: 16,
-    color: Colors.light.text,
+    color: Colors.text.primary,
   },
 }); 

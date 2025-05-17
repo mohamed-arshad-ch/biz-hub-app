@@ -73,6 +73,9 @@ export default function ReportsScreen() {
       case 'balance':
         router.push("/reports/balance-report");
         break;
+      case 'transaction':
+        router.push("/reports/transaction-report");
+        break;
       default:
         router.push("/reports");
     }
@@ -107,6 +110,14 @@ export default function ReportsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.grid}>
+
+        <ReportCard 
+            title="Trans Report" 
+            icon={<BarChart2 size={22} color={Colors.primary} />} 
+            description="View all financial transactions" 
+            onPress={() => navigateToReport('Transaction')}
+          />
+
           <ReportCard 
             title="Ledger Report" 
             icon={<BookOpen size={22} color={Colors.primary} />} 

@@ -29,94 +29,25 @@ import {
   Check,
   ArrowLeft,
   CreditCard,
-  User
+  User,
+  Edit2
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { IncomeRecord } from '@/types/income';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// Mock income records
-// In a real app, this would come from an API or local storage
-const mockIncomeRecords: IncomeRecord[] = [
-  {
-    id: '1',
-    source: 'Monthly Salary',
-    amount: 4500,
-    date: new Date('2023-11-01T00:00:00.000Z'),
-    category: 'Salary',
-    notes: 'Regular monthly salary for November',
-    paymentMethod: 'Bank Transfer',
-    reference: 'SALARY-NOV-2023'
-  },
-  {
-    id: '2',
-    source: 'Freelance Project',
-    amount: 1200,
-    date: new Date('2023-11-15T00:00:00.000Z'),
-    category: 'Freelance',
-    notes: 'Website development for client XYZ',
-    paymentMethod: 'Digital Wallet',
-    reference: 'PROJ-XYZ-001'
-  },
-  {
-    id: '3',
-    source: 'Stock Dividends',
-    amount: 350,
-    date: new Date('2023-11-20T00:00:00.000Z'),
-    category: 'Investment',
-    notes: 'Quarterly dividends from stock portfolio',
-    paymentMethod: 'Bank Transfer',
-    reference: 'DIV-Q4-2023'
-  },
-  {
-    id: '4',
-    source: 'Online Course Sales',
-    amount: 870,
-    date: new Date('2023-11-25T00:00:00.000Z'),
-    category: 'Business',
-    notes: 'Revenue from online course platform',
-    paymentMethod: 'Credit Card',
-    reference: 'COURSE-NOV-2023'
-  },
-  {
-    id: '5',
-    source: 'Rental Income',
-    amount: 1500,
-    date: new Date('2023-11-30T00:00:00.000Z'),
-    category: 'Other',
-    notes: 'Monthly rental income from property',
-    paymentMethod: 'Bank Transfer',
-    reference: 'RENT-NOV-2023'
-  },
-  {
-    id: '6',
-    source: 'Consulting Fee',
-    amount: 2000,
-    date: new Date('2023-12-05T00:00:00.000Z'),
-    category: 'Freelance',
-    notes: 'Consulting services for client ABC',
-    paymentMethod: 'Bank Transfer',
-    reference: 'CONS-ABC-002'
-  },
-  {
-    id: '7',
-    source: 'Bonus Payment',
-    amount: 1000,
-    date: new Date('2023-12-10T00:00:00.000Z'),
-    category: 'Salary',
-    notes: 'End of year performance bonus',
-    paymentMethod: 'Bank Transfer',
-    reference: 'BONUS-DEC-2023'
-  }
-];
+import { useAuthStore } from '@/store/auth';
+import { Income, getAllIncomes, deleteIncome } from '@/db/income';
+import { formatCurrency } from '@/utils/format';
 
 // Sort options
-type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'source-asc' | 'source-desc';
-type FilterOption = 'all' | 'salary' | 'investment' | 'business' | 'freelance' | 'other';
+type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc';
+type FilterOption = 'all' | number;
 
 export default function IncomeScreen() {
   const router = useRouter();
+  const user = useAuthStore(state => state.user);
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
-  const [incomes, setIncomes] = useState<IncomeRecord[]>(mockIncomeRecords);
+  const [incomes, setIncomes] = useState<Income[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -127,21 +58,22 @@ export default function IncomeScreen() {
 
   // Load income records
   useEffect(() => {
-    fetchIncomes();
-  }, []);
+    if (user) {
+      loadIncomes();
+    }
+  }, [user]);
 
-  const fetchIncomes = async () => {
+  const loadIncomes = async () => {
+    if (!user) return;
+    
+    setLoading(true);
     try {
-      setLoading(true);
-      // In a real app, you would fetch from an API
-      setTimeout(() => {
-        setIncomes(mockIncomeRecords);
-        setLoading(false);
-        setRefreshing(false);
-      }, 500);
+      const incomesData = await getAllIncomes(user.id);
+      setIncomes(incomesData);
     } catch (error) {
-      console.error('Error fetching income records:', error);
-      Alert.alert('Error', 'Failed to load income records');
+      console.error('Error loading incomes:', error);
+      Alert.alert('Error', 'Failed to load incomes');
+    } finally {
       setLoading(false);
       setRefreshing(false);
     }
@@ -149,7 +81,7 @@ export default function IncomeScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchIncomes();
+    loadIncomes();
   };
 
   const handleSort = (option: SortOption) => {
@@ -164,12 +96,8 @@ export default function IncomeScreen() {
         return new Date(a.date).getTime() - new Date(b.date).getTime();
       } else if (option === 'amount-desc') {
         return b.amount - a.amount;
-      } else if (option === 'amount-asc') {
-        return a.amount - b.amount;
-      } else if (option === 'source-asc') {
-        return a.source.localeCompare(b.source);
       } else {
-        return b.source.localeCompare(a.source);
+        return a.amount - b.amount;
       }
     });
     
@@ -182,106 +110,79 @@ export default function IncomeScreen() {
     
     // Filter the incomes based on selected option
     if (option === 'all') {
-      setIncomes(mockIncomeRecords);
+      loadIncomes();
     } else {
-      const filteredIncomes = mockIncomeRecords.filter(income => 
-        income.category.toLowerCase() === option
+      const filteredIncomes = incomes.filter(income => 
+        income.categoryId === option
       );
       setIncomes(filteredIncomes);
     }
   };
 
   const handleEdit = (id: string) => {
-    router.push(`/income/edit/1`);
+    router.push(`/income/edit/${id}`);
   };
 
-  const handleDelete = (id: string) => {
-    Alert.alert(
-      'Delete Income',
-      'Are you sure you want to delete this income record? This action cannot be undone.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            // In a real app, you would call an API to delete the income
-            const updatedRecords = incomes.filter(income => income.id !== id);
-            setIncomes(updatedRecords);
-            Alert.alert('Success', 'Income record deleted successfully');
-          },
-        },
-      ]
-    );
+  const handleDeleteIncome = async (id: number) => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      await deleteIncome(id, user.id);
+      setIncomes(incomes.filter(income => income.id !== id));
+      Alert.alert('Success', 'Income deleted successfully');
+    } catch (error) {
+      console.error('Error deleting income:', error);
+      Alert.alert('Error', 'An error occurred while deleting the income');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePrint = (id: string) => {
     Alert.alert('Print', 'Printing income record...');
   };
 
-  const renderIncomeItem = useCallback(({ item }: { item: IncomeRecord }) => (
-    <TouchableOpacity
+  const renderIncomeItem = useCallback(({ item }: { item: Income }) => (
+    <TouchableOpacity 
       style={styles.incomeItem}
       onPress={() => router.push(`/income/${item.id}`)}
     >
-      <View style={styles.incomeContent}>
-        <View style={styles.incomeMainInfo}>
-          <Text style={styles.sourceName}>{item.source}</Text>
-          <View style={styles.amountContainer}>
-            <DollarSign size={16} color={Colors.primary} style={styles.amountIcon} />
-            <Text style={styles.amount}>${item.amount.toFixed(2)}</Text>
-          </View>
-        </View>
-        
-        <View style={styles.incomeDetails}>
-          {/* Category */}
-          <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(item.category) }]}>
-            <Tag size={12} color="#FFF" />
-            <Text style={styles.categoryText}>{item.category}</Text>
-          </View>
-          
-          <View style={styles.detailsContainer}>
-            {/* Payment Method */}
-            {item.paymentMethod && (
-              <View style={styles.detailRow}>
-                <CreditCard size={16} color={Colors.text.secondary} style={styles.detailIcon} />
-                <Text style={styles.detailText}>{item.paymentMethod}</Text>
-              </View>
-            )}
-            
-            {/* Date */}
-            <View style={styles.detailRow}>
-              <Calendar size={16} color={Colors.text.secondary} style={styles.detailIcon} />
-              <Text style={styles.detailText}>{item.date.toLocaleDateString()}</Text>
-            </View>
-          </View>
-        </View>
-        
-        <View style={styles.incomeActions}>
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={() => handleEdit(item.id)}
-          >
-            <Edit size={16} color={Colors.primary} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={() => handlePrint(item.id)}
-          >
-            <Printer size={16} color={Colors.text.secondary} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={() => handleDelete(item.id)}
-          >
-            <Trash2 size={16} color="#FF3B30" />
-          </TouchableOpacity>
-        </View>
+      <View style={styles.incomeInfo}>
+        <Text style={styles.incomeAmount}>{formatCurrency(item.amount)}</Text>
+        <Text style={styles.incomeDate}>{new Date(item.date).toLocaleDateString()}</Text>
+        {item.description ? (
+          <Text style={styles.incomeDescription}>{item.description}</Text>
+        ) : null}
+      </View>
+      <View style={styles.incomeActions}>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            handleEdit(item.id.toString());
+          }}
+        >
+          <Edit2 size={18} color={Colors.primary} />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            handlePrint(item.id.toString());
+          }}
+        >
+          <Printer size={18} color={Colors.text.secondary} />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            handleDeleteIncome(item.id);
+          }}
+        >
+          <Trash2 size={18} color={Colors.negative || "#FF3B30"} />
+        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   ), []);
@@ -301,24 +202,111 @@ export default function IncomeScreen() {
   
   const renderEmptyList = () => (
     <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>No income records found</Text>
-      {searchQuery !== '' && (
-        <Text style={styles.emptySubtext}>
-          Try adjusting your search or filter criteria
-        </Text>
-      )}
+      <Text style={styles.emptyTitle}>No Income Records</Text>
+      <Text style={styles.emptyText}>
+        Add your income records to track your earnings.
+      </Text>
       <TouchableOpacity 
-        style={styles.emptyButton}
+        style={styles.emptyAddButton}
         onPress={() => router.push('/income/new')}
       >
-        <Plus size={16} color="#FFF" />
-        <Text style={styles.emptyButtonText}>Add New Income</Text>
+        <Text style={styles.emptyAddButtonText}>Add Income</Text>
       </TouchableOpacity>
     </View>
   );
 
+  const renderSortOptions = () => (
+    <Modal
+      visible={showSortOptions}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowSortOptions(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Sort By</Text>
+            <TouchableOpacity onPress={() => setShowSortOptions(false)}>
+              <X size={24} color={Colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.modalOptions}>
+            <TouchableOpacity
+              style={[styles.modalOption, sortBy === 'date-desc' && styles.selectedOption]}
+              onPress={() => handleSort('date-desc')}
+            >
+              <Text style={[styles.modalOptionText, sortBy === 'date-desc' && styles.selectedOptionText]}>
+                Date (Newest First)
+              </Text>
+              {sortBy === 'date-desc' && <Check size={20} color={Colors.primary} />}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalOption, sortBy === 'date-asc' && styles.selectedOption]}
+              onPress={() => handleSort('date-asc')}
+            >
+              <Text style={[styles.modalOptionText, sortBy === 'date-asc' && styles.selectedOptionText]}>
+                Date (Oldest First)
+              </Text>
+              {sortBy === 'date-asc' && <Check size={20} color={Colors.primary} />}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalOption, sortBy === 'amount-desc' && styles.selectedOption]}
+              onPress={() => handleSort('amount-desc')}
+            >
+              <Text style={[styles.modalOptionText, sortBy === 'amount-desc' && styles.selectedOptionText]}>
+                Amount (High to Low)
+              </Text>
+              {sortBy === 'amount-desc' && <Check size={20} color={Colors.primary} />}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalOption, sortBy === 'amount-asc' && styles.selectedOption]}
+              onPress={() => handleSort('amount-asc')}
+            >
+              <Text style={[styles.modalOptionText, sortBy === 'amount-asc' && styles.selectedOptionText]}>
+                Amount (Low to High)
+              </Text>
+              {sortBy === 'amount-asc' && <Check size={20} color={Colors.primary} />}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderFilterOptions = () => (
+    <Modal
+      visible={showFilterOptions}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowFilterOptions(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filter By Category</Text>
+            <TouchableOpacity onPress={() => setShowFilterOptions(false)}>
+              <X size={24} color={Colors.text.primary} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.modalOptions}>
+            <TouchableOpacity
+              style={[styles.modalOption, filterBy === 'all' && styles.selectedOption]}
+              onPress={() => handleFilter('all')}
+            >
+              <Text style={[styles.modalOptionText, filterBy === 'all' && styles.selectedOptionText]}>
+                All Categories
+              </Text>
+              {filterBy === 'all' && <Check size={20} color={Colors.primary} />}
+            </TouchableOpacity>
+            {/* Add category filters here when we have the category data */}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       
       <View style={styles.header}>
@@ -358,8 +346,7 @@ export default function IncomeScreen() {
           >
             <Filter size={18} color={Colors.text.secondary} />
             <Text style={styles.filterSortText}>
-              {filterBy === 'all' ? 'All Categories' : 
-                filterBy.charAt(0).toUpperCase() + filterBy.slice(1)}
+              {filterBy === 'all' ? 'All Categories' : 'Category'}
             </Text>
             <ChevronDown size={18} color={Colors.text.secondary} />
           </TouchableOpacity>
@@ -376,94 +363,11 @@ export default function IncomeScreen() {
               {sortBy === 'date-desc' ? 'Newest First' : 
                sortBy === 'date-asc' ? 'Oldest First' :
                sortBy === 'amount-desc' ? 'Highest Amount' :
-               sortBy === 'amount-asc' ? 'Lowest Amount' :
-               sortBy === 'source-asc' ? 'A to Z' : 'Z to A'}
+               'Lowest Amount'}
             </Text>
             <ChevronDown size={18} color={Colors.text.secondary} />
           </TouchableOpacity>
         </View>
-        
-        {showSortOptions && (
-          <View style={styles.dropdown}>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'date-desc' && styles.selectedItem]}
-              onPress={() => handleSort('date-desc')}
-            >
-              <Text style={[styles.dropdownText, sortBy === 'date-desc' && styles.selectedText]}>Date: Newest First</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'date-asc' && styles.selectedItem]}
-              onPress={() => handleSort('date-asc')}
-            >
-              <Text style={[styles.dropdownText, sortBy === 'date-asc' && styles.selectedText]}>Date: Oldest First</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'amount-desc' && styles.selectedItem]}
-              onPress={() => handleSort('amount-desc')}
-            >
-              <Text style={[styles.dropdownText, sortBy === 'amount-desc' && styles.selectedText]}>Amount: Highest First</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'amount-asc' && styles.selectedItem]}
-              onPress={() => handleSort('amount-asc')}
-            >
-              <Text style={[styles.dropdownText, sortBy === 'amount-asc' && styles.selectedText]}>Amount: Lowest First</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'source-asc' && styles.selectedItem]}
-              onPress={() => handleSort('source-asc')}
-            >
-              <Text style={[styles.dropdownText, sortBy === 'source-asc' && styles.selectedText]}>Source: A to Z</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'source-desc' && styles.selectedItem]}
-              onPress={() => handleSort('source-desc')}
-            >
-              <Text style={[styles.dropdownText, sortBy === 'source-desc' && styles.selectedText]}>Source: Z to A</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        
-        {showFilterOptions && (
-          <View style={styles.dropdown}>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'all' && styles.selectedItem]}
-              onPress={() => handleFilter('all')}
-            >
-              <Text style={[styles.dropdownText, filterBy === 'all' && styles.selectedText]}>All Categories</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'salary' && styles.selectedItem]}
-              onPress={() => handleFilter('salary')}
-            >
-              <Text style={[styles.dropdownText, filterBy === 'salary' && styles.selectedText]}>Salary</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'investment' && styles.selectedItem]}
-              onPress={() => handleFilter('investment')}
-            >
-              <Text style={[styles.dropdownText, filterBy === 'investment' && styles.selectedText]}>Investment</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'business' && styles.selectedItem]}
-              onPress={() => handleFilter('business')}
-            >
-              <Text style={[styles.dropdownText, filterBy === 'business' && styles.selectedText]}>Business</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'freelance' && styles.selectedItem]}
-              onPress={() => handleFilter('freelance')}
-            >
-              <Text style={[styles.dropdownText, filterBy === 'freelance' && styles.selectedText]}>Freelance</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'other' && styles.selectedItem]}
-              onPress={() => handleFilter('other')}
-            >
-              <Text style={[styles.dropdownText, filterBy === 'other' && styles.selectedText]}>Other</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
 
       {loading ? (
@@ -477,18 +381,19 @@ export default function IncomeScreen() {
             if (searchQuery) {
               const query = searchQuery.toLowerCase();
               return (
-                income.source.toLowerCase().includes(query) ||
-                income.category.toLowerCase().includes(query) ||
-                (income.notes && income.notes.toLowerCase().includes(query)) ||
-                (income.paymentMethod && income.paymentMethod.toLowerCase().includes(query)) ||
-                (income.reference && income.reference.toLowerCase().includes(query))
+                income.description?.toLowerCase().includes(query) ||
+                income.paymentMethod?.toLowerCase().includes(query) ||
+                income.referenceNumber?.toLowerCase().includes(query)
               );
             }
             return true;
           })}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.id.toString()}
           renderItem={renderIncomeItem}
-          contentContainerStyle={styles.listContainer}
+          contentContainerStyle={[
+            styles.listContainer,
+            { paddingBottom: insets.bottom + 80 }
+          ]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -502,11 +407,14 @@ export default function IncomeScreen() {
       )}
       
       <TouchableOpacity
-        style={styles.fab}
+        style={[styles.fab, { bottom: insets.bottom + 16 }]}
         onPress={() => router.push('/income/new')}
       >
         <Plus size={24} color="#FFFFFF" />
       </TouchableOpacity>
+
+      {renderSortOptions()}
+      {renderFilterOptions()}
     </View>
   );
 }
@@ -592,40 +500,6 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     flex: 1,
   },
-  dropdown: {
-    position: 'absolute',
-    top: 45,
-    left: 16,
-    right: 16,
-    backgroundColor: 'white',
-    borderRadius: 10,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
-    zIndex: 200,
-  },
-  dropdownItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
-  },
-  selectedItem: {
-    backgroundColor: 'rgba(76, 175, 80, 0.08)',
-  },
-  dropdownText: {
-    fontSize: 15,
-    color: Colors.text.secondary,
-  },
-  selectedText: {
-    color: Colors.primary,
-    fontWeight: '500',
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -645,120 +519,71 @@ const styles = StyleSheet.create({
     padding: 20,
     minHeight: 300,
   },
-  emptyText: {
+  emptyTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: Colors.text.primary,
     marginBottom: 8,
   },
-  emptySubtext: {
+  emptyText: {
     fontSize: 14,
     color: Colors.text.secondary,
     textAlign: 'center',
     marginBottom: 16,
   },
-  emptyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  emptyAddButton: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
-    marginTop: 8,
   },
-  emptyButtonText: {
-    color: '#FFF',
+  emptyAddButtonText: {
+    color: '#fff',
     fontWeight: '600',
-    marginLeft: 8,
   },
   listContainer: {
     padding: 16,
     paddingBottom: 80,
   },
   incomeItem: {
-    backgroundColor: Colors.background.default,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
-  },
-  incomeContent: {
-    padding: 16,
-  },
-  incomeMainInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    backgroundColor: Colors.background.default,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  sourceName: {
-    fontSize: 16,
+  incomeInfo: {
+    flex: 1,
+  },
+  incomeAmount: {
+    fontSize: 18,
     fontWeight: '600',
     color: Colors.text.primary,
-    flex: 1,
-    marginRight: 10,
   },
-  amountContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  amountIcon: {
-    marginRight: 4,
-  },
-  amount: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  incomeDetails: {
-    marginBottom: 12,
-  },
-  categoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 16,
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  categoryText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  detailsContainer: {
-    marginTop: 6,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  detailIcon: {
-    marginRight: 8,
-  },
-  detailText: {
+  incomeDate: {
     fontSize: 14,
     color: Colors.text.secondary,
+    marginTop: 4,
+  },
+  incomeDescription: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginTop: 4,
   },
   incomeActions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
-    paddingTop: 12,
-    marginTop: 6,
   },
   actionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: 8,
     marginLeft: 8,
   },
   fab: {
@@ -779,5 +604,49 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4.65,
     elevation: 8,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 10,
+    width: '80%',
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+  },
+  modalOptions: {
+    // Add any additional styles for the modal options container
+  },
+  modalOption: {
+    padding: 10,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 5,
+  },
+  selectedOption: {
+    backgroundColor: 'rgba(76, 175, 80, 0.08)',
+  },
+  modalOptionText: {
+    fontSize: 15,
+    color: Colors.text.secondary,
+  },
+  selectedOptionText: {
+    color: Colors.primary,
+    fontWeight: '500',
   },
 });

@@ -1,564 +1,751 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  StatusBar,
-  Alert,
-  Modal
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
+  Alert, 
+  TextInput, 
+  StatusBar, 
+  KeyboardAvoidingView, 
+  Platform,
+  Modal,
+  FlatList,
+  ActivityIndicator
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import {
-  ArrowLeft,
-  Calendar,
-  ChevronDown,
-  Plus,
-  Trash,
+import { 
+  ArrowLeft, 
+  User, 
+  Calendar, 
+  Hash, 
+  FileText, 
+  Plus, 
+  Minus, 
+  Package, 
+  ChevronDown, 
+  Check,
+  Search,
   X,
-  Save,
-  Search
+  DollarSign
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { Vendor } from '@/types/vendor';
+import { Product } from '@/types/product';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// Mock vendors data
-const vendorsData = [
-  { id: 'v-001', name: 'ABC Suppliers', email: 'info@abcsuppliers.com', phone: '123-456-7890' },
-  { id: 'v-002', name: 'XYZ Electronics', email: 'contact@xyzelectronics.com', phone: '987-654-3210' },
-  { id: 'v-003', name: 'Office Supplies Co.', email: 'sales@officesupplies.com', phone: '555-123-4567' },
-  { id: 'v-004', name: 'Tech Gadgets Inc.', email: 'support@techgadgets.com', phone: '333-222-1111' },
-  { id: 'v-005', name: 'Furniture Warehouse', email: 'orders@furniturewarehouse.com', phone: '444-555-6666' },
-];
+import { useSQLiteContext } from 'expo-sqlite';
+import { drizzle } from 'drizzle-orm/expo-sqlite';
+import * as schema from '@/db/schema';
+import * as dbVendor from '@/db/vendor';
+import * as dbProduct from '@/db/product';
+import { useAuthStore } from '@/store/auth';
+import { createPurchaseInvoice } from '@/db/purchase-invoice';
+import { formatCurrency } from '@/utils/format';
 
-// Mock products data
-const productsData = [
-  { id: 'p1', name: 'Office Chair', price: 150.00, description: 'Ergonomic office chair' },
-  { id: 'p2', name: 'Desk Lamp', price: 50.00, description: 'LED desk lamp' },
-  { id: 'p3', name: 'Laptop', price: 1200.00, description: 'Business laptop' },
-  { id: 'p4', name: 'Printer Paper', price: 10.00, description: 'A4 printer paper (500 sheets)' },
-  { id: 'p5', name: 'Ink Cartridges', price: 70.00, description: 'Printer ink cartridges' },
-  { id: 'p6', name: 'Wireless Headphones', price: 150.00, description: 'Noise cancelling headphones' },
-  { id: 'p7', name: 'Smart Speaker', price: 150.00, description: 'Bluetooth smart speaker' },
-  { id: 'p8', name: 'Conference Table', price: 1500.00, description: 'Large conference table' },
-  { id: 'p9', name: 'Office Chair Deluxe', price: 200.00, description: 'Premium ergonomic office chair' },
-];
-
-// Status options
-const statusOptions = [
-  { id: 'paid', label: 'Paid', color: Colors.status.completed },
-  { id: 'unpaid', label: 'Unpaid', color: Colors.status.pending },
-  { id: 'overdue', label: 'Overdue', color: '#FF3B30' },
-  { id: 'cancelled', label: 'Cancelled', color: Colors.status.cancelled },
-];
-
-interface Item {
-  id: string;
-  productId: string;
+// Define the PurchaseInvoiceItem interface
+interface PurchaseInvoiceItem {
+  productId: number | null;
   productName: string;
   quantity: number;
   unitPrice: number;
   total: number;
 }
 
+// Define the PurchaseInvoiceFormData interface
+interface PurchaseInvoiceFormData {
+  vendorId: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string;
+  items: PurchaseInvoiceItem[];
+  subtotal: number;
+  tax: number;
+  total: number;
+  status: 'paid' | 'unpaid' | 'overdue' | 'cancelled';
+  notes: string;
+}
+
+const STATUS_OPTIONS = [
+  { value: 'unpaid', label: 'Unpaid' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'cancelled', label: 'Cancelled' }
+];
+
 export default function NewPurchaseInvoiceScreen() {
   const router = useRouter();
+  const sqlite = useSQLiteContext();
+  const db = drizzle(sqlite, { schema });
+  const { user } = useAuthStore();
+  const [formData, setFormData] = useState<PurchaseInvoiceFormData>({
+    vendorId: '',
+    invoiceNumber: `PI-${Date.now().toString().slice(-4)}`,
+    invoiceDate: new Date().toISOString().split('T')[0],
+    dueDate: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0], // 30 days from now
+    items: [],
+    subtotal: 0,
+    tax: 0,
+    total: 0,
+    status: 'unpaid',
+    notes: ''
+  });
   
-  // Form state
-  const [invoiceNumber, setInvoiceNumber] = useState('');
-  const [vendorId, setVendorId] = useState('');
-  const [vendorName, setVendorName] = useState('');
-  const [invoiceDate, setInvoiceDate] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [status, setStatus] = useState('unpaid'); // Default status
-  const [items, setItems] = useState<Item[]>([]);
-  const [subtotal, setSubtotal] = useState(0);
-  const [tax, setTax] = useState(0);
-  const [total, setTotal] = useState(0);
-
-  // Modal states
-  const [vendorModalVisible, setVendorModalVisible] = useState(false);
-  const [productModalVisible, setProductModalVisible] = useState(false);
-  const [statusModalVisible, setStatusModalVisible] = useState(false);
-  const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
+  // Bottom sheet visibility states
+  const [showVendorSheet, setShowVendorSheet] = useState(false);
+  const [showProductSheet, setShowProductSheet] = useState<number | null>(null);
+  const [showStatusSheet, setShowStatusSheet] = useState(false);
   
-  // Search states
+  // Vendor data state
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [loadingVendors, setLoadingVendors] = useState(false);
   const [vendorSearch, setVendorSearch] = useState('');
+  
+  // Product data state
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [productSearch, setProductSearch] = useState('');
 
-  // Set current date as default for invoice date
+  // Filter vendors based on search
+  const filteredVendors = vendors.filter(vendor => 
+    vendor.name.toLowerCase().includes(vendorSearch.toLowerCase()) ||
+    (vendor.email && vendor.email.toLowerCase().includes(vendorSearch.toLowerCase())) ||
+    (vendor.phone && vendor.phone.includes(vendorSearch))
+  );
+  
+  // Filter products based on search
+  const filteredProducts = products.filter(product => 
+    product.productName.toLowerCase().includes(productSearch.toLowerCase()) ||
+    (product.sku && product.sku.toLowerCase().includes(productSearch.toLowerCase()))
+  );
+
+  // Load vendors when bottom sheet is opened
   useEffect(() => {
-    const today = new Date();
-    const formattedDate = today.toISOString().split('T')[0];
-    setInvoiceDate(formattedDate);
-    
-    // Set due date as today + 30 days by default
-    const dueDateTime = new Date();
-    dueDateTime.setDate(dueDateTime.getDate() + 30);
-    setDueDate(dueDateTime.toISOString().split('T')[0]);
-  }, []);
-
-  // Calculate totals whenever items change
-  useEffect(() => {
-    const newSubtotal = items.reduce((sum, item) => sum + item.total, 0);
-    setSubtotal(newSubtotal);
-    // Assuming 10% tax rate, but you could make this configurable
-    const newTax = parseFloat((newSubtotal * 0.1).toFixed(2));
-    setTax(newTax);
-    setTotal(newSubtotal + newTax);
-  }, [items]);
-
-  const handleSelectVendor = (vendor: any) => {
-    setVendorId(vendor.id);
-    setVendorName(vendor.name);
-    setVendorModalVisible(false);
-  };
-
-  const handleSelectProduct = (product: any) => {
-    if (selectedItemIndex !== null) {
-      // Edit existing item
-      const updatedItems = [...items];
-      const quantity = updatedItems[selectedItemIndex]?.quantity || 1;
-      const total = quantity * product.price;
-      updatedItems[selectedItemIndex] = {
-        id: updatedItems[selectedItemIndex]?.id || `item-${Date.now()}`,
-        productId: product.id,
-        productName: product.name,
-        quantity: quantity,
-        unitPrice: product.price,
-        total: total
-      };
-      setItems(updatedItems);
-    } else {
-      // Add new item
-      const newItem = {
-        id: `item-${Date.now()}`,
-        productId: product.id,
-        productName: product.name,
-        quantity: 1,
-        unitPrice: product.price,
-        total: product.price
-      };
-      setItems([...items, newItem]);
+    if (showVendorSheet) {
+      loadVendors();
     }
-    setProductModalVisible(false);
-    setSelectedItemIndex(null);
+  }, [showVendorSheet]);
+
+  // Load products when bottom sheet is opened
+  useEffect(() => {
+    if (showProductSheet !== null) {
+      loadProducts();
+    }
+  }, [showProductSheet]);
+
+  const loadVendors = async () => {
+    try {
+      setLoadingVendors(true);
+      const dbVendors = await dbVendor.getAllVendors();
+      const mappedVendors: Vendor[] = dbVendors.map(v => ({
+        id: v.id.toString(),
+        userId: v.userId.toString(),
+        name: v.name,
+        company: v.company || '',
+        email: v.email || '',
+        phone: v.phone || '',
+        address: v.address || undefined,
+        city: v.city || undefined,
+        state: v.state || undefined,
+        zipCode: v.zipCode || undefined,
+        country: v.country || undefined,
+        contactPerson: v.contactPerson || undefined,
+        category: v.category || undefined,
+        status: (v.status === 'active' || v.status === 'inactive' || v.status === 'blocked') ? v.status : 'active',
+        notes: v.notes || undefined,
+        paymentTerms: v.paymentTerms || undefined,
+        taxId: v.taxId || undefined,
+        tags: v.tags ? v.tags.split(',') : undefined,
+        totalPurchases: v.totalPurchases || 0,
+        outstandingBalance: 0,
+        createdAt: v.createdAt ? new Date(v.createdAt) : new Date(),
+        updatedAt: new Date() // Since we don't have updatedAt from DB, use current date
+      }));
+      setVendors(mappedVendors);
+    } catch (error) {
+      console.error('Error loading vendors:', error);
+      Alert.alert('Error', 'Failed to load vendors');
+    } finally {
+      setLoadingVendors(false);
+    }
   };
 
-  const handleUpdateQuantity = (index: number, quantity: string) => {
-    const parsedQuantity = parseInt(quantity) || 0;
-    const updatedItems = [...items];
-    const item = updatedItems[index];
-    const total = parsedQuantity * item.unitPrice;
-    updatedItems[index] = {
-      ...item,
-      quantity: parsedQuantity,
-      total: total
+  const loadProducts = async () => {
+    try {
+      setLoadingProducts(true);
+      const dbProducts = await dbProduct.getAllProducts();
+      const mappedProducts: Product[] = dbProducts.map(p => ({
+        id: p.id,
+        userId: p.userId,
+        productName: p.productName,
+        sku: p.sku,
+        barcode: p.barcode,
+        category: p.category,
+        brand: p.brand,
+        isActive: p.isActive ?? true,
+        costPrice: p.costPrice,
+        sellingPrice: p.sellingPrice,
+        taxRate: p.taxRate,
+        stockQuantity: p.stockQuantity,
+        unit: p.unit,
+        reorderLevel: p.reorderLevel,
+        vendor: p.vendor,
+        location: p.location,
+        shortDescription: p.shortDescription,
+        fullDescription: p.fullDescription,
+        weight: p.weight,
+        length: p.length,
+        width: p.width,
+        height: p.height,
+        tags: p.tags,
+        notes: p.notes,
+        images: p.images,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt
+      }));
+      setProducts(mappedProducts);
+    } catch (error) {
+      console.error('Error loading products:', error);
+      Alert.alert('Error', 'Failed to load products');
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  const handleAddItem = () => {
+    const newItem: PurchaseInvoiceItem = {
+      productId: null,
+      productName: '',
+      quantity: 1,
+      unitPrice: 0,
+      total: 0
     };
-    setItems(updatedItems);
+    setFormData(prev => {
+      const items = [...prev.items, newItem];
+      return { ...prev, items };
+    });
   };
-
+  
   const handleRemoveItem = (index: number) => {
-    const updatedItems = [...items];
-    updatedItems.splice(index, 1);
-    setItems(updatedItems);
+    setFormData(prev => {
+      const newItems = [...prev.items];
+      newItems.splice(index, 1);
+      const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
+      const tax = subtotal * 0.1;
+      return {
+        ...prev,
+        items: newItems,
+        subtotal,
+        tax,
+        total: subtotal + tax
+      };
+    });
   };
 
-  const handleSaveInvoice = () => {
-    // Validation
-    if (!invoiceNumber) {
-      Alert.alert('Error', 'Please enter an invoice number');
-      return;
-    }
-    if (!vendorId) {
-      Alert.alert('Error', 'Please select a vendor');
-      return;
-    }
-    if (!invoiceDate) {
-      Alert.alert('Error', 'Please select an invoice date');
-      return;
-    }
-    if (!dueDate) {
-      Alert.alert('Error', 'Please select a due date');
-      return;
-    }
-    if (!status) {
-      Alert.alert('Error', 'Please select a status');
-      return;
-    }
-    if (items.length === 0) {
-      Alert.alert('Error', 'Please add at least one item');
-      return;
-    }
-
-    // Here you would typically call an API to save the invoice
-    const newInvoice = {
-      id: `pi-${Date.now()}`,
-      invoiceNumber,
-      vendorId,
-      vendorName,
-      invoiceDate,
-      dueDate,
-      subtotal,
-      tax,
-      total,
-      status,
-      items
-    };
-
-    Alert.alert(
-      'Success',
-      'Invoice created successfully',
-      [
-        {
-          text: 'OK',
-          onPress: () => router.push('/purchase-invoice')
+  const handleItemChange = (index: number, field: keyof PurchaseInvoiceItem, value: string | number) => {
+    setFormData(prev => {
+      const newItems = [...prev.items];
+      if (field === 'productId') {
+        const productIdNum = typeof value === 'string' ? parseInt(value, 10) : value;
+        const selectedProduct = products.find(p => p.id === productIdNum);
+        if (selectedProduct) {
+          newItems[index] = {
+            ...newItems[index],
+            productId: selectedProduct.id,
+            productName: selectedProduct.productName,
+            unitPrice: selectedProduct.costPrice,
+            total: selectedProduct.costPrice * newItems[index].quantity
+          };
         }
-      ]
-    );
+      } else if (field === 'quantity' || field === 'unitPrice') {
+        const numValue = typeof value === 'string' ? parseFloat(value) || 0 : value;
+        newItems[index] = {
+          ...newItems[index],
+          [field]: numValue,
+          total: field === 'quantity' 
+            ? numValue * newItems[index].unitPrice 
+            : newItems[index].quantity * numValue
+        };
+      } else {
+        newItems[index] = {
+          ...newItems[index],
+          [field]: value
+        };
+      }
+
+      const subtotal = newItems.reduce((sum, item) => sum + item.total, 0);
+      const tax = subtotal * 0.1;
+      return {
+        ...prev,
+        items: newItems,
+        subtotal,
+        tax,
+        total: subtotal + tax
+      };
+    });
   };
 
-  const filteredVendors = vendorsData.filter(vendor => 
-    vendor.name.toLowerCase().includes(vendorSearch.toLowerCase())
+  const selectVendor = (vendor: Vendor) => {
+    setFormData(prev => ({ ...prev, vendorId: vendor.id.toString() }));
+    setShowVendorSheet(false);
+  };
+
+  const selectProduct = (index: number, product: Product) => {
+    handleItemChange(index, 'productId', product.id);
+    setShowProductSheet(null);
+  };
+
+  const selectStatus = (status: string) => {
+    setFormData(prev => ({ ...prev, status: status as PurchaseInvoiceFormData['status'] }));
+    setShowStatusSheet(false);
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'paid':
+        return Colors.status.completed;
+      case 'unpaid':
+        return Colors.status.pending;
+      case 'overdue':
+        return Colors.status.cancelled;
+      case 'cancelled':
+        return Colors.status.cancelled;
+      default:
+        return Colors.status.pending;
+    }
+  };
+
+  const renderVendorItem = ({ item }: { item: Vendor }) => (
+    <TouchableOpacity
+      style={[
+        styles.vendorItem,
+        formData.vendorId === item.id.toString() && styles.selectedVendor
+      ]}
+      onPress={() => selectVendor(item)}
+    >
+      <View style={styles.vendorInfo}>
+        <Text style={styles.vendorName}>{item.name}</Text>
+        {item.company && <Text style={styles.vendorCompany}>{item.company}</Text>}
+      </View>
+      {formData.vendorId === item.id.toString() && (
+        <Check size={20} color={Colors.primary} />
+      )}
+    </TouchableOpacity>
   );
 
-  const filteredProducts = productsData.filter(product => 
-    product.name.toLowerCase().includes(productSearch.toLowerCase())
+  const renderProductItem = ({ item }: { item: Product }) => (
+    <TouchableOpacity
+      style={styles.productItem}
+      onPress={() => selectProduct(showProductSheet!, item)}
+    >
+      <View style={styles.productInfo}>
+        <Text style={styles.productName}>{item.productName}</Text>
+        <Text style={styles.productSku}>SKU: {item.sku}</Text>
+      </View>
+      <Text style={styles.productPrice}>{formatCurrency(item.costPrice)}</Text>
+    </TouchableOpacity>
   );
+
+  const handleSave = async () => {
+    try {
+      if (!user) {
+        Alert.alert('Error', 'User not authenticated');
+        return;
+      }
+
+      if (!formData.vendorId) {
+        Alert.alert('Error', 'Please select a vendor');
+        return;
+      }
+
+      if (formData.items.length === 0) {
+        Alert.alert('Error', 'Please add at least one item');
+        return;
+      }
+
+      const invoice = {
+        userId: user.id,
+        invoiceNumber: formData.invoiceNumber,
+        vendorId: parseInt(formData.vendorId),
+        invoiceDate: formData.invoiceDate,
+        dueDate: formData.dueDate,
+        status: formData.status,
+        subtotal: formData.subtotal,
+        tax: formData.tax,
+        total: formData.total,
+        notes: formData.notes || null,
+      };
+
+      const invoiceItems = formData.items.map(item => ({
+        productId: item.productId!,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        total: item.total,
+        notes: null,
+        invoiceId: 0 // This will be set by the database
+      }));
+
+      await createPurchaseInvoice(invoice, invoiceItems);
+      Alert.alert('Success', 'Purchase invoice created successfully');
+      router.back();
+    } catch (error) {
+      console.error('Error creating purchase invoice:', error);
+      Alert.alert('Error', 'Failed to create purchase invoice');
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-      
-      {/* Header */}
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>New Purchase Invoice</Text>
-        <TouchableOpacity onPress={handleSaveInvoice} style={styles.headerButton}>
-          <Save size={24} color={Colors.primary} />
+        <Text style={styles.title}>New Purchase Invoice</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <ScrollView style={styles.content}>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Vendor</Text>
+          <TouchableOpacity
+            style={styles.vendorSelector}
+            onPress={() => setShowVendorSheet(true)}
+          >
+            <View style={styles.selectorContent}>
+              <User size={20} color={Colors.text.secondary} />
+              <Text style={styles.selectorText}>
+                {formData.vendorId
+                  ? vendors.find(v => v.id.toString() === formData.vendorId)?.name
+                  : 'Select Vendor'}
+              </Text>
+            </View>
+            <ChevronDown size={20} color={Colors.text.secondary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Invoice Details</Text>
+          <View style={styles.detailRow}>
+            <View style={styles.detailField}>
+              <Text style={styles.label}>Invoice Number</Text>
+              <View style={styles.inputContainer}>
+                <Hash size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={styles.input}
+                  value={formData.invoiceNumber}
+                  onChangeText={(value) => setFormData(prev => ({ ...prev, invoiceNumber: value }))}
+                  placeholder="Enter invoice number"
+                />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.detailRow}>
+            <View style={styles.detailField}>
+              <Text style={styles.label}>Invoice Date</Text>
+              <View style={styles.inputContainer}>
+                <Calendar size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={styles.input}
+                  value={formData.invoiceDate}
+                  onChangeText={(value) => setFormData(prev => ({ ...prev, invoiceDate: value }))}
+                  placeholder="YYYY-MM-DD"
+                />
+              </View>
+            </View>
+
+            <View style={styles.detailField}>
+              <Text style={styles.label}>Due Date</Text>
+              <View style={styles.inputContainer}>
+                <Calendar size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={styles.input}
+                  value={formData.dueDate}
+                  onChangeText={(value) => setFormData(prev => ({ ...prev, dueDate: value }))}
+                  placeholder="YYYY-MM-DD"
+                />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.detailRow}>
+            <View style={styles.detailField}>
+              <Text style={styles.label}>Status</Text>
+              <TouchableOpacity
+                style={styles.statusSelector}
+                onPress={() => setShowStatusSheet(true)}
+              >
+                <View style={styles.selectorContent}>
+                  <View
+                    style={[
+                      styles.statusDot,
+                      { backgroundColor: getStatusColor(formData.status) }
+                    ]}
+                  />
+                  <Text style={styles.selectorText}>
+                    {STATUS_OPTIONS.find(s => s.value === formData.status)?.label}
+                  </Text>
+                </View>
+                <ChevronDown size={20} color={Colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Items</Text>
+            <TouchableOpacity style={styles.addButton} onPress={handleAddItem}>
+              <Plus size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {formData.items.map((item, index) => (
+            <View key={index} style={styles.itemContainer}>
+              <View style={styles.itemHeader}>
+                <Text style={styles.itemTitle}>Item {index + 1}</Text>
+                <TouchableOpacity
+                  style={styles.removeButton}
+                  onPress={() => handleRemoveItem(index)}
+                >
+                  <X size={20} color={Colors.status.cancelled} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.itemContent}>
+                <TouchableOpacity
+                  style={styles.productSelector}
+                  onPress={() => setShowProductSheet(index)}
+                >
+                  <View style={styles.selectorContent}>
+                    <Package size={20} color={Colors.text.secondary} />
+                    <Text style={styles.selectorText}>
+                      {item.productName || 'Select Product'}
+                    </Text>
+                  </View>
+                  <ChevronDown size={20} color={Colors.text.secondary} />
+                </TouchableOpacity>
+
+                <View style={styles.itemRow}>
+                  <View style={styles.itemField}>
+                    <Text style={styles.label}>Quantity</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        value={item.quantity.toString()}
+                        onChangeText={(value) => handleItemChange(index, 'quantity', value)}
+                        keyboardType="numeric"
+                        placeholder="0"
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.itemField}>
+                    <Text style={styles.label}>Unit Price</Text>
+                    <View style={styles.inputContainer}>
+                      <DollarSign size={20} color={Colors.text.secondary} />
+                      <TextInput
+                        style={styles.input}
+                        value={item.unitPrice.toString()}
+                        onChangeText={(value) => handleItemChange(index, 'unitPrice', value)}
+                        keyboardType="numeric"
+                        placeholder="0.00"
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.itemField}>
+                  <Text style={styles.label}>Total</Text>
+                  <Text style={styles.totalText}>
+                    {formatCurrency(item.total)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notes</Text>
+          <View style={styles.notesContainer}>
+            <FileText size={20} color={Colors.text.secondary} />
+            <TextInput
+              style={styles.notesInput}
+              value={formData.notes}
+              onChangeText={(value) => setFormData(prev => ({ ...prev, notes: value }))}
+              placeholder="Add any additional notes..."
+              multiline
+              numberOfLines={4}
+            />
+          </View>
+        </View>
+
+        <View style={styles.totals}>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Subtotal</Text>
+            <Text style={styles.totalValue}>{formatCurrency(formData.subtotal)}</Text>
+          </View>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Tax (10%)</Text>
+            <Text style={styles.totalValue}>{formatCurrency(formData.tax)}</Text>
+          </View>
+          <View style={[styles.totalRow, styles.grandTotal]}>
+            <Text style={styles.grandTotalLabel}>Total</Text>
+            <Text style={styles.grandTotalValue}>{formatCurrency(formData.total)}</Text>
+          </View>
+        </View>
+      </ScrollView>
+
+      <View style={styles.footer}>
+        <TouchableOpacity
+          style={styles.saveButton}
+          onPress={handleSave}
+        >
+          <Text style={styles.saveButtonText}>Save Invoice</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        style={styles.scrollView} 
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Invoice Information */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Invoice Information</Text>
-          <View style={styles.card}>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Invoice Number</Text>
-              <TextInput
-                style={styles.input}
-                value={invoiceNumber}
-                onChangeText={setInvoiceNumber}
-                placeholder="Enter invoice number"
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Vendor</Text>
-              <TouchableOpacity 
-                style={styles.selectInput}
-                onPress={() => setVendorModalVisible(true)}
-              >
-                <Text style={vendorName ? styles.selectText : styles.placeholderText}>
-                  {vendorName || 'Select Vendor'}
-                </Text>
-                <ChevronDown size={20} color={Colors.text.secondary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.formRow}>
-              <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                <Text style={styles.label}>Invoice Date</Text>
-                <TouchableOpacity 
-                  style={styles.selectInput}
-                  onPress={() => {
-                    // In a real app, show a date picker here
-                    Alert.alert('Date Picker', 'Show date picker here');
-                  }}
-                >
-                  <Text style={invoiceDate ? styles.selectText : styles.placeholderText}>
-                    {invoiceDate ? new Date(invoiceDate).toLocaleDateString() : 'Select Date'}
-                  </Text>
-                  <Calendar size={20} color={Colors.text.secondary} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-                <Text style={styles.label}>Due Date</Text>
-                <TouchableOpacity 
-                  style={styles.selectInput}
-                  onPress={() => {
-                    // In a real app, show a date picker here
-                    Alert.alert('Date Picker', 'Show date picker here');
-                  }}
-                >
-                  <Text style={dueDate ? styles.selectText : styles.placeholderText}>
-                    {dueDate ? new Date(dueDate).toLocaleDateString() : 'Select Date'}
-                  </Text>
-                  <Calendar size={20} color={Colors.text.secondary} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Status</Text>
-              <TouchableOpacity 
-                style={styles.selectInput}
-                onPress={() => setStatusModalVisible(true)}
-              >
-                <View style={styles.statusContainer}>
-                  {status && (
-                    <View 
-                      style={[
-                        styles.statusDot, 
-                        { backgroundColor: statusOptions.find(opt => opt.id === status)?.color || Colors.text.secondary }
-                      ]} 
-                    />
-                  )}
-                  <Text style={status ? styles.selectText : styles.placeholderText}>
-                    {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Select Status'}
-                  </Text>
-                </View>
-                <ChevronDown size={20} color={Colors.text.secondary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-
-        {/* Invoice Items */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Invoice Items</Text>
-          <View style={styles.card}>
-            {items.length === 0 ? (
-              <View style={styles.emptyStateContainer}>
-                <Text style={styles.emptyStateText}>No items added yet</Text>
-              </View>
-            ) : (
-              items.map((item, index) => (
-                <View key={item.id} style={styles.itemContainer}>
-                  {index > 0 && <View style={styles.divider} />}
-                  <View style={styles.itemHeader}>
-                    <Text style={styles.itemName}>{item.productName}</Text>
-                    <TouchableOpacity onPress={() => handleRemoveItem(index)}>
-                      <Trash size={18} color={Colors.danger} />
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.itemDetails}>
-                    <View style={styles.quantityContainer}>
-                      <Text style={styles.itemLabel}>Quantity</Text>
-                      <TextInput
-                        style={styles.quantityInput}
-                        value={item.quantity.toString()}
-                        onChangeText={(value) => handleUpdateQuantity(index, value)}
-                        keyboardType="numeric"
-                      />
-                    </View>
-                    <View style={styles.priceContainer}>
-                      <Text style={styles.itemLabel}>Unit Price</Text>
-                      <Text style={styles.priceText}>${item.unitPrice.toFixed(2)}</Text>
-                    </View>
-                    <View style={styles.totalContainer}>
-                      <Text style={styles.itemLabel}>Total</Text>
-                      <Text style={styles.totalText}>${item.total.toFixed(2)}</Text>
-                    </View>
-                  </View>
-                </View>
-              ))
-            )}
-
-            <TouchableOpacity 
-              style={styles.addItemButton}
-              onPress={() => {
-                setSelectedItemIndex(null);
-                setProductModalVisible(true);
-              }}
-            >
-              <Plus size={20} color="#FFF" />
-              <Text style={styles.addItemButtonText}>Add Item</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Summary */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Summary</Text>
-          <View style={styles.card}>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>${subtotal.toFixed(2)}</Text>
-            </View>
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Tax (10%)</Text>
-              <Text style={styles.summaryValue}>${tax.toFixed(2)}</Text>
-            </View>
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.summaryRowTotal}>
-              <Text style={styles.summaryLabelTotal}>Total</Text>
-              <Text style={styles.summaryValueTotal}>${total.toFixed(2)}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Save Button */}
-        <TouchableOpacity 
-          style={styles.saveButton}
-          onPress={handleSaveInvoice}
-        >
-          <Save size={20} color="#FFF" />
-          <Text style={styles.saveButtonText}>Create Invoice</Text>
-        </TouchableOpacity>
-      </ScrollView>
-
-      {/* Vendor Selection Modal */}
+      {/* Vendor Selection Bottom Sheet */}
       <Modal
-        visible={vendorModalVisible}
+        visible={showVendorSheet}
         animationType="slide"
-        transparent={true}
+        transparent
+        onRequestClose={() => setShowVendorSheet(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Vendor</Text>
-              <TouchableOpacity onPress={() => setVendorModalVisible(false)}>
+          <View style={styles.bottomSheet}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>Select Vendor</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowVendorSheet(false)}
+              >
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
-            
+
             <View style={styles.searchContainer}>
               <Search size={20} color={Colors.text.secondary} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search vendors..."
                 value={vendorSearch}
                 onChangeText={setVendorSearch}
+                placeholder="Search vendors..."
               />
             </View>
 
-            <ScrollView style={styles.modalList}>
-              {filteredVendors.length === 0 ? (
-                <View style={styles.emptyListContainer}>
-                  <Text style={styles.emptyListText}>No vendors found</Text>
-                </View>
-              ) : (
-                filteredVendors.map(vendor => (
-                  <TouchableOpacity
-                    key={vendor.id}
-                    style={styles.listItem}
-                    onPress={() => handleSelectVendor(vendor)}
-                  >
-                    <View>
-                      <Text style={styles.listItemTitle}>{vendor.name}</Text>
-                      <Text style={styles.listItemSubtitle}>{vendor.email}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))
-              )}
-            </ScrollView>
+            {loadingVendors ? (
+              <ActivityIndicator size="large" color={Colors.primary} />
+            ) : (
+              <FlatList
+                data={filteredVendors}
+                renderItem={renderVendorItem}
+                keyExtractor={(item) => item.id.toString()}
+                contentContainerStyle={styles.list}
+              />
+            )}
           </View>
         </View>
       </Modal>
 
-      {/* Product Selection Modal */}
+      {/* Product Selection Bottom Sheet */}
       <Modal
-        visible={productModalVisible}
+        visible={showProductSheet !== null}
         animationType="slide"
-        transparent={true}
+        transparent
+        onRequestClose={() => setShowProductSheet(null)}
       >
         <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Product</Text>
-              <TouchableOpacity onPress={() => {
-                setProductModalVisible(false);
-                setSelectedItemIndex(null);
-              }}>
+          <View style={styles.bottomSheet}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>Select Product</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowProductSheet(null)}
+              >
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
-            
+
             <View style={styles.searchContainer}>
               <Search size={20} color={Colors.text.secondary} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search products..."
                 value={productSearch}
                 onChangeText={setProductSearch}
+                placeholder="Search products..."
               />
             </View>
 
-            <ScrollView style={styles.modalList}>
-              {filteredProducts.length === 0 ? (
-                <View style={styles.emptyListContainer}>
-                  <Text style={styles.emptyListText}>No products found</Text>
-                </View>
-              ) : (
-                filteredProducts.map(product => (
-                  <TouchableOpacity
-                    key={product.id}
-                    style={styles.listItem}
-                    onPress={() => handleSelectProduct(product)}
-                  >
-                    <View>
-                      <Text style={styles.listItemTitle}>{product.name}</Text>
-                      <Text style={styles.listItemSubtitle}>${product.price.toFixed(2)}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))
-              )}
-            </ScrollView>
+            {loadingProducts ? (
+              <ActivityIndicator size="large" color={Colors.primary} />
+            ) : (
+              <FlatList
+                data={filteredProducts}
+                renderItem={renderProductItem}
+                keyExtractor={(item) => item.id.toString()}
+                contentContainerStyle={styles.list}
+              />
+            )}
           </View>
         </View>
       </Modal>
 
-      {/* Status Selection Modal */}
+      {/* Status Selection Bottom Sheet */}
       <Modal
-        visible={statusModalVisible}
+        visible={showStatusSheet}
         animationType="slide"
-        transparent={true}
+        transparent
+        onRequestClose={() => setShowStatusSheet(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Status</Text>
-              <TouchableOpacity onPress={() => setStatusModalVisible(false)}>
+          <View style={styles.bottomSheet}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>Select Status</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowStatusSheet(false)}
+              >
                 <X size={24} color={Colors.text.primary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalList}>
-              {statusOptions.map(option => (
+            <FlatList
+              data={STATUS_OPTIONS}
+              renderItem={({ item }) => (
                 <TouchableOpacity
-                  key={option.id}
-                  style={styles.listItem}
-                  onPress={() => {
-                    setStatus(option.id);
-                    setStatusModalVisible(false);
-                  }}
+                  style={[
+                    styles.statusItem,
+                    formData.status === item.value && styles.selectedStatus
+                  ]}
+                  onPress={() => selectStatus(item.value)}
                 >
-                  <View style={styles.statusListItem}>
-                    <View style={[styles.statusColorDot, { backgroundColor: option.color }]} />
-                    <Text style={styles.listItemTitle}>{option.label}</Text>
+                  <View style={styles.statusItemContent}>
+                    <View
+                      style={[
+                        styles.statusDot,
+                        { backgroundColor: getStatusColor(item.value) }
+                      ]}
+                    />
+                    <Text style={styles.statusItemText}>{item.label}</Text>
                   </View>
+                  {formData.status === item.value && (
+                    <Check size={20} color={Colors.primary} />
+                  )}
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+              )}
+              keyExtractor={(item) => item.value}
+              contentContainerStyle={styles.list}
+            />
           </View>
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -571,299 +758,334 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    padding: 16,
     backgroundColor: Colors.background.default,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
-  headerButton: {
+  backButton: {
     width: 40,
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTitle: {
+  title: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: Colors.text.primary,
   },
-  scrollView: {
+  content: {
     flex: 1,
   },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
-  },
   section: {
+    backgroundColor: Colors.background.default,
+    marginBottom: 12,
+    padding: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
     color: Colors.text.primary,
-    marginBottom: 8,
-    marginLeft: 4,
+    marginBottom: 12,
   },
-  card: {
-    backgroundColor: Colors.background.default,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+  vendorSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border.light,
+    borderRadius: 8,
+    padding: 12,
   },
-  formGroup: {
-    marginBottom: 16,
-  },
-  formRow: {
+  selectorContent: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  selectorText: {
+    fontSize: 16,
+    color: Colors.text.primary,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    gap: 16,
     marginBottom: 16,
+  },
+  detailField: {
+    flex: 1,
   },
   label: {
     fontSize: 14,
     color: Colors.text.secondary,
-    marginBottom: 8,
+    marginBottom: 4,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 8,
+    padding: 8,
+    gap: 8,
   },
   input: {
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    borderRadius: 8,
-    padding: 12,
+    flex: 1,
     fontSize: 16,
     color: Colors.text.primary,
   },
-  selectInput: {
-    borderWidth: 1,
-    borderColor: Colors.border.default,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  selectText: {
-    fontSize: 16,
-    color: Colors.text.primary,
-  },
-  placeholderText: {
-    fontSize: 16,
-    color: Colors.text.secondary,
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border.light,
-    marginVertical: 12,
-  },
-  emptyStateContainer: {
-    alignItems: 'center',
+  addButton: {
+    backgroundColor: Colors.primary,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
-    padding: 20,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: Colors.text.secondary,
+    alignItems: 'center',
   },
   itemContainer: {
-    marginBottom: 16,
+    backgroundColor: Colors.background.secondary,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
   },
   itemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  itemName: {
+  itemTitle: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: 'bold',
     color: Colors.text.primary,
-    flex: 1,
   },
-  itemDetails: {
+  removeButton: {
+    padding: 4,
+  },
+  itemContent: {
+    gap: 12,
+  },
+  itemRow: {
     flexDirection: 'row',
+    gap: 12,
+  },
+  itemField: {
+    flex: 1,
+  },
+  productSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  quantityContainer: {
-    flex: 1,
-  },
-  priceContainer: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  totalContainer: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
-  itemLabel: {
-    fontSize: 12,
-    color: Colors.text.secondary,
-    marginBottom: 4,
-  },
-  quantityInput: {
     borderWidth: 1,
-    borderColor: Colors.border.default,
-    borderRadius: 4,
-    padding: 8,
-    fontSize: 14,
-    textAlign: 'center',
-    width: 60,
-  },
-  priceText: {
-    fontSize: 14,
-    color: Colors.text.primary,
-  },
-  totalText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  addItemButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.primary,
+    borderColor: Colors.border.light,
     borderRadius: 8,
     padding: 12,
-    marginTop: 8,
   },
-  addItemButtonText: {
-    color: '#FFF',
-    fontWeight: '600',
-    marginLeft: 8,
+  totalText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.text.primary,
   },
-  summaryRow: {
+  notesContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 8,
+    padding: 12,
+    gap: 8,
+  },
+  notesInput: {
+    flex: 1,
+    fontSize: 16,
+    color: Colors.text.primary,
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  totals: {
+    backgroundColor: Colors.background.default,
+    padding: 16,
+    marginBottom: 80,
+  },
+  totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
-  summaryLabel: {
-    fontSize: 14,
+  totalLabel: {
+    fontSize: 16,
     color: Colors.text.secondary,
   },
-  summaryValue: {
-    fontSize: 14,
-    color: Colors.text.primary,
-    fontWeight: '500',
-  },
-  summaryRowTotal: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  summaryLabelTotal: {
+  totalValue: {
     fontSize: 16,
-    fontWeight: '600',
     color: Colors.text.primary,
   },
-  summaryValueTotal: {
+  grandTotal: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+  },
+  grandTotalLabel: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: 'bold',
+    color: Colors.text.primary,
+  },
+  grandTotalValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
     color: Colors.primary,
   },
-  saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.background.default,
     padding: 16,
-    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+  },
+  saveButton: {
+    backgroundColor: Colors.primary,
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
   },
   saveButtonText: {
-    color: '#FFF',
-    fontWeight: '600',
+    color: '#fff',
     fontSize: 16,
-    marginLeft: 8,
+    fontWeight: 'bold',
   },
   modalContainer: {
     flex: 1,
-    justifyContent: 'flex-end',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
   },
-  modalContent: {
+  bottomSheet: {
     backgroundColor: Colors.background.default,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 16,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     maxHeight: '80%',
   },
-  modalHeader: {
+  bottomSheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
   },
-  modalTitle: {
+  bottomSheetTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: Colors.text.primary,
+  },
+  closeButton: {
+    padding: 4,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 16,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+    gap: 8,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     color: Colors.text.primary,
-    marginLeft: 8,
   },
-  modalList: {
-    maxHeight: '70%',
+  list: {
+    padding: 16,
   },
-  emptyListContainer: {
-    padding: 20,
+  vendorItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  emptyListText: {
-    fontSize: 16,
-    color: Colors.text.secondary,
-  },
-  listItem: {
-    paddingVertical: 12,
+    padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
-  listItemTitle: {
+  selectedVendor: {
+    backgroundColor: Colors.background.secondary,
+  },
+  vendorInfo: {
+    flex: 1,
+  },
+  vendorName: {
     fontSize: 16,
     color: Colors.text.primary,
-    fontWeight: '500',
+    marginBottom: 4,
   },
-  listItemSubtitle: {
+  vendorCompany: {
     fontSize: 14,
     color: Colors.text.secondary,
-    marginTop: 4,
   },
-  statusListItem: {
+  productItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  productInfo: {
+    flex: 1,
+  },
+  productName: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  productSku: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  productPrice: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    fontWeight: 'bold',
+  },
+  statusSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    borderRadius: 8,
+    padding: 12,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  selectedStatus: {
+    backgroundColor: Colors.background.secondary,
+  },
+  statusItemContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
-  statusColorDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 12,
+  statusItemText: {
+    fontSize: 16,
+    color: Colors.text.primary,
   },
 }); 
