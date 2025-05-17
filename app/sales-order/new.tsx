@@ -28,7 +28,8 @@ import {
   Check,
   Search,
   X,
-  DollarSign
+  DollarSign,
+  Printer
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAuthStore } from '@/store/auth';
@@ -38,11 +39,12 @@ import { getAllProducts } from '@/db/product';
 import type { Customer } from '@/db/schema';
 import type { Product } from '@/db/schema';
 import type { NewSalesOrder, NewSalesOrderItem } from '@/db/schema';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { drizzle } from 'drizzle-orm/expo-sqlite';
 import * as schema from '@/db/schema';
 import { desc } from 'drizzle-orm';
+import { formatCurrency } from '@/utils/currency';
 
 interface OrderItem {
   productId: number;
@@ -64,6 +66,7 @@ const STATUS_OPTIONS = [
 export default function NewSalesOrderScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
+  const insets = useSafeAreaInsets();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -72,6 +75,8 @@ export default function NewSalesOrderScreen() {
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<string>('draft');
 
   const sqlite = useSQLiteContext();
   const db = drizzle(sqlite, { schema });
@@ -127,14 +132,14 @@ export default function NewSalesOrderScreen() {
         return;
       }
 
-      setLoading(true);
+      setSaving(true);
 
       const order: NewSalesOrder = {
         userId: user.id,
         customerId: selectedCustomer.id,
         orderNumber: orderNumber || `SO-${Date.now()}`,
         orderDate,
-        status: 'draft',
+        status: status,
         total: Math.round(calculateOrderTotal() * 100),
         subtotal: Math.round(orderItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * 100),
         tax: Math.round(orderItems.reduce((sum, item) => sum + ((item.quantity * item.unitPrice - (item.quantity * item.unitPrice * item.discount / 100)) * item.tax / 100), 0) * 100),
@@ -159,8 +164,13 @@ export default function NewSalesOrderScreen() {
       console.error('Error creating sales order:', error);
       Alert.alert('Error', 'Failed to create sales order');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
+  };
+
+  const handlePrint = () => {
+    Alert.alert('Print', 'Printing sales order...');
+    // Printing logic would go here
   };
 
   // Bottom sheet visibility states
@@ -342,8 +352,7 @@ export default function NewSalesOrderScreen() {
   };
   
   const selectStatus = (status: string) => {
-    // Implement status selection logic
-    setShowStatusSheet(false);
+    setStatus(status);
   };
   
   const getStatusColor = (status: string) => {
@@ -387,245 +396,252 @@ export default function NewSalesOrderScreen() {
         <Text style={styles.productName}>{item.productName}</Text>
         <Text style={styles.productSku}>SKU: {item.sku}</Text>
       </View>
-      <Text style={styles.productPrice}>${item.sellingPrice.toFixed(2)}</Text>
+      <Text style={styles.productPrice}>{formatCurrency(item.sellingPrice)}</Text>
     </TouchableOpacity>
   );
+
+  // Get currency symbol from formatCurrency utility
+  const getCurrencySymbol = () => {
+    // Extract just the symbol from a formatted amount
+    const formatted = formatCurrency(0);
+    // The symbol is typically at the beginning or end
+    const symbol = formatted.replace(/[\d,.]/g, '').trim();
+    return symbol;
+  };
 
   const calculateOrderTotal = () => {
     return orderItems.reduce((sum, item) => sum + item.total, 0);
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top','left','right','bottom']}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <StatusBar barStyle="dark-content" backgroundColor="white" />
+
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>New Sales Order</Text>
-        <TouchableOpacity onPress={handleSubmit} style={styles.saveButton}>
-          <Text style={styles.saveButtonText}>Save</Text>
-        </TouchableOpacity>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
       >
-        <View style={styles.card}>
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <User size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Customer <Text style={{ color: Colors.primary }}>*</Text></Text>
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {/* Order Information */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Order Information</Text>
+            
+            {/* Order Number */}
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <Hash size={16} color={Colors.text.secondary} />
+                <Text style={styles.label}>Order Number <Text style={styles.required}>*</Text></Text>
+              </View>
+              <View style={styles.inputControl}>
+                <TextInput
+                  style={styles.input}
+                  value={orderNumber}
+                  onChangeText={setOrderNumber}
+                  placeholder="Auto-generated"
+                />
+              </View>
             </View>
-            <TouchableOpacity 
-              style={styles.selectContainer}
-              onPress={() => setShowCustomerSheet(true)}
-            >
-              <Text style={[
-                styles.selectText, 
-                !selectedCustomer && styles.placeholderText
-              ]}>
-                {selectedCustomer?.name || 'Select customer'}
-              </Text>
-              <ChevronDown size={18} color={Colors.text.secondary} />
-            </TouchableOpacity>
+            
+            {/* Order Date */}
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <Calendar size={16} color={Colors.text.secondary} />
+                <Text style={styles.label}>Order Date <Text style={styles.required}>*</Text></Text>
+              </View>
+              <TouchableOpacity style={styles.inputControl}>
+                <TextInput
+                  style={styles.input}
+                  value={orderDate}
+                  onChangeText={setOrderDate}
+                  placeholder="YYYY-MM-DD"
+                />
+              </TouchableOpacity>
+            </View>
+            
+            {/* Customer */}
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <User size={16} color={Colors.text.secondary} />
+                <Text style={styles.label}>Customer <Text style={styles.required}>*</Text></Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.selectControl}
+                onPress={() => setShowCustomerSheet(true)}
+              >
+                {selectedCustomer ? (
+                  <Text style={styles.selectText}>{selectedCustomer.name}</Text>
+                ) : (
+                  <Text style={styles.placeholderText}>Select Customer</Text>
+                )}
+                <ChevronDown size={20} color={Colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Order Status */}
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <Check size={16} color={Colors.text.secondary} />
+                <Text style={styles.label}>Status</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.selectControl}
+                onPress={() => setShowStatusSheet(true)}
+              >
+                <Text style={styles.selectText}>
+                  {status.charAt(0).toUpperCase() + status.slice(1)}
+                </Text>
+                <ChevronDown size={20} color={Colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <Hash size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Order Number <Text style={{ color: Colors.primary }}>*</Text></Text>
-            </View>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={orderNumber}
-                onChangeText={(value) => setOrderNumber(value)}
-              />
-            </View>
-          </View>
-
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <Calendar size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Order Date <Text style={{ color: Colors.primary }}>*</Text></Text>
-            </View>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                value={orderDate}
-                onChangeText={(value) => setOrderDate(value)}
-              />
-            </View>
-          </View>
-        </View>
-        
-        <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Items</Text>
+          {/* Order Items */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Order Items</Text>
+            
+            {orderItems.length > 0 ? (
+              <View style={styles.itemList}>
+                {orderItems.map((item, index) => (
+                  <View key={index} style={styles.itemCard}>
+                    <View style={styles.itemCardHeader}>
+                      <View style={styles.itemTitleContainer}>
+                        <Package size={16} color={Colors.text.secondary} style={{ marginRight: 8 }} />
+                        <TouchableOpacity 
+                          style={{flex: 1}} 
+                          onPress={() => setShowProductSheet(index)}
+                        >
+                          {item.productName ? (
+                            <Text style={styles.itemCardTitle}>{item.productName}</Text>
+                          ) : (
+                            <Text style={styles.placeholderText}>Select Product</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                      <TouchableOpacity 
+                        style={styles.itemCardRemove}
+                        onPress={() => handleRemoveItem(index)}
+                      >
+                        <X size={18} color={Colors.negative} />
+                      </TouchableOpacity>
+                    </View>
+                    
+                    <View style={styles.itemDetailsRow}>
+                      <View style={styles.itemDetailColumn}>
+                        <Text style={styles.itemDetailLabel}>Quantity</Text>
+                        <View style={styles.itemDetailInputContainer}>
+                          <TextInput
+                            style={styles.itemDetailInput}
+                            value={item.quantity.toString()}
+                            onChangeText={(value) => handleItemChange(index, 'quantity', Number(value) || 0)}
+                            keyboardType="numeric"
+                          />
+                        </View>
+                      </View>
+                      
+                      <View style={styles.itemDetailColumn}>
+                        <Text style={styles.itemDetailLabel}>Unit Price</Text>
+                        <View style={styles.itemDetailInputContainer}>
+                          <View style={styles.currencyInputWrapper}>
+                            <Text style={styles.currencySymbol}>{getCurrencySymbol()}</Text>
+                            <TextInput
+                              style={styles.itemDetailInput}
+                              value={item.unitPrice.toString()}
+                              onChangeText={(value) => handleItemChange(index, 'unitPrice', Number(value) || 0)}
+                              keyboardType="numeric"
+                            />
+                          </View>
+                        </View>
+                      </View>
+                      
+                      <View style={styles.itemDetailColumn}>
+                        <Text style={styles.itemDetailLabel}>Total</Text>
+                        <Text style={styles.itemTotal}>{formatCurrency(item.total)}</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.emptyItems}>
+                <Text style={styles.emptyText}>No items added yet</Text>
+              </View>
+            )}
+            
             <TouchableOpacity 
               style={styles.addButton}
               onPress={handleAddItem}
             >
-              <Plus size={16} color="#fff" />
+              <Plus size={18} color={Colors.primary} />
               <Text style={styles.addButtonText}>Add Item</Text>
             </TouchableOpacity>
+            
+            <View style={styles.totalContainer}>
+              <Text style={styles.totalLabel}>Total Amount:</Text>
+              <Text style={styles.totalAmount}>{formatCurrency(calculateOrderTotal())}</Text>
+            </View>
           </View>
           
-          {orderItems.length === 0 ? (
-            <View style={styles.emptyItems}>
-              <Text style={styles.emptyItemsText}>No items added yet</Text>
-            </View>
-          ) : (
-            orderItems.map((item, index) => (
-              <View key={index} style={styles.itemCard}>
-                <View style={styles.itemFormGroup}>
-                  <View style={styles.labelContainer}>
-                    <Package size={16} color={Colors.primary} style={styles.labelIcon} />
-                    <Text style={styles.label}>Product <Text style={{ color: Colors.primary }}>*</Text></Text>
-                  </View>
-                  <TouchableOpacity 
-                    style={styles.selectContainer}
-                    onPress={() => {
-                      setShowProductSheet(index);
-                      setProductSearch('');
-                    }}
-                  >
-                    <Text style={[
-                      styles.selectText, 
-                      !item.productId && styles.placeholderText
-                    ]}>
-                      {item.productName || 'Select product'}
-                    </Text>
-                    <ChevronDown size={18} color={Colors.text.secondary} />
-                  </TouchableOpacity>
-                </View>
-                
-                <View style={styles.itemDetails}>
-                  <View style={styles.itemFormGroup}>
-                    <Text style={styles.label}>Quantity <Text style={{ color: Colors.primary }}>*</Text></Text>
-                    <View style={styles.quantityContainer}>
-                      <TouchableOpacity 
-                        style={styles.quantityButton}
-                        onPress={() => {
-                          if (item.quantity > 1) {
-                            handleItemChange(index, 'quantity', item.quantity - 1);
-                          }
-                        }}
-                      >
-                        <Minus size={16} color={Colors.text.secondary} />
-                      </TouchableOpacity>
-                      <TextInput
-                        style={styles.quantityInput}
-                        value={item.quantity.toString()}
-                        onChangeText={(value) => handleItemChange(index, 'quantity', parseInt(value) || 0)}
-                        keyboardType="numeric"
-                      />
-                      <TouchableOpacity 
-                        style={styles.quantityButton}
-                        onPress={() => handleItemChange(index, 'quantity', item.quantity + 1)}
-                      >
-                        <Plus size={16} color={Colors.text.secondary} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  
-                  <View style={styles.itemFormGroup}>
-                    <Text style={styles.label}>Unit Price <Text style={{ color: Colors.primary }}>*</Text></Text>
-                    <View style={styles.priceContainer}>
-                      <Text style={styles.currencySymbol}>$</Text>
-                      <TextInput
-                        style={styles.priceInput}
-                        value={item.unitPrice.toString()}
-                        onChangeText={(value) => handleItemChange(index, 'unitPrice', parseFloat(value) || 0)}
-                        keyboardType="numeric"
-                      />
-                    </View>
-                  </View>
-                </View>
-                
-                <View style={styles.itemFooter}>
-                  <TouchableOpacity 
-                    style={styles.removeButton}
-                    onPress={() => handleRemoveItem(index)}
-                  >
-                    <Minus size={14} color={Colors.negative} />
-                    <Text style={styles.removeButtonText}>Remove</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.itemTotal}>${item.total.toFixed(2)}</Text>
-                </View>
+          {/* Notes */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Additional Information</Text>
+            <View style={styles.formGroup}>
+              <View style={styles.labelContainer}>
+                <FileText size={16} color={Colors.text.secondary} />
+                <Text style={styles.label}>Notes</Text>
               </View>
-            ))
-          )}
+              <View style={styles.textareaControl}>
+                <TextInput
+                  style={styles.textarea}
+                  multiline
+                  numberOfLines={4}
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="Add any notes about this order"
+                  textAlignVertical="top"
+                />
+              </View>
+            </View>
+          </View>
           
-          {orderItems.length > 0 && (
-            <View style={styles.summaryContainer}>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Subtotal</Text>
-                <Text style={styles.summaryValue}>${orderItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Tax (10%)</Text>
-                <Text style={styles.summaryValue}>${orderItems.reduce((sum, item) => sum + ((item.quantity * item.unitPrice - (item.quantity * item.unitPrice * item.discount / 100)) * item.tax / 100), 0).toFixed(2)}</Text>
-              </View>
-              <View style={[styles.summaryRow, styles.totalRow]}>
-                <Text style={styles.totalLabel}>Total</Text>
-                <Text style={styles.totalValue}>${orderItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)}</Text>
-              </View>
-            </View>
-          )}
+          {/* Space for footer */}
+          <View style={{ height: 80 }} />
+        </ScrollView>
+
+        {/* Sticky Footer */}
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.footerButton, styles.printButton]}
+            onPress={handlePrint}
+          >
+            <Printer size={20} color={Colors.primary} />
+            <Text style={styles.printButtonText}>Print</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.footerButton, styles.saveButton]}
+            onPress={handleSubmit}
+            disabled={saving}
+          >
+            <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save Order'}</Text>
+          </TouchableOpacity>
         </View>
-        
-        <View style={styles.card}>
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <Text style={styles.label}>Status</Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.selectContainer}
-              onPress={() => setShowStatusSheet(true)}
-            >
-              <View style={[styles.statusIndicator, { 
-                backgroundColor: getStatusColor('draft').bg
-              }]}>
-                <Text style={[styles.statusIndicatorText, { 
-                  color: getStatusColor('draft').text
-                }]}>
-                  {STATUS_OPTIONS.find(option => option.value === 'draft')?.label}
-                </Text>
-              </View>
-              <ChevronDown size={18} color={Colors.text.secondary} />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.formGroup}>
-            <View style={styles.labelContainer}>
-              <FileText size={16} color={Colors.primary} style={styles.labelIcon} />
-              <Text style={styles.label}>Notes</Text>
-            </View>
-            <View style={styles.textareaContainer}>
-              <TextInput
-                style={styles.textarea}
-                placeholder="Add notes or details about this order"
-                multiline={true}
-                numberOfLines={4}
-                textAlignVertical="top"
-                value={notes}
-                onChangeText={(value) => setNotes(value)}
-              />
-            </View>
-          </View>
-        </View>
-      </ScrollView>
-      
-      {/* Customer selection bottom sheet */}
+      </KeyboardAvoidingView>
+
+      {/* Customer Modal */}
       <Modal
         visible={showCustomerSheet}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={() => {
           setShowCustomerSheet(false);
           setCustomerSearch('');
@@ -660,92 +676,26 @@ export default function NewSalesOrderScreen() {
               ) : null}
             </View>
             
-            {loadingCustomers ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={Colors.primary} />
-              </View>
-            ) : (
-              <FlatList
-                data={filteredCustomers}
-                keyExtractor={(item) => item.id.toString()}
-                renderItem={renderCustomerItem}
-                contentContainerStyle={styles.bottomSheetContent}
-                ListEmptyComponent={() => (
-                  <View style={styles.emptyContainer}>
-                    <Text style={styles.emptyText}>No customers found</Text>
-                  </View>
-                )}
-              />
-            )}
+            <FlatList
+              data={filteredCustomers}
+              keyExtractor={(item) => item.id.toString()}
+              renderItem={renderCustomerItem}
+              contentContainerStyle={styles.bottomSheetContent}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>No customers found</Text>
+                </View>
+              }
+            />
           </View>
         </View>
       </Modal>
-      
-      {/* Product selection bottom sheet */}
-      <Modal
-        visible={showProductSheet !== null}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => {
-          setShowProductSheet(null);
-          setProductSearch('');
-        }}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheet}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>Select Product</Text>
-              <TouchableOpacity 
-                onPress={() => {
-                  setShowProductSheet(null);
-                  setProductSearch('');
-                }}
-              >
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.searchContainer}>
-              <Search size={20} color={Colors.text.secondary} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search products..."
-                value={productSearch}
-                onChangeText={setProductSearch}
-              />
-              {productSearch ? (
-                <TouchableOpacity onPress={() => setProductSearch('')}>
-                  <X size={18} color={Colors.text.secondary} />
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            
-            {loadingProducts ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={Colors.primary} />
-              </View>
-            ) : (
-              <FlatList
-                data={filteredProducts}
-                keyExtractor={(item) => item.id.toString()}
-                renderItem={renderProductItem}
-                contentContainerStyle={styles.bottomSheetContent}
-                ListEmptyComponent={() => (
-                  <View style={styles.emptyContainer}>
-                    <Text style={styles.emptyText}>No products found</Text>
-                  </View>
-                )}
-              />
-            )}
-          </View>
-        </View>
-      </Modal>
-      
-      {/* Status selection bottom sheet */}
+
+      {/* Status Modal */}
       <Modal
         visible={showStatusSheet}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={() => setShowStatusSheet(false)}
       >
         <View style={styles.modalOverlay}>
@@ -757,28 +707,90 @@ export default function NewSalesOrderScreen() {
               </TouchableOpacity>
             </View>
             
-            <ScrollView contentContainerStyle={styles.bottomSheetContent}>
-              {STATUS_OPTIONS.map(option => (
-                <TouchableOpacity
-                  key={option.value}
+            <FlatList
+              data={STATUS_OPTIONS}
+              keyExtractor={(item) => item.value}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
                   style={styles.sheetItem}
-                  onPress={() => selectStatus(option.value)}
+                  onPress={() => {
+                    selectStatus(item.value);
+                    setShowStatusSheet(false);
+                  }}
                 >
-                  <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                    <View style={[styles.statusDot, { 
-                      backgroundColor: getStatusColor(option.value).text
-                    }]} />
-                    <Text style={styles.sheetItemText}>{option.label}</Text>
-                  </View>
-                  {selectedCustomer?.status === option.value && (
-                    <Check size={18} color={Colors.primary} />
+                  <Text style={styles.sheetItemText}>{item.label}</Text>
+                  {status === item.value && (
+                    <Check size={20} color={Colors.primary} />
                   )}
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+              )}
+              contentContainerStyle={styles.bottomSheetContent}
+            />
           </View>
         </View>
       </Modal>
+
+      {/* Product Modal */}
+      {showProductSheet !== null && (
+        <Modal
+          visible={showProductSheet !== null}
+          animationType="slide"
+          transparent
+          onRequestClose={() => {
+            setShowProductSheet(null);
+            setProductSearch('');
+          }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.bottomSheet}>
+              <View style={styles.bottomSheetHeader}>
+                <Text style={styles.bottomSheetTitle}>Select Product</Text>
+                <TouchableOpacity 
+                  onPress={() => {
+                    setShowProductSheet(null);
+                    setProductSearch('');
+                  }}
+                >
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.searchContainer}>
+                <Search size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search products..."
+                  value={productSearch}
+                  onChangeText={setProductSearch}
+                />
+                {productSearch ? (
+                  <TouchableOpacity onPress={() => setProductSearch('')}>
+                    <X size={18} color={Colors.text.secondary} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              
+              <FlatList
+                data={filteredProducts}
+                keyExtractor={(item) => item.id.toString()}
+                renderItem={renderProductItem}
+                contentContainerStyle={styles.bottomSheetContent}
+                ListEmptyComponent={
+                  <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>No products found</Text>
+                  </View>
+                }
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -790,13 +802,14 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: Colors.background.default,
+    height: 56,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
+    backgroundColor: Colors.background.default,
+    zIndex: 10,
   },
   backButton: {
     width: 40,
@@ -805,45 +818,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  saveButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 14,
-  },
   content: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
   card: {
     backgroundColor: Colors.background.default,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: Colors.primary + '40',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 16,
   },
   formGroup: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   labelContainer: {
     flexDirection: 'row',
@@ -852,222 +851,162 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
-    fontWeight: '500',
     color: Colors.text.primary,
+    marginLeft: 8,
   },
-  labelIcon: {
-    marginRight: 8,
+  required: {
+    color: Colors.negative,
   },
-  inputContainer: {
+  inputControl: {
     borderWidth: 1,
     borderColor: Colors.border.medium,
     borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 48,
-    justifyContent: 'center',
+    backgroundColor: Colors.background.secondary,
   },
   input: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 16,
     color: Colors.text.primary,
-    height: '100%',
   },
-  selectContainer: {
+  selectControl: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: Colors.border.medium,
     borderRadius: 8,
     paddingHorizontal: 12,
-    height: 48,
+    paddingVertical: 10,
+    backgroundColor: Colors.background.secondary,
   },
   selectText: {
     fontSize: 16,
     color: Colors.text.primary,
   },
   placeholderText: {
+    fontSize: 16,
     color: Colors.text.tertiary,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  itemList: {
     marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.text.primary,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  addButtonText: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 14,
-    marginLeft: 4,
-  },
-  emptyItems: {
-    padding: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 8,
-  },
-  emptyItemsText: {
-    fontSize: 16,
-    color: Colors.text.secondary,
   },
   itemCard: {
     backgroundColor: Colors.background.secondary,
     borderRadius: 8,
+    marginBottom: 8,
     padding: 12,
-    marginBottom: 12,
-  },
-  itemFormGroup: {
-    marginBottom: 12,
-  },
-  itemDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  quantityContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
     borderWidth: 1,
-    borderColor: Colors.border.medium,
-    borderRadius: 8,
-    overflow: 'hidden',
-    height: 44,
+    borderColor: Colors.border.light,
   },
-  quantityButton: {
-    width: 36,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.background.secondary,
-  },
-  quantityInput: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 16,
-    color: Colors.text.primary,
-  },
-  priceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border.medium,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 44,
-  },
-  currencySymbol: {
-    fontSize: 16,
-    color: Colors.text.secondary,
-    marginRight: 4,
-  },
-  priceInput: {
-    flex: 1,
-    fontSize: 16,
-    color: Colors.text.primary,
-  },
-  itemFooter: {
+  itemCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
+    marginBottom: 8,
   },
-  removeButton: {
+  itemTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+    flex: 1,
   },
-  removeButtonText: {
+  itemCardTitle: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.text.primary,
+    flex: 1,
+  },
+  itemCardRemove: {
+    padding: 4,
+  },
+  itemDetailsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  itemDetailColumn: {
+    flex: 1,
+  },
+  itemDetailLabel: {
     fontSize: 14,
-    color: Colors.negative,
-    marginLeft: 4,
+    color: Colors.text.secondary,
+    marginBottom: 4,
+  },
+  itemDetailInputContainer: {
+    borderWidth: 1,
+    borderColor: Colors.border.medium,
+    borderRadius: 6,
+    backgroundColor: Colors.background.default,
+  },
+  itemDetailInput: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 15,
+    color: Colors.text.primary,
+    textAlign: 'center',
   },
   itemTotal: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.primary,
   },
-  summaryContainer: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 8,
+  emptyItems: {
+    paddingVertical: 20,
+    alignItems: 'center',
   },
-  summaryRow: {
+  emptyText: {
+    fontSize: 14,
+    color: Colors.text.tertiary,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.2)',
+    marginBottom: 16,
+  },
+  addButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.primary,
+    marginLeft: 8,
+  },
+  totalContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
-  },
-  summaryLabel: {
-    fontSize: 15,
-    color: Colors.text.secondary,
-  },
-  summaryValue: {
-    fontSize: 15,
-    color: Colors.text.primary,
-    fontWeight: '500',
-  },
-  totalRow: {
+    alignItems: 'center',
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: Colors.border.light,
-    paddingTop: 10,
-    marginTop: 4,
   },
   totalLabel: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
     color: Colors.text.primary,
   },
-  totalValue: {
+  totalAmount: {
     fontSize: 18,
     fontWeight: '700',
     color: Colors.primary,
   },
-  textareaContainer: {
+  textareaControl: {
     borderWidth: 1,
     borderColor: Colors.border.medium,
     borderRadius: 8,
-    padding: 8,
-    height: 120,
+    backgroundColor: Colors.background.secondary,
   },
   textarea: {
-    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 16,
     color: Colors.text.primary,
-    textAlignVertical: 'top',
+    minHeight: 100,
   },
-  statusIndicator: {
-    flex: 1,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-  },
-  statusIndicatorText: {
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  
-  // Bottom sheet styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1077,15 +1016,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background.default,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    paddingTop: 16,
-    maxHeight: '80%',
+    height: '60%',
+    paddingBottom: 20,
   },
   bottomSheetHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
+    alignItems: 'center',
+    padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
@@ -1095,29 +1033,30 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
   },
   bottomSheetContent: {
-    paddingBottom: 24,
+    paddingHorizontal: 16,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.background.secondary,
-    margin: 16,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 10,
+    margin: 16,
+    marginTop: 8,
+    marginBottom: 8,
   },
   searchInput: {
     flex: 1,
-    marginLeft: 8,
     fontSize: 16,
     color: Colors.text.primary,
+    marginLeft: 8,
   },
   sheetItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 14,
-    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
   },
@@ -1125,25 +1064,64 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.text.primary,
   },
-  sheetItemPrice: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    marginTop: 2,
+  emptyContainer: {
+    paddingVertical: 20,
+    alignItems: 'center',
   },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 10,
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.background.default,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 5,
   },
-  statusText: {
-    fontSize: 14,
+  footerButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginHorizontal: 6,
+  },
+  printButton: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.2)',
+  },
+  printButtonText: {
+    fontSize: 16,
     fontWeight: '500',
+    color: Colors.primary,
+    marginLeft: 8,
+  },
+  saveButton: {
+    backgroundColor: Colors.primary,
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: 'white',
   },
   customerItemContent: {
     flex: 1,
@@ -1174,18 +1152,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.primary,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  currencyInputWrapper: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyText: {
+  currencySymbol: {
     fontSize: 16,
-    color: Colors.text.secondary,
+    fontWeight: '600',
+    color: Colors.primary,
+    marginRight: 8,
   },
 }); 

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, StatusBar, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, StatusBar, RefreshControl, ActivityIndicator, Share } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { 
   Plus, 
@@ -7,23 +7,41 @@ import {
   Filter, 
   ArrowLeft, 
   Calendar, 
-  SortAsc, 
+  SortAsc,
+  SortDesc, 
   ChevronDown, 
   User, 
   Share2,
   Printer,
   X,
-  ChevronRight
+  ChevronRight,
+  FileText,
+  Check,
+  Hash
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth';
 import { getSalesOrders } from '@/db/sales-order';
-import type { SalesOrder } from '@/db/schema';
+import type { SalesOrder as DbSalesOrder } from '@/db/schema';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAllCustomers } from '@/db/customer';
 import type { Customer } from '@/db/schema';
 import { formatCurrency } from '@/utils/currency';
+
+// Extended SalesOrder type to include items property which is added by the getSalesOrderById function
+interface SalesOrder extends DbSalesOrder {
+  items?: Array<{
+    id: number;
+    orderId: number;
+    productId: number;
+    quantity: number;
+    unitPrice: number;
+    total: number;
+    notes?: string | null;
+    createdAt: string;
+  }>;
+}
 
 type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc';
 type FilterOption = 'all' | 'completed' | 'processing' | 'draft' | 'cancelled';
@@ -31,6 +49,7 @@ type FilterOption = 'all' | 'completed' | 'processing' | 'draft' | 'cancelled';
 export default function SalesOrderScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -57,6 +76,7 @@ export default function SalesOrderScreen() {
   const loadOrders = async (sortOverride?: SortOption) => {
     try {
       if (!user) return;
+      setLoading(true);
       let sortParam: 'newest' | 'oldest' = 'newest';
       const sortValue = sortOverride || sortBy;
       if (sortValue === 'date-desc') sortParam = 'newest';
@@ -92,38 +112,28 @@ export default function SalesOrderScreen() {
     setShowSortOptions(false);
     if (option === 'date-desc' || option === 'date-asc') {
       loadOrders(option);
-    } else {
-      // For amount sort, do client-side sort
-      const sortedOrders = [...orders].sort((a, b) => {
-        if (option === 'amount-desc') {
-          return b.total - a.total;
-        } else {
-          return a.total - b.total;
-        }
-      });
-      setOrders(sortedOrders);
     }
   };
 
   const handleFilter = (option: FilterOption) => {
     setFilterBy(option);
     setShowFilterOptions(false);
-    
-    // Filter the orders based on selected option
-    if (option === 'all') {
-      loadOrders();
-    } else {
-      const filteredOrders = orders.filter(order => order.status === option);
-      setOrders(filteredOrders);
+  };
+  
+  const handlePrint = (order: SalesOrder) => {
+    Alert.alert('Print', `Printing order #${order.orderNumber}`);
+  };
+  
+  const handleShare = async (order: SalesOrder) => {
+    try {
+      const customerName = getCustomerName(order.customerId);
+      const message = `Sales Order: #${order.orderNumber}\nCustomer: ${customerName}\nAmount: ${formatCurrency(order.total / 100)}\nDate: ${new Date(order.orderDate).toLocaleDateString()}`;
+      await Share.share({
+        message,
+      });
+    } catch (error) {
+      console.log('Error sharing order:', error);
     }
-  };
-  
-  const handlePrint = (id: number) => {
-    Alert.alert('Print', 'Printing sales order...');
-  };
-  
-  const handleShare = (id: number) => {
-    Alert.alert('Share', 'Sharing sales order...');
   };
 
   const getStatusColor = (status: string) => {
@@ -172,216 +182,246 @@ export default function SalesOrderScreen() {
   }, [allOrders, customers, searchQuery, filterBy, sortBy]);
 
   const renderOrderItem = useCallback(({ item }: { item: SalesOrder }) => {
-    const customer = customers.find(c => c.id === item.customerId);
+    const customerName = getCustomerName(item.customerId);
+    const statusColors = getStatusColor(item.status || 'draft');
+    
     return (
       <TouchableOpacity
-        style={styles.orderItem}
+        style={styles.card}
         onPress={() => router.push({
           pathname: '/sales-order/[id]',
           params: { id: item.id.toString() }
         })}
       >
-        <View style={styles.orderContent}>
-          <View style={styles.orderMainInfo}>
-            <Text style={styles.customerName}>{customer ? customer.name : `Customer #${item.customerId}`}</Text>
-            <Text style={styles.amount}>{formatCurrency(item.total / 100)}</Text>
-          </View>
-          
-          <View style={styles.orderDetails}>
-            <View style={styles.detailRow}>
-              <Calendar size={16} color={Colors.text.secondary} style={styles.detailIcon} />
-              <Text style={styles.detailText}>
-                {new Date(item.orderDate).toLocaleDateString()}
-              </Text>
-            </View>
-            <View style={styles.detailRow}>
-              <User size={16} color={Colors.text.secondary} style={styles.detailIcon} />
-              <Text style={styles.detailText}>
-                Order #{item.orderNumber}
+        <View style={styles.cardHeader}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.orderNumber}>#{item.orderNumber}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: statusColors.bg }]}>
+              <Text style={[styles.statusText, { color: statusColors.text }]}>
+                {(item.status || 'Draft').charAt(0).toUpperCase() + (item.status || 'Draft').slice(1)}
               </Text>
             </View>
           </View>
-          
-          <View style={styles.orderFooter}>
-            <View style={[
-              styles.statusBadge,
-              { 
-                backgroundColor: getStatusColor(item.status || 'draft').bg
-              }
-            ]}>
-              <Text style={[
-                styles.statusText,
-                { 
-                  color: getStatusColor(item.status || 'draft').text
-                }
-              ]}>
-                {(item.status || 'draft').toUpperCase()}
-              </Text>
-            </View>
-            
-            <View style={styles.actionIcons}>
-              <TouchableOpacity 
-                style={styles.actionBtn}
-                onPress={() => handleShare(item.id)}
-              >
-                <Share2 size={18} color={Colors.text.secondary} />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.actionBtn}
-                onPress={() => handlePrint(item.id)}
-              >
-                <Printer size={18} color={Colors.text.secondary} />
-              </TouchableOpacity>
-            </View>
+          <Text style={styles.dateText}>{new Date(item.orderDate).toLocaleDateString()}</Text>
+        </View>
+        
+        <View style={styles.cardContent}>
+          <View style={styles.customerInfo}>
+            <Text style={styles.customerName} numberOfLines={1}>
+              {customerName}
+            </Text>
+            <Text style={styles.itemsCount}>
+              View Details
+            </Text>
           </View>
+          <View style={styles.amountContainer}>
+            <Text style={styles.amountText}>{formatCurrency(item.total / 100)}</Text>
+            <ChevronRight size={18} color={Colors.text.tertiary} />
+          </View>
+        </View>
+
+        <View style={styles.cardActions}>
+          <TouchableOpacity 
+            style={styles.cardActionButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleShare(item);
+            }}
+          >
+            <Share2 size={18} color={Colors.text.secondary} />
+            <Text style={styles.cardActionText}>Share</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.cardActionButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              handlePrint(item);
+            }}
+          >
+            <Printer size={18} color={Colors.text.secondary} />
+            <Text style={styles.cardActionText}>Print</Text>
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
-  }, [customers]);
+  }, [router, customers]);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top','left','right','bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Sales Orders</Text>
-        <View style={{width: 40}} />
+        <View style={{ width: 40 }} />
       </View>
-
+      
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
           <Search size={18} color={Colors.text.secondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by invoice number or customer name"
-            placeholderTextColor={Colors.text.tertiary}
+            placeholder="Search orders..."
             value={searchQuery}
             onChangeText={setSearchQuery}
+            placeholderTextColor={Colors.text.tertiary}
           />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")}> 
+          {searchQuery ? (
+            <TouchableOpacity 
+              onPress={() => setSearchQuery('')}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
               <X size={18} color={Colors.text.secondary} />
             </TouchableOpacity>
-          )}
+          ) : null}
         </View>
-      </View>
-      
-      <View style={styles.filterSortContainer}>
-        <View style={styles.filterSortWrapper}>
+        
+        <View style={styles.filterSortContainer}>
           <TouchableOpacity 
-            style={styles.filterButton}
+            style={[styles.filterButton, showFilterOptions && styles.activeFilterButton]} 
             onPress={() => {
               setShowFilterOptions(!showFilterOptions);
               setShowSortOptions(false);
             }}
           >
-            <Filter size={16} color={Colors.text.secondary} />
-            <Text style={styles.filterSortText}>
-              Filter: {filterBy === 'all' ? 'All' : filterBy.charAt(0).toUpperCase() + filterBy.slice(1)}
+            <Filter size={18} color={showFilterOptions ? Colors.primary : Colors.text.secondary} />
+            <Text style={[styles.filterButtonText, showFilterOptions && styles.activeFilterButtonText]}>
+              {filterBy === 'all' ? 'All' : filterBy.charAt(0).toUpperCase() + filterBy.slice(1)}
             </Text>
-            <ChevronDown size={16} color={Colors.text.secondary} />
+            <ChevronDown size={16} color={showFilterOptions ? Colors.primary : Colors.text.secondary} />
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={styles.sortButton}
+            style={[styles.sortButton, showSortOptions && styles.activeSortButton]} 
             onPress={() => {
               setShowSortOptions(!showSortOptions);
               setShowFilterOptions(false);
             }}
           >
             {sortBy.includes('desc') ? (
-              <SortAsc size={16} color={Colors.text.secondary} />
+              <SortDesc size={18} color={showSortOptions ? Colors.primary : Colors.text.secondary} />
             ) : (
-              <SortAsc size={16} color={Colors.text.secondary} />
+              <SortAsc size={18} color={showSortOptions ? Colors.primary : Colors.text.secondary} />
             )}
-            <Text style={styles.filterSortText}>
-              Sort: {
-                sortBy === 'date-desc' ? 'Newest' :
-                sortBy === 'date-asc' ? 'Oldest' :
-                sortBy === 'amount-desc' ? 'Highest' : 'Lowest'
-              }
+            <Text style={[styles.sortButtonText, showSortOptions && styles.activeSortButtonText]}>
+              {sortBy.includes('date') ? 'Date' : 'Amount'}
             </Text>
-            <ChevronDown size={16} color={Colors.text.secondary} />
+            <ChevronDown size={16} color={showSortOptions ? Colors.primary : Colors.text.secondary} />
           </TouchableOpacity>
         </View>
         
         {showFilterOptions && (
-          <View style={styles.dropdown}>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'all' && styles.selectedItem]}
+          <View style={styles.optionsDropdown}>
+            <TouchableOpacity
+              style={[styles.optionItem, filterBy === 'all' && styles.activeOption]}
               onPress={() => handleFilter('all')}
             >
-              <Text style={[styles.dropdownText, filterBy === 'all' && styles.selectedText]}>All</Text>
+              <Text style={[styles.optionText, filterBy === 'all' && styles.activeOptionText]}>All</Text>
+              {filterBy === 'all' && <Check size={18} color={Colors.primary} />}
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'completed' && styles.selectedItem]}
+            <TouchableOpacity
+              style={[styles.optionItem, filterBy === 'completed' && styles.activeOption]}
               onPress={() => handleFilter('completed')}
             >
-              <Text style={[styles.dropdownText, filterBy === 'completed' && styles.selectedText]}>Completed</Text>
+              <Text style={[styles.optionText, filterBy === 'completed' && styles.activeOptionText]}>Completed</Text>
+              {filterBy === 'completed' && <Check size={18} color={Colors.primary} />}
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'processing' && styles.selectedItem]}
+            <TouchableOpacity
+              style={[styles.optionItem, filterBy === 'processing' && styles.activeOption]}
               onPress={() => handleFilter('processing')}
             >
-              <Text style={[styles.dropdownText, filterBy === 'processing' && styles.selectedText]}>Processing</Text>
+              <Text style={[styles.optionText, filterBy === 'processing' && styles.activeOptionText]}>Processing</Text>
+              {filterBy === 'processing' && <Check size={18} color={Colors.primary} />}
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'draft' && styles.selectedItem]}
+            <TouchableOpacity
+              style={[styles.optionItem, filterBy === 'draft' && styles.activeOption]}
               onPress={() => handleFilter('draft')}
             >
-              <Text style={[styles.dropdownText, filterBy === 'draft' && styles.selectedText]}>Draft</Text>
+              <Text style={[styles.optionText, filterBy === 'draft' && styles.activeOptionText]}>Draft</Text>
+              {filterBy === 'draft' && <Check size={18} color={Colors.primary} />}
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'cancelled' && styles.selectedItem]}
+            <TouchableOpacity
+              style={[styles.optionItem, filterBy === 'cancelled' && styles.activeOption]}
               onPress={() => handleFilter('cancelled')}
             >
-              <Text style={[styles.dropdownText, filterBy === 'cancelled' && styles.selectedText]}>Cancelled</Text>
+              <Text style={[styles.optionText, filterBy === 'cancelled' && styles.activeOptionText]}>Cancelled</Text>
+              {filterBy === 'cancelled' && <Check size={18} color={Colors.primary} />}
             </TouchableOpacity>
           </View>
         )}
         
         {showSortOptions && (
-          <View style={styles.dropdown}>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'date-desc' && styles.selectedItem]}
+          <View style={styles.optionsDropdown}>
+            <TouchableOpacity
+              style={[styles.optionItem, sortBy === 'date-desc' && styles.activeOption]}
               onPress={() => handleSort('date-desc')}
             >
-              <Text style={[styles.dropdownText, sortBy === 'date-desc' && styles.selectedText]}>Date (Newest first)</Text>
+              <Text style={[styles.optionText, sortBy === 'date-desc' && styles.activeOptionText]}>
+                Date (Newest first)
+              </Text>
+              {sortBy === 'date-desc' && <Check size={18} color={Colors.primary} />}
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'date-asc' && styles.selectedItem]}
+            <TouchableOpacity
+              style={[styles.optionItem, sortBy === 'date-asc' && styles.activeOption]}
               onPress={() => handleSort('date-asc')}
             >
-              <Text style={[styles.dropdownText, sortBy === 'date-asc' && styles.selectedText]}>Date (Oldest first)</Text>
+              <Text style={[styles.optionText, sortBy === 'date-asc' && styles.activeOptionText]}>
+                Date (Oldest first)
+              </Text>
+              {sortBy === 'date-asc' && <Check size={18} color={Colors.primary} />}
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'amount-desc' && styles.selectedItem]}
+            <TouchableOpacity
+              style={[styles.optionItem, sortBy === 'amount-desc' && styles.activeOption]}
               onPress={() => handleSort('amount-desc')}
             >
-              <Text style={[styles.dropdownText, sortBy === 'amount-desc' && styles.selectedText]}>Amount (Highest first)</Text>
+              <Text style={[styles.optionText, sortBy === 'amount-desc' && styles.activeOptionText]}>
+                Amount (High to low)
+              </Text>
+              {sortBy === 'amount-desc' && <Check size={18} color={Colors.primary} />}
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'amount-asc' && styles.selectedItem]}
+            <TouchableOpacity
+              style={[styles.optionItem, sortBy === 'amount-asc' && styles.activeOption]}
               onPress={() => handleSort('amount-asc')}
             >
-              <Text style={[styles.dropdownText, sortBy === 'amount-asc' && styles.selectedText]}>Amount (Lowest first)</Text>
+              <Text style={[styles.optionText, sortBy === 'amount-asc' && styles.activeOptionText]}>
+                Amount (Low to high)
+              </Text>
+              {sortBy === 'amount-asc' && <Check size={18} color={Colors.primary} />}
             </TouchableOpacity>
           </View>
         )}
       </View>
-
-      <FlatList
-        data={orders}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderOrderItem}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={refreshOrders} />
-        }
-      />
+      
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={orders}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderOrderItem}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={refreshOrders}
+              colors={[Colors.primary]} 
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyStateContainer}>
+              <FileText size={60} color={Colors.text.tertiary} />
+              <Text style={styles.emptyStateText}>No sales orders found</Text>
+              <Text style={styles.emptyStateSubText}>
+                Create a new sales order to get started
+              </Text>
+            </View>
+          }
+        />
+      )}
       
       <TouchableOpacity
         style={styles.fab}
@@ -400,13 +440,14 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: Colors.background.default,
+    height: 56,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
+    backgroundColor: Colors.background.default,
+    zIndex: 10,
   },
   backButton: {
     width: 40,
@@ -422,181 +463,239 @@ const styles = StyleSheet.create({
   searchContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
+    backgroundColor: Colors.background.default,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+    zIndex: 20,
   },
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.background.secondary,
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    height: 44,
+    paddingVertical: 10,
+    marginBottom: 12,
   },
   searchInput: {
     flex: 1,
-    height: 44,
-    marginLeft: 8,
     fontSize: 16,
     color: Colors.text.primary,
+    marginLeft: 8,
   },
   filterSortContainer: {
-    position: 'relative',
-    zIndex: 100,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  filterSortWrapper: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   filterButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.background.secondary,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flex: 1,
-    marginRight: 8,
+    borderRadius: 8,
+    paddingVertical: 10,
+    marginRight: 6,
+  },
+  activeFilterButton: {
+    backgroundColor: `${Colors.primary}15`,
+  },
+  filterButtonText: {
+    color: Colors.text.secondary,
+    fontSize: 15,
+    fontWeight: '500',
+    marginHorizontal: 6,
+  },
+  activeFilterButtonText: {
+    color: Colors.primary,
   },
   sortButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.background.secondary,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flex: 1,
-    marginLeft: 8,
+    borderRadius: 8,
+    paddingVertical: 10,
+    marginLeft: 6,
   },
-  filterSortText: {
-    marginLeft: 8,
-    fontSize: 14,
+  activeSortButton: {
+    backgroundColor: `${Colors.primary}15`,
+  },
+  sortButtonText: {
     color: Colors.text.secondary,
-    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+    marginHorizontal: 6,
   },
-  dropdown: {
+  activeSortButtonText: {
+    color: Colors.primary,
+  },
+  optionsDropdown: {
     position: 'absolute',
-    top: 45,
+    top: 88,
     left: 16,
     right: 16,
-    backgroundColor: 'white',
-    borderRadius: 10,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
-    zIndex: 200,
+    backgroundColor: Colors.background.default,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+    padding: 8,
+    zIndex: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  dropdownItem: {
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
+    borderRadius: 8,
   },
-  selectedItem: {
-    backgroundColor: 'rgba(76, 175, 80, 0.08)',
+  activeOption: {
+    backgroundColor: `${Colors.primary}10`,
   },
-  dropdownText: {
-    fontSize: 15,
-    color: Colors.text.secondary,
+  optionText: {
+    fontSize: 16,
+    color: Colors.text.primary,
   },
-  selectedText: {
+  activeOptionText: {
     color: Colors.primary,
     fontWeight: '500',
   },
   listContainer: {
     padding: 16,
+    paddingBottom: 80,
   },
-  orderItem: {
+  card: {
     backgroundColor: Colors.background.default,
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 16,
+    padding: 16,
     borderWidth: 1,
     borderColor: Colors.primary + '40',
   },
-  orderContent: {
-    padding: 16,
-  },
-  orderMainInfo: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
-  customerName: {
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  orderNumber: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  amount: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  orderDetails: {
-    marginBottom: 12,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  detailIcon: {
-    marginRight: 8,
-  },
-  detailText: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-  },
-  orderFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
   statusBadge: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 8,
   },
   statusText: {
     fontSize: 12,
     fontWeight: '600',
   },
-  actionIcons: {
+  dateText: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  cardContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  customerInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  customerName: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  itemsCount: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  amountContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
   },
-  actionBtn: {
-    width: 36, 
-    height: 36,
-    justifyContent: 'center',
+  amountText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+  },
+  cardActionButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 8,
-    borderRadius: 18,
-    backgroundColor: Colors.background.secondary,
+    marginRight: 16,
+    gap: 6,
+  },
+  cardActionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.text.secondary,
   },
   fab: {
     position: 'absolute',
-    bottom: 24,
-    right: 24,
+    bottom: 16,
+    right: 16,
     width: 56,
     height: 56,
     borderRadius: 28,
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
+    shadowRadius: 3,
+    elevation: 5,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  emptyStateText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginTop: 16,
+  },
+  emptyStateSubText: {
+    fontSize: 16,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  Check: {
+    // Just for import, this is required by TypeScript for the code to compile
+  }
 }); 

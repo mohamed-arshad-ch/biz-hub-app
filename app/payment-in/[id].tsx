@@ -22,6 +22,7 @@ export default function PaymentInDetailsScreen() {
   const [payment, setPayment] = useState<any>(null);
   const [customer, setCustomer] = useState<any>(null);
   const [invoices, setInvoices] = useState<any[]>([]);
+  const [customerBalance, setCustomerBalance] = useState<number>(0);
 
   useEffect(() => {
     if (!user || !id) return;
@@ -39,6 +40,12 @@ export default function PaymentInDetailsScreen() {
         // Fetch customer data
         const customerData = await dbCustomer.getCustomerById(paymentData.customerId);
         setCustomer(customerData);
+        
+        // Fetch customer balance from ledger
+        if (customerData) {
+          const balance = await dbCustomer.getCustomerBalanceFromLedger(user.id, customerData.id);
+          setCustomerBalance(balance);
+        }
 
         // Fetch invoice data for each item
         const invoicePromises = paymentData.items.map((item: any) => 
@@ -188,6 +195,18 @@ export default function PaymentInDetailsScreen() {
               <Text style={styles.customerName}>{customer.name}</Text>
               {customer.email && <Text style={styles.customerDetail}>{customer.email}</Text>}
               {customer.phone && <Text style={styles.customerDetail}>{customer.phone}</Text>}
+              
+              {/* Customer Balance */}
+              <View style={styles.balanceContainer}>
+                <Text style={styles.balanceLabel}>Current Balance:</Text>
+                <Text style={[
+                  styles.balanceAmount, 
+                  customerBalance > 0 ? styles.balancePositive : 
+                    customerBalance < 0 ? styles.balanceNegative : styles.balanceZero
+                ]}>
+                  {formatCurrency(customerBalance)}
+                </Text>
+              </View>
             </View>
           )}
         </View>
@@ -531,5 +550,32 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: {
     color: Colors.negative,
+  },
+  balanceContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+  },
+  balanceLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.text.secondary,
+  },
+  balanceAmount: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  balancePositive: {
+    color: Colors.status.pending,
+  },
+  balanceNegative: {
+    color: Colors.negative,
+  },
+  balanceZero: {
+    color: Colors.status.completed,
   },
 }); 

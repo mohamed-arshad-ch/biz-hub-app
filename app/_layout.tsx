@@ -1,14 +1,13 @@
 import React from 'react';
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { useFonts } from "expo-font";
-import { Stack, useRouter, useSegments } from "expo-router";
+import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState, Suspense } from "react";
 import { View, ActivityIndicator, Text } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { ErrorBoundary } from "./error-boundary";
-import CustomSplashScreen from "@/components/SplashScreen";
 import { SQLiteProvider } from 'expo-sqlite';
 import { DATABASE_NAME } from '@/db';
 import { setupDatabase, setupDefaultData } from '@/db/setup';
@@ -29,7 +28,6 @@ export default function RootLayout() {
     ...FontAwesome.font,
     // Using only FontAwesome and system default fonts
   });
-  const [showSplash, setShowSplash] = useState(true);
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [authInitialized, setAuthInitialized] = useState(false);
@@ -74,18 +72,10 @@ export default function RootLayout() {
     if (loaded && dbReady && authInitialized) {
       // Hide the native splash screen
       SplashScreen.hideAsync();
-      
-      // Show our custom splash screen for 2.5 seconds
-      const timer = setTimeout(() => {
-        setShowSplash(false);
-      }, 2500);
-      
-      return () => clearTimeout(timer);
     }
   }, [loaded, dbReady, authInitialized]);
 
-  if (!loaded || !dbReady || !authInitialized || showSplash) {
-    // Show loading or custom splash screen
+  if (!loaded || !dbReady || !authInitialized) {
     if (dbError) {
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
@@ -98,9 +88,7 @@ export default function RootLayout() {
         </View>
       );
     }
-    
-    // Return our custom splash screen while loading or during the timed display
-    return loaded ? <CustomSplashScreen /> : null;
+    return null;
   }
 
   return (
@@ -110,13 +98,9 @@ export default function RootLayout() {
         options={{ enableChangeListener: true }}
         useSuspense
       >
-       
-          <ErrorBoundary>
-          
-              <RootLayoutNav />
-           
-          </ErrorBoundary>
-       
+        <ErrorBoundary>
+          <RootLayoutNav />
+        </ErrorBoundary>
       </SQLiteProvider>
     </Suspense>
   );

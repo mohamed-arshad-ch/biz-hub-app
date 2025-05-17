@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { ArrowLeft, Plus, X, FileText, Calendar, Hash, Package, DollarSign, ChevronDown, Check, CreditCard, User, Printer, Search } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAuthStore } from '@/store/auth';
-import { createPaymentIn } from '@/db/payment-in';
+import { createPaymentIn, getTotalPaidForInvoice } from '@/db/payment-in';
 import * as dbCustomer from '@/db/customer';
 import * as dbInvoice from '@/db/sales-invoice';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -49,6 +49,9 @@ export default function NewPaymentInScreen() {
   
   // Date picker state
   const [showDatePicker, setShowDatePicker] = useState(false);
+  
+  // State for storing previous payments for each invoice
+  const [invoicePayments, setInvoicePayments] = useState<{[key: number]: number}>({});
 
   const [paymentData, setPaymentData] = useState({
     paymentNumber: generatePaymentNumber(),
@@ -97,12 +100,23 @@ export default function NewPaymentInScreen() {
     if (!selectedCustomer || !user) return;
     const fetchInvoices = async () => {
       try {
+        setLoading(true);
         const invs = await dbInvoice.getSalesInvoices(user.id);
         const customerInvoices = invs.filter(inv => inv.customerId === selectedCustomer.id && inv.status === 'unpaid');
         setAvailableInvoices(customerInvoices);
+        
+        // Fetch payment data for each invoice
+        const paymentsData: {[key: number]: number} = {};
+        for (const inv of customerInvoices) {
+          const totalPaid = await getTotalPaidForInvoice(inv.id, user.id);
+          paymentsData[inv.id] = totalPaid;
+        }
+        setInvoicePayments(paymentsData);
       } catch (error) {
         console.error('Error fetching invoices:', error);
         Alert.alert('Error', 'Failed to load invoices');
+      } finally {
+        setLoading(false);
       }
     };
     fetchInvoices();
@@ -177,7 +191,7 @@ export default function NewPaymentInScreen() {
       amount: paymentData.amount - item.amount,
     });
   };
-  
+
   const handleInvoiceAmountChange = (index: number, amount: number) => {
     const updatedItems = [...items];
     const prevAmount = updatedItems[index].amount;
@@ -221,7 +235,7 @@ export default function NewPaymentInScreen() {
   };
 
   const renderCustomerItem = ({ item }: { item: any }) => (
-    <TouchableOpacity
+        <TouchableOpacity
       style={styles.sheetItem}
       onPress={() => selectCustomer(item)}
     >
@@ -230,7 +244,7 @@ export default function NewPaymentInScreen() {
         {item.company && <Text style={styles.customerCompany}>{item.company}</Text>}
       </View>
       {paymentData.customerId === item.id && <Check size={20} color={Colors.primary} />}
-    </TouchableOpacity>
+        </TouchableOpacity>
   );
 
   const renderInvoiceItem = ({ item }: { item: any }) => (
@@ -276,13 +290,13 @@ export default function NewPaymentInScreen() {
         style={styles.container}
       >
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <ArrowLeft size={24} color={Colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={styles.title}>New Payment</Text>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={24} color={Colors.text.primary} />
+        </TouchableOpacity>
+        <Text style={styles.title}>New Payment</Text>
           <View style={{ width: 40 }} />
-        </View>
+      </View>
 
         {/* Content */}
         <ScrollView 
@@ -299,7 +313,7 @@ export default function NewPaymentInScreen() {
                 <User size={16} color={Colors.text.secondary} />
                 <Text style={styles.label}>Customer<Text style={styles.required}>*</Text></Text>
               </View>
-              <TouchableOpacity 
+          <TouchableOpacity 
                 style={styles.selectControl}
                 onPress={() => setShowCustomerSheet(true)}
               >
@@ -307,29 +321,29 @@ export default function NewPaymentInScreen() {
                   {selectedCustomer ? selectedCustomer.name : 'Select a customer'}
                 </Text>
                 <ChevronDown size={18} color={Colors.text.secondary} />
-              </TouchableOpacity>
+          </TouchableOpacity>
             </View>
 
             <View style={styles.formGroup}>
               <View style={styles.labelContainer}>
                 <Hash size={16} color={Colors.text.secondary} />
-                <Text style={styles.label}>Payment Number</Text>
+          <Text style={styles.label}>Payment Number</Text>
               </View>
               <View style={styles.inputControl}>
-                <TextInput
+            <TextInput
                   style={styles.input}
-                  value={paymentData.paymentNumber}
+              value={paymentData.paymentNumber}
                   onChangeText={(text) => setPaymentData({...paymentData, paymentNumber: text})}
-                />
+            />
               </View>
-            </View>
+          </View>
 
             <View style={styles.formGroup}>
               <View style={styles.labelContainer}>
                 <Calendar size={16} color={Colors.text.secondary} />
                 <Text style={styles.label}>Payment Date<Text style={styles.required}>*</Text></Text>
               </View>
-              <TouchableOpacity 
+          <TouchableOpacity 
                 style={styles.selectControl}
                 onPress={() => setShowDatePicker(true)}
               >
@@ -337,7 +351,7 @@ export default function NewPaymentInScreen() {
                   {new Date(paymentData.paymentDate).toLocaleDateString()}
                 </Text>
                 <Calendar size={18} color={Colors.text.secondary} />
-              </TouchableOpacity>
+          </TouchableOpacity>
               {showDatePicker && (
                 <DateTimePicker
                   value={new Date(paymentData.paymentDate)}
@@ -346,7 +360,7 @@ export default function NewPaymentInScreen() {
                   onChange={handleDateChange}
                 />
               )}
-            </View>
+          </View>
 
             <View style={styles.formGroup}>
               <View style={styles.labelContainer}>
@@ -362,23 +376,23 @@ export default function NewPaymentInScreen() {
                 </Text>
                 <ChevronDown size={18} color={Colors.text.secondary} />
               </TouchableOpacity>
-            </View>
+          </View>
 
             <View style={styles.formGroup}>
               <View style={styles.labelContainer}>
                 <Hash size={16} color={Colors.text.secondary} />
-                <Text style={styles.label}>Reference Number</Text>
+          <Text style={styles.label}>Reference Number</Text>
               </View>
               <View style={styles.inputControl}>
-                <TextInput
+            <TextInput
                   style={styles.input}
-                  value={paymentData.referenceNumber}
+              value={paymentData.referenceNumber}
                   onChangeText={(text) => setPaymentData({...paymentData, referenceNumber: text})}
                   placeholder="Optional reference number"
-                />
+            />
               </View>
-            </View>
           </View>
+        </View>
 
           {/* Payment Amount */}
           <View style={styles.card}>
@@ -390,7 +404,7 @@ export default function NewPaymentInScreen() {
                 <Text style={styles.label}>Has Invoices?</Text>
               </View>
               <View style={styles.toggleContainer}>
-                <TouchableOpacity
+            <TouchableOpacity 
                   style={[styles.toggleOption, hasInvoices && styles.toggleOptionActive]}
                   onPress={() => setHasInvoices(true)}
                 >
@@ -442,40 +456,49 @@ export default function NewPaymentInScreen() {
                         Alert.alert('Error', 'Please select a customer first');
                       }
                     }}
-                    disabled={!selectedCustomer}
-                  >
+              disabled={!selectedCustomer}
+            >
                     <Plus size={16} color={Colors.primary} />
-                    <Text style={styles.addButtonText}>Add Invoice</Text>
-                  </TouchableOpacity>
-                </View>
+              <Text style={styles.addButtonText}>Add Invoice</Text>
+            </TouchableOpacity>
+          </View>
 
                 {items.length > 0 ? (
                   <View style={styles.invoiceList}>
                     {items.map((item, index) => {
                       const invoice = availableInvoices.find(inv => inv.id === item.invoiceId);
                       const totalDue = invoice?.total || 0;
-                      const paymentAmount = item.amount || 0;
-                      const balanceAmount = Math.max(0, totalDue - paymentAmount);
-                      
-                      return (
+                      const previouslyPaid = invoicePayments[item.invoiceId] || 0;
+                      const currentPayment = item.amount || 0;
+                      const remainingBalance = Math.max(0, totalDue - previouslyPaid - currentPayment);
+                    
+            return (
                         <View key={index} style={styles.invoiceCard}>
                           <View style={styles.invoiceCardHeader}>
                             <Text style={styles.invoiceCardTitle}>
                               Invoice #{invoice?.invoiceNumber || item.invoiceId}
                             </Text>
-                            <TouchableOpacity
+                  <TouchableOpacity 
                               style={styles.invoiceCardRemove}
                               onPress={() => handleRemoveInvoice(index)}
-                            >
-                              <X size={16} color={Colors.negative} />
-                            </TouchableOpacity>
-                          </View>
+                  >
+                    <X size={16} color={Colors.negative} />
+                  </TouchableOpacity>
+                </View>
                           <View style={styles.invoiceCardContent}>
                             <Text style={styles.invoiceCardLabel}>Total Due:</Text>
                             <Text style={styles.invoiceCardAmount}>
                               {formatCurrency(totalDue)}
                             </Text>
-                          </View>
+                  </View>
+                          {previouslyPaid > 0 && (
+                            <View style={styles.invoiceCardContent}>
+                              <Text style={styles.invoiceCardLabel}>Previously Paid:</Text>
+                              <Text style={styles.invoiceCardAmount}>
+                                {formatCurrency(previouslyPaid)}
+                              </Text>
+                            </View>
+                          )}
                           <View style={styles.invoiceAmountContainer}>
                             <Text style={styles.invoiceCardLabel}>Payment Amount:</Text>
                             <View style={styles.invoiceAmountInput}>
@@ -493,12 +516,12 @@ export default function NewPaymentInScreen() {
                           </View>
                           <View style={styles.invoiceCardContent}>
                             <Text style={styles.invoiceCardLabel}>Balance:</Text>
-                            <Text style={[styles.invoiceCardAmount, balanceAmount > 0 ? styles.balanceAmount : styles.fullyPaidAmount]}>
-                              {formatCurrency(balanceAmount)}
+                            <Text style={[styles.invoiceCardAmount, remainingBalance > 0 ? styles.balanceAmount : styles.fullyPaidAmount]}>
+                              {formatCurrency(remainingBalance)}
                             </Text>
-                          </View>
-                        </View>
-                      );
+                </View>
+              </View>
+            );
                     })}
                   </View>
                 ) : (
@@ -512,8 +535,8 @@ export default function NewPaymentInScreen() {
                   <Text style={styles.totalAmount}>{formatCurrency(paymentData.amount)}</Text>
                 </View>
               </>
-            )}
-          </View>
+          )}
+        </View>
 
           {/* Notes Section */}
           <View style={styles.card}>
@@ -521,25 +544,25 @@ export default function NewPaymentInScreen() {
             <View style={styles.formGroup}>
               <View style={styles.labelContainer}>
                 <FileText size={16} color={Colors.text.secondary} />
-                <Text style={styles.label}>Notes</Text>
+          <Text style={styles.label}>Notes</Text>
               </View>
               <View style={styles.textareaControl}>
-                <TextInput
+          <TextInput
                   style={styles.textarea}
-                  multiline
-                  numberOfLines={4}
+            multiline
+            numberOfLines={4}
                   value={paymentData.notes}
                   onChangeText={(text) => setPaymentData({...paymentData, notes: text})}
                   placeholder="Add any notes about this payment"
                   textAlignVertical="top"
-                />
-              </View>
-            </View>
+          />
+        </View>
           </View>
+        </View>
 
           {/* Space for footer */}
           <View style={{ height: 80 }} />
-        </ScrollView>
+      </ScrollView>
 
         {/* Sticky Footer */}
         <View style={styles.footer}>
@@ -557,8 +580,8 @@ export default function NewPaymentInScreen() {
             disabled={saving}
           >
             <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save Payment'}</Text>
-          </TouchableOpacity>
-        </View>
+              </TouchableOpacity>
+            </View>
         
       </KeyboardAvoidingView>
 
@@ -576,14 +599,14 @@ export default function NewPaymentInScreen() {
           <View style={styles.bottomSheet}>
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>Select Customer</Text>
-              <TouchableOpacity 
-                onPress={() => {
+                <TouchableOpacity 
+                  onPress={() => {
                   setShowCustomerSheet(false);
                   setCustomerSearch('');
-                }}
-              >
+                  }}
+                >
                 <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
+                </TouchableOpacity>
             </View>
             
             <View style={styles.searchContainer}>
@@ -638,7 +661,7 @@ export default function NewPaymentInScreen() {
               data={PAYMENT_METHODS}
               keyExtractor={(item) => item}
               renderItem={({ item }) => (
-                <TouchableOpacity
+                <TouchableOpacity 
                   style={styles.sheetItem}
                   onPress={() => selectPaymentMethod(item)}
                 >
@@ -668,14 +691,14 @@ export default function NewPaymentInScreen() {
           <View style={styles.bottomSheet}>
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>Select Invoice</Text>
-              <TouchableOpacity 
-                onPress={() => {
+                <TouchableOpacity 
+                  onPress={() => {
                   setShowInvoiceSheet(false);
                   setInvoiceSearch('');
-                }}
-              >
+                  }}
+                >
                 <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
+                </TouchableOpacity>
             </View>
             
             <View style={styles.searchContainer}>

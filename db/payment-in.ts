@@ -267,4 +267,48 @@ export const deletePaymentIn = async (id: number, userId: number) => {
     console.error('Error deleting payment in:', error);
     throw error;
   }
+};
+
+// Function to get all payment items for a specific invoice
+export const getPaymentsForInvoice = async (invoiceId: number, userId: number) => {
+  try {
+    // Join payment items with payments to get only items from this user
+    const paymentItems = await db
+      .select({
+        id: paymentInItems.id,
+        paymentId: paymentInItems.paymentId,
+        invoiceId: paymentInItems.invoiceId,
+        amount: paymentInItems.amount,
+        paymentDate: paymentIns.paymentDate,
+        status: paymentIns.status
+      })
+      .from(paymentInItems)
+      .innerJoin(paymentIns, and(
+        eq(paymentInItems.paymentId, paymentIns.id),
+        eq(paymentIns.userId, userId)
+      ))
+      .where(eq(paymentInItems.invoiceId, invoiceId));
+
+    return paymentItems;
+  } catch (error) {
+    console.error('Error getting payments for invoice:', error);
+    throw error;
+  }
+};
+
+// Function to get the total amount paid for a specific invoice
+export const getTotalPaidForInvoice = async (invoiceId: number, userId: number) => {
+  try {
+    const paymentItems = await getPaymentsForInvoice(invoiceId, userId);
+    
+    // Sum all payment amounts for this invoice where payment status is not 'cancelled'
+    const totalPaid = paymentItems
+      .filter(item => item.status !== 'cancelled')
+      .reduce((sum, item) => sum + item.amount, 0);
+    
+    return totalPaid;
+  } catch (error) {
+    console.error('Error calculating total paid for invoice:', error);
+    throw error;
+  }
 }; 

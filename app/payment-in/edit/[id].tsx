@@ -4,7 +4,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, User, Calendar, CreditCard, Hash, FileText, ChevronDown, Check, X, Search, Plus, Printer } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAuthStore } from '@/store/auth';
-import { getPaymentInById, updatePaymentIn } from '@/db/payment-in';
+import { getPaymentInById, updatePaymentIn, getTotalPaidForInvoice } from '@/db/payment-in';
 import * as dbCustomer from '@/db/customer';
 import * as dbInvoice from '@/db/sales-invoice';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -80,6 +80,11 @@ export default function EditPaymentInScreen() {
   
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [hasInvoices, setHasInvoices] = useState(true);
+  
+  // State for storing previous payments for each invoice
+  const [invoicePayments, setInvoicePayments] = useState<{[key: number]: number}>({});
+  // Keep track of the current payment id for excluding from total paid calculation
+  const currentPaymentId = id ? parseInt(id as string) : 0;
 
   const [paymentData, setPaymentData] = useState<PaymentInFormData>({
     paymentNumber: '',
@@ -171,11 +176,11 @@ export default function EditPaymentInScreen() {
 
         // Fetch invoice data for each item
         if (paymentData.items && paymentData.items.length > 0) {
-          const invoicePromises = paymentData.items.map((item: any) => 
-            dbInvoice.getSalesInvoiceById(item.invoiceId, user.id)
-          );
-          const invoiceData = await Promise.all(invoicePromises);
-          setInvoices(invoiceData);
+        const invoicePromises = paymentData.items.map((item: any) => 
+          dbInvoice.getSalesInvoiceById(item.invoiceId, user.id)
+        );
+        const invoiceData = await Promise.all(invoicePromises);
+        setInvoices(invoiceData);
         }
         
         // Fetch all available invoices for the customer
@@ -186,6 +191,21 @@ export default function EditPaymentInScreen() {
             (inv.status === 'unpaid' || (Array.isArray(paymentData.items) && paymentData.items.some(item => item && item.invoiceId === inv.id)))
           );
           setAvailableInvoices(customerInvs);
+          
+          // Fetch payment data for each invoice, excluding the current payment
+          const paymentsData: {[key: number]: number} = {};
+          for (const inv of customerInvs) {
+            // Get all payments for this invoice
+            const allPayments = await getTotalPaidForInvoice(inv.id, user.id);
+            
+            // Subtract the current payment amount for this invoice
+            const currentItemForInvoice = paymentData.items.find((item: any) => item && item.invoiceId === inv.id);
+            const currentAmount = currentItemForInvoice ? currentItemForInvoice.amount : 0;
+            
+            // Store the previous payments (excluding current payment)
+            paymentsData[inv.id] = Math.max(0, allPayments - currentAmount);
+          }
+          setInvoicePayments(paymentsData);
         }
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -201,15 +221,33 @@ export default function EditPaymentInScreen() {
     if (!selectedCustomer || !user) return;
     const fetchInvoices = async () => {
       try {
+        setLoading(true);
         const invs = await dbInvoice.getSalesInvoices(user.id);
         const customerInvoices = invs.filter((inv: any) => 
           inv.customerId === selectedCustomer.id && 
           (inv.status === 'unpaid' || paymentData.items.some(item => item.invoiceId === inv.id))
         );
         setAvailableInvoices(customerInvoices);
+        
+        // Fetch payment data for each invoice, excluding the current payment
+        const paymentsData: {[key: number]: number} = {};
+        for (const inv of customerInvoices) {
+          // Get all payments for this invoice
+          const allPayments = await getTotalPaidForInvoice(inv.id, user.id);
+          
+          // Subtract the current payment amount for this invoice
+          const currentItemForInvoice = paymentData.items.find(item => item.invoiceId === inv.id);
+          const currentAmount = currentItemForInvoice ? currentItemForInvoice.amount : 0;
+          
+          // Store the previous payments (excluding current payment)
+          paymentsData[inv.id] = Math.max(0, allPayments - currentAmount);
+        }
+        setInvoicePayments(paymentsData);
       } catch (error) {
         console.error('Error fetching invoices:', error);
         Alert.alert('Error', 'Failed to load invoices');
+      } finally {
+        setLoading(false);
       }
     };
     fetchInvoices();
@@ -284,6 +322,21 @@ export default function EditPaymentInScreen() {
           (inv.status === 'unpaid' || (Array.isArray(paymentData.items) && paymentData.items.some(item => item && item.invoiceId === inv.id)))
         );
         setAvailableInvoices(customerInvs);
+        
+        // Fetch payment data for each invoice, excluding the current payment
+        const paymentsData: {[key: number]: number} = {};
+        for (const inv of customerInvs) {
+          // Get all payments for this invoice
+          const allPayments = await getTotalPaidForInvoice(inv.id, user.id);
+          
+          // Subtract the current payment amount for this invoice
+          const currentItemForInvoice = paymentData.items.find((item: any) => item && item.invoiceId === inv.id);
+          const currentAmount = currentItemForInvoice ? currentItemForInvoice.amount : 0;
+          
+          // Store the previous payments (excluding current payment)
+          paymentsData[inv.id] = Math.max(0, allPayments - currentAmount);
+        }
+        setInvoicePayments(paymentsData);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -418,10 +471,10 @@ export default function EditPaymentInScreen() {
   );
 
   const renderInvoiceItem = ({ item }: { item: any }) => (
-    <TouchableOpacity
+        <TouchableOpacity
       style={styles.sheetItem}
       onPress={() => handleAddInvoice(item)}
-    >
+        >
       <View style={styles.invoiceInfo}>
         <Text style={styles.invoiceNumber}>Invoice #{item.invoiceNumber}</Text>
         <Text style={styles.invoiceDate}>{new Date(item.date).toLocaleDateString()}</Text>
@@ -475,7 +528,7 @@ export default function EditPaymentInScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-      <KeyboardAvoidingView
+      <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}
       >
@@ -567,7 +620,7 @@ export default function EditPaymentInScreen() {
                 <ChevronDown size={18} color={Colors.text.secondary} />
               </TouchableOpacity>
             </View>
-
+            
             <View style={styles.formGroup}>
               <View style={styles.labelContainer}>
                 <Hash size={16} color={Colors.text.secondary} />
@@ -580,9 +633,9 @@ export default function EditPaymentInScreen() {
                   onChangeText={(text) => setPaymentData({...paymentData, referenceNumber: text})}
                   placeholder="Optional reference number"
                 />
-              </View>
             </View>
-            
+          </View>
+          
             <View style={styles.formGroup}>
               <View style={styles.labelContainer}>
                 <FileText size={16} color={Colors.text.secondary} />
@@ -604,7 +657,7 @@ export default function EditPaymentInScreen() {
                 <ChevronDown size={18} color={Colors.text.secondary} />
               </TouchableOpacity>
             </View>
-          </View>
+            </View>
 
           {/* Payment Amount */}
           <View style={styles.card}>
@@ -680,8 +733,9 @@ export default function EditPaymentInScreen() {
                     {paymentData.items.map((item, index) => {
                       const invoice = availableInvoices.find(inv => inv.id === item.invoiceId);
                       const totalDue = invoice?.total || 0;
-                      const paymentAmount = item.amount || 0;
-                      const balanceAmount = Math.max(0, totalDue - paymentAmount);
+                      const previouslyPaid = invoicePayments[item.invoiceId] || 0;
+                      const currentPayment = item.amount || 0;
+                      const remainingBalance = Math.max(0, totalDue - previouslyPaid - currentPayment);
                       
                       return (
                         <View key={index} style={styles.invoiceCard}>
@@ -702,6 +756,14 @@ export default function EditPaymentInScreen() {
                               {formatCurrency(totalDue)}
                             </Text>
                           </View>
+                          {previouslyPaid > 0 && (
+                            <View style={styles.invoiceCardContent}>
+                              <Text style={styles.invoiceCardLabel}>Previously Paid:</Text>
+                              <Text style={styles.invoiceCardAmount}>
+                                {formatCurrency(previouslyPaid)}
+                              </Text>
+                            </View>
+                          )}
                           <View style={styles.invoiceAmountContainer}>
                             <Text style={styles.invoiceCardLabel}>Payment Amount:</Text>
                             <View style={styles.invoiceAmountInput}>
@@ -719,8 +781,8 @@ export default function EditPaymentInScreen() {
                           </View>
                           <View style={styles.invoiceCardContent}>
                             <Text style={styles.invoiceCardLabel}>Balance:</Text>
-                            <Text style={[styles.invoiceCardAmount, balanceAmount > 0 ? styles.balanceAmount : styles.fullyPaidAmount]}>
-                              {formatCurrency(balanceAmount)}
+                            <Text style={[styles.invoiceCardAmount, remainingBalance > 0 ? styles.balanceAmount : styles.fullyPaidAmount]}>
+                              {formatCurrency(remainingBalance)}
                             </Text>
                           </View>
                         </View>
@@ -766,7 +828,7 @@ export default function EditPaymentInScreen() {
           {/* Space for footer */}
           <View style={{ height: 100 }} />
         </ScrollView>
-
+        
         {/* Sticky Footer */}
         <View style={styles.footer}>
           <TouchableOpacity
@@ -788,137 +850,137 @@ export default function EditPaymentInScreen() {
       </KeyboardAvoidingView>
 
       {/* Customer Selection Bottom Sheet */}
-      <Modal
-        visible={showCustomerSheet}
-        animationType="slide"
+        <Modal
+          visible={showCustomerSheet}
+          animationType="slide"
         transparent
-        onRequestClose={() => {
-          setShowCustomerSheet(false);
-          setCustomerSearch('');
-        }}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheet}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>Select Customer</Text>
-              <TouchableOpacity 
-                onPress={() => {
-                  setShowCustomerSheet(false);
-                  setCustomerSearch('');
-                }}
-              >
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.searchContainer}>
-              <Search size={20} color={Colors.text.secondary} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search customers..."
-                value={customerSearch}
-                onChangeText={setCustomerSearch}
-              />
-              {customerSearch ? (
-                <TouchableOpacity onPress={() => setCustomerSearch('')}>
-                  <X size={18} color={Colors.text.secondary} />
+          onRequestClose={() => {
+            setShowCustomerSheet(false);
+            setCustomerSearch('');
+          }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.bottomSheet}>
+              <View style={styles.bottomSheetHeader}>
+                <Text style={styles.bottomSheetTitle}>Select Customer</Text>
+                <TouchableOpacity 
+                  onPress={() => {
+                    setShowCustomerSheet(false);
+                    setCustomerSearch('');
+                  }}
+                >
+                  <X size={24} color={Colors.text.primary} />
                 </TouchableOpacity>
-              ) : null}
-            </View>
-            
-            <FlatList
-              data={filteredCustomers}
-              keyExtractor={(item) => item.id.toString()}
-              renderItem={renderCustomerItem}
-              contentContainerStyle={styles.bottomSheetContent}
+              </View>
+              
+              <View style={styles.searchContainer}>
+                <Search size={20} color={Colors.text.secondary} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search customers..."
+                  value={customerSearch}
+                  onChangeText={setCustomerSearch}
+                />
+                {customerSearch ? (
+                  <TouchableOpacity onPress={() => setCustomerSearch('')}>
+                    <X size={18} color={Colors.text.secondary} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              
+                <FlatList
+                  data={filteredCustomers}
+                  keyExtractor={(item) => item.id.toString()}
+                  renderItem={renderCustomerItem}
+                  contentContainerStyle={styles.bottomSheetContent}
               ListEmptyComponent={
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No customers found</Text>
-                </View>
+                    <View style={styles.emptyContainer}>
+                      <Text style={styles.emptyText}>No customers found</Text>
+                    </View>
               }
-            />
+                />
+            </View>
           </View>
-        </View>
-      </Modal>
-
+        </Modal>
+        
       {/* Payment Method Selection Bottom Sheet */}
-      <Modal
-        visible={showPaymentMethodSheet}
-        animationType="slide"
+        <Modal
+          visible={showPaymentMethodSheet}
+          animationType="slide"
         transparent
         onRequestClose={() => {
           setShowPaymentMethodSheet(false);
         }}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheet}>
-            <View style={styles.bottomSheetHeader}>
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.bottomSheet}>
+              <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>Payment Method</Text>
-              <TouchableOpacity onPress={() => setShowPaymentMethodSheet(false)}>
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-            
+                <TouchableOpacity onPress={() => setShowPaymentMethodSheet(false)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              
             <FlatList
               data={PAYMENT_METHODS}
               keyExtractor={(item) => item}
               renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.sheetItem}
+                  <TouchableOpacity
+                    style={styles.sheetItem}
                   onPress={() => selectPaymentMethod(item)}
                 >
                   <Text style={styles.sheetItemText}>{item}</Text>
                   {paymentData.paymentMethod === item && (
                     <Check size={20} color={Colors.primary} />
-                  )}
-                </TouchableOpacity>
+                    )}
+                  </TouchableOpacity>
               )}
               contentContainerStyle={styles.bottomSheetContent}
             />
-          </View>
-        </View>
-      </Modal>
-
-      {/* Status Selection Bottom Sheet */}
-      <Modal
-        visible={showStatusSheet}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowStatusSheet(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.bottomSheet}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>Status</Text>
-              <TouchableOpacity onPress={() => setShowStatusSheet(false)}>
-                <X size={24} color={Colors.text.primary} />
-              </TouchableOpacity>
             </View>
-            
+          </View>
+        </Modal>
+        
+      {/* Status Selection Bottom Sheet */}
+        <Modal
+          visible={showStatusSheet}
+          animationType="slide"
+        transparent
+          onRequestClose={() => setShowStatusSheet(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.bottomSheet}>
+              <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>Status</Text>
+                <TouchableOpacity onPress={() => setShowStatusSheet(false)}>
+                  <X size={24} color={Colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              
             <FlatList
               data={STATUS_OPTIONS}
               keyExtractor={(item) => item.value}
               renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.sheetItem}
+                  <TouchableOpacity
+                    style={styles.sheetItem}
                   onPress={() => selectStatus(item.value)}
-                >
-                  <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                    <View style={[styles.statusDot, { 
+                  >
+                    <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                      <View style={[styles.statusDot, { 
                       backgroundColor: getStatusColor(item.value).text
-                    }]} />
+                      }]} />
                     <Text style={styles.sheetItemText}>{item.label}</Text>
-                  </View>
+                    </View>
                   {paymentData.status === item.value && (
                     <Check size={20} color={Colors.primary} />
-                  )}
-                </TouchableOpacity>
+                    )}
+                  </TouchableOpacity>
               )}
               contentContainerStyle={styles.bottomSheetContent}
             />
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
       {/* Invoice Selection Bottom Sheet */}
       <Modal

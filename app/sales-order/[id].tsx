@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, StatusBar, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, StatusBar, ActivityIndicator, Share as RNShare } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { ArrowLeft, Edit, Trash2, User, Calendar, Tag, Clock, Package, DollarSign, FileText, Printer, Hash } from 'lucide-react-native';
+import { ArrowLeft, Edit, Trash2, User, Calendar, Tag, Clock, Package, DollarSign, FileText, Printer, Hash, Share2, CreditCard } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { SalesOrder } from '@/types/sales-order';
 import { salesOrderData } from '@/mocks/salesOrderData';
@@ -10,11 +10,13 @@ import { getSalesOrderById, deleteSalesOrder } from '@/db/sales-order';
 import { getCustomerById } from '@/db/customer';
 import { getProductById } from '@/db/product';
 import { useAuthStore } from '@/store/auth';
+import { formatCurrency } from '@/utils/currency';
 
 export default function SalesOrderDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const { user } = useAuthStore();
+  const insets = useSafeAreaInsets();
   const [order, setOrder] = useState<any>(null);
   const [customer, setCustomer] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -89,6 +91,18 @@ export default function SalesOrderDetailsScreen() {
   const handlePrint = () => {
     Alert.alert('Print', 'Printing sales order...');
   };
+  
+  const handleShareOrder = async () => {
+    try {
+      if (!order) return;
+      const message = `Sales Order: #${order.orderNumber}\nCustomer: ${customer?.name || 'Unknown'}\nTotal: ${formatCurrency(order.total / 100)}\nDate: ${new Date(order.orderDate).toLocaleDateString()}`;
+      await RNShare.share({
+        message,
+      });
+    } catch (error) {
+      console.log('Error sharing order:', error);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -105,142 +119,217 @@ export default function SalesOrderDetailsScreen() {
     }
   };
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!order) {
+    return null;
+  }
+
+  const formattedDate = new Date(order.orderDate).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
   return (
-    <SafeAreaView style={styles.container} edges={['top','left','right','bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+      
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Order Details</Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity onPress={handlePrint} style={styles.headerButton}>
-            <Printer size={22} color={Colors.text.secondary} />
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={handlePrint}
+          >
+            <Printer size={20} color={Colors.primary} />
           </TouchableOpacity>
-          <TouchableOpacity
+          <TouchableOpacity 
+            style={styles.headerButton}
             onPress={() => router.push({
               pathname: '/sales-order/edit/[id]',
               params: { id: id as string }
             })}
-            style={styles.headerButton}
           >
-            <Edit size={22} color={Colors.text.secondary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleDelete} style={styles.headerButton}>
-            <Trash2 size={22} color={Colors.negative} />
+            <Edit size={20} color={Colors.primary} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-        </View>
-      ) : order && (
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.amountCard}>
+      {/* Scrollable Content */}
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Order Summary Card */}
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryHeader}>
+            <View>
+              <Text style={styles.orderNumber}>#{order.orderNumber}</Text>
+              <Text style={styles.orderDate}>{formattedDate}</Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(order.status || 'draft').bg }]}>
+              <Text style={[styles.statusText, { color: getStatusColor(order.status || 'draft').text }]}>
+                {(order.status || 'Draft').charAt(0).toUpperCase() + (order.status || 'Draft').slice(1)}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.summaryAmountContainer}>
             <Text style={styles.amountLabel}>Total Amount</Text>
-            <Text style={styles.amountValue}>${(order.total / 100).toFixed(2)}</Text>
-            {order.status && (
-              <View style={[
-                styles.statusBadge,
-                { backgroundColor: getStatusColor(order.status).bg }
-              ]}>
-                <Text style={[
-                  styles.statusText,
-                  { color: getStatusColor(order.status).text }
-                ]}>
-                  {order.status.toUpperCase()}
+            <Text style={styles.amountValue}>{formatCurrency(order.total / 100)}</Text>
+          </View>
+        </View>
+
+        {/* Customer Info */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Customer</Text>
+          {customer && (
+            <View style={styles.customerInfo}>
+              <Text style={styles.customerName}>{customer.name}</Text>
+              {customer.email && <Text style={styles.customerDetail}>{customer.email}</Text>}
+              {customer.phone && <Text style={styles.customerDetail}>{customer.phone}</Text>}
+              
+              {/* Customer Balance */}
+              <View style={styles.balanceContainer}>
+                <CreditCard size={16} color={Colors.text.secondary} />
+                <Text style={styles.balanceLabel}>Balance:</Text>
+                <Text style={styles.balanceAmount}>
+                  {formatCurrency(customer.outstandingBalance ? customer.outstandingBalance / 100 : 0)}
                 </Text>
               </View>
-            )}
-          </View>
-          
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Order Information</Text>
-            
-            <View style={styles.infoItem}>
-              <View style={styles.infoIconContainer}>
-                <Hash size={20} color={Colors.primary} />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Order Number</Text>
-                <Text style={styles.infoValue}>{order.orderNumber}</Text>
-              </View>
-            </View>
-            
-            <View style={styles.infoItem}>
-              <View style={styles.infoIconContainer}>
-                <User size={20} color={Colors.primary} />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Customer</Text>
-                <Text style={styles.infoValue}>{customer ? customer.name : `Customer #${order.customerId}`}</Text>
-              </View>
-            </View>
-            
-            <View style={styles.infoItem}>
-              <View style={styles.infoIconContainer}>
-                <Calendar size={20} color={Colors.primary} />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Order Date</Text>
-                <Text style={styles.infoValue}>{new Date(order.orderDate).toLocaleDateString()}</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Items</Text>
-            {items.map((item, index) => (
-              <View key={index} style={styles.itemContainer}>
-                <View style={styles.itemHeader}>
-                  <View style={styles.itemNameContainer}>
-                    <Package size={18} color={Colors.text.secondary} style={{ marginRight: 8 }} />
-                    <Text style={styles.itemName}>{item.productName}</Text>
-                  </View>
-                  <Text style={styles.itemTotal}>${(item.total / 100).toFixed(2)}</Text>
-                </View>
-                <View style={styles.itemDetails}>
-                  <View style={styles.itemDetail}>
-                    <Text style={styles.itemDetailLabel}>Quantity:</Text>
-                    <Text style={styles.itemDetailValue}>{item.quantity}</Text>
-                  </View>
-                  <View style={styles.itemDetail}>
-                    <Text style={styles.itemDetailLabel}>Unit Price:</Text>
-                    <Text style={styles.itemDetailValue}>${(item.unitPrice / 100).toFixed(2)}</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Summary</Text>
-            <View style={styles.summaryContainer}>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Subtotal</Text>
-                <Text style={styles.summaryValue}>${(order.subtotal / 100).toFixed(2)}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Tax</Text>
-                <Text style={styles.summaryValue}>${(order.tax / 100).toFixed(2)}</Text>
-              </View>
-              <View style={[styles.summaryRow, styles.totalRow]}>
-                <Text style={styles.totalRowLabel}>Total</Text>
-                <Text style={styles.totalRowValue}>${(order.total / 100).toFixed(2)}</Text>
-              </View>
-            </View>
-          </View>
-
-          {order.notes && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Notes</Text>
-              <Text style={styles.notesText}>{order.notes}</Text>
             </View>
           )}
-        </ScrollView>
-      )}
+        </View>
+
+        {/* Order Details */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Order Details</Text>
+          
+          <View style={styles.detailRow}>
+            <View style={styles.detailLabelContainer}>
+              <Calendar size={16} color={Colors.text.secondary} />
+              <Text style={styles.detailLabel}>Date</Text>
+            </View>
+            <Text style={styles.detailValue}>{formattedDate}</Text>
+          </View>
+          
+          {order.paymentTerms && (
+            <View style={styles.detailRow}>
+              <View style={styles.detailLabelContainer}>
+                <Clock size={16} color={Colors.text.secondary} />
+                <Text style={styles.detailLabel}>Payment Terms</Text>
+              </View>
+              <Text style={styles.detailValue}>{order.paymentTerms}</Text>
+            </View>
+          )}
+          
+          <View style={styles.detailRow}>
+            <View style={styles.detailLabelContainer}>
+              <Tag size={16} color={Colors.text.secondary} />
+              <Text style={styles.detailLabel}>Status</Text>
+            </View>
+            <View style={[styles.statusChip, { backgroundColor: getStatusColor(order.status || 'draft').bg }]}>
+              <Text style={[styles.statusChipText, { color: getStatusColor(order.status || 'draft').text }]}>
+                {(order.status || 'Draft').toUpperCase()}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Items */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Order Items</Text>
+          {items.map((item, index) => (
+            <View key={index} style={styles.itemContainer}>
+              <View style={styles.itemHeader}>
+                <View style={styles.itemNameContainer}>
+                  <Package size={16} color={Colors.text.secondary} style={styles.itemIcon} />
+                  <Text style={styles.itemName}>{item.productName}</Text>
+                </View>
+                <Text style={styles.itemTotal}>{formatCurrency(item.total / 100)}</Text>
+              </View>
+              
+              <View style={styles.itemDetails}>
+                <View style={styles.itemDetail}>
+                  <Text style={styles.itemDetailLabel}>Quantity:</Text>
+                  <Text style={styles.itemDetailValue}>{item.quantity}</Text>
+                </View>
+                
+                <View style={styles.itemDetail}>
+                  <Text style={styles.itemDetailLabel}>Unit Price:</Text>
+                  <Text style={styles.itemDetailValue}>{formatCurrency(item.unitPrice / 100)}</Text>
+                </View>
+              </View>
+              
+              {item.description && (
+                <Text style={styles.itemDescription}>{item.description}</Text>
+              )}
+            </View>
+          ))}
+          
+          <View style={styles.totalSection}>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Subtotal</Text>
+              <Text style={styles.totalValue}>{formatCurrency(order.subtotal / 100)}</Text>
+            </View>
+            
+            {order.tax > 0 && (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Tax</Text>
+                <Text style={styles.totalValue}>{formatCurrency(order.tax / 100)}</Text>
+              </View>
+            )}
+            
+            <View style={[styles.totalRow, styles.grandTotalRow]}>
+              <Text style={styles.grandTotalLabel}>Total</Text>
+              <Text style={styles.grandTotalValue}>{formatCurrency(order.total / 100)}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Notes */}
+        {order.notes && (
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>Notes</Text>
+            <Text style={styles.notesText}>{order.notes}</Text>
+          </View>
+        )}
+        
+        {/* Space for footer */}
+        <View style={{ height: 80 }} />
+      </ScrollView>
+      
+      {/* Fixed Footer */}
+      <View style={styles.footer}>
+        <TouchableOpacity 
+          style={styles.footerButton} 
+          onPress={handleShareOrder}
+        >
+          <Share2 size={20} color={Colors.primary} />
+          <Text style={styles.footerButtonText}>Share Order</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.footerButton, styles.deleteButton]} 
+          onPress={handleDelete}
+        >
+          <Trash2 size={20} color={Colors.negative} />
+          <Text style={[styles.footerButtonText, styles.deleteButtonText]}>Delete</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -252,13 +341,14 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: Colors.background.default,
+    height: 56,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
+    backgroundColor: Colors.background.default,
+    zIndex: 10,
   },
   backButton: {
     width: 40,
@@ -271,8 +361,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  headerButtons: {
+  headerActions: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   headerButton: {
     width: 40,
@@ -280,30 +372,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   content: {
     flex: 1,
-    padding: 16,
   },
-  amountCard: {
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+  },
+  summaryCard: {
     backgroundColor: Colors.background.default,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
     borderWidth: 1,
     borderColor: Colors.primary + '40',
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  orderNumber: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 4,
+  },
+  orderDate: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  statusText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  summaryAmountContainer: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    paddingTop: 16,
   },
   amountLabel: {
     fontSize: 14,
@@ -314,86 +427,85 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
     color: Colors.primary,
-    marginBottom: 8,
   },
-  statusBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  section: {
+  sectionCard: {
     backgroundColor: Colors.background.default,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
     marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
     borderWidth: 1,
     borderColor: Colors.primary + '40',
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
     color: Colors.text.primary,
     marginBottom: 16,
   },
-  infoItem: {
-    flexDirection: 'row',
-    marginBottom: 16,
+  customerInfo: {
+    gap: 4,
   },
-  infoIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primary + '10',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+  customerName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: Colors.text.primary,
+    marginBottom: 4,
   },
-  infoContent: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  infoLabel: {
+  customerDetail: {
     fontSize: 14,
     color: Colors.text.secondary,
-    marginBottom: 2,
   },
-  infoValue: {
-    fontSize: 16,
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  detailLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  detailLabel: {
+    fontSize: 15,
+    color: Colors.text.secondary,
+  },
+  detailValue: {
+    fontSize: 15,
+    fontWeight: '500',
     color: Colors.text.primary,
+  },
+  statusChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  statusChipText: {
+    fontSize: 12,
     fontWeight: '500',
   },
   itemContainer: {
-    padding: 12,
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 8,
-    marginBottom: 10,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
   },
   itemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 8,
   },
   itemNameContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    marginRight: 8,
+  },
+  itemIcon: {
+    marginRight: 8,
   },
   itemName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '500',
     color: Colors.text.primary,
     flex: 1,
@@ -401,58 +513,64 @@ const styles = StyleSheet.create({
   itemTotal: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.primary,
+    color: Colors.text.primary,
   },
   itemDetails: {
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
+    flexDirection: 'row',
+    marginBottom: 8,
   },
   itemDetail: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
+    marginRight: 16,
   },
   itemDetailLabel: {
     fontSize: 14,
     color: Colors.text.secondary,
+    marginRight: 4,
   },
   itemDetailValue: {
     fontSize: 14,
-    color: Colors.text.primary,
     fontWeight: '500',
+    color: Colors.text.primary,
   },
-  summaryContainer: {
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 8,
-    padding: 12,
+  itemDescription: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginTop: 4,
   },
-  summaryRow: {
+  totalSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+  },
+  totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  summaryLabel: {
+  totalLabel: {
     fontSize: 15,
     color: Colors.text.secondary,
   },
-  summaryValue: {
+  totalValue: {
     fontSize: 15,
-    color: Colors.text.primary,
     fontWeight: '500',
+    color: Colors.text.primary,
   },
-  totalRow: {
+  grandTotalRow: {
+    marginTop: 8,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: Colors.border.light,
-    paddingTop: 12,
-    marginTop: 4,
   },
-  totalRowLabel: {
+  grandTotalLabel: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  totalRowValue: {
+  grandTotalValue: {
     fontSize: 18,
     fontWeight: '700',
     color: Colors.primary,
@@ -461,5 +579,66 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.text.secondary,
     lineHeight: 22,
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.background.default,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  footerButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 8,
+    marginHorizontal: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.2)',
+  },
+  deleteButton: {
+    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+    borderColor: 'rgba(244, 67, 54, 0.2)',
+  },
+  footerButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: Colors.primary,
+  },
+  deleteButtonText: {
+    color: Colors.negative,
+  },
+  balanceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 4,
+  },
+  balanceLabel: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginLeft: 4,
+  },
+  balanceAmount: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.primary,
   },
 }); 
