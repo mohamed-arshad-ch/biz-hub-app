@@ -1,180 +1,220 @@
 # InvoiceHub - React Native App
 
-A mobile application for managing invoices, customers, vendors, and products. Built with React Native and Expo.
+A comprehensive mobile application for managing business finances, inventory, and transactions. Built with React Native, Expo, and SQLite (Drizzle ORM).
 
-## AsyncStorage Implementation
+## Features
 
-The InvoiceHub application uses AsyncStorage for local data persistence, providing a reliable offline-first experience. Key features include:
+### Sales Management
+- **Sales Orders**: Create and manage sales orders
+- **Sales Invoices**: Generate and track sales invoices
+- **Sales Returns**: Handle customer returns and refunds
+- **Payment In**: Record and track incoming payments
 
-### Products Module
-- Full CRUD operations for product management through AsyncStorage
-- Search and filtering capabilities using locally stored data
-- Stock management with automatic status updates
-- Barcode scanning integration for quick product lookups
-- Undo delete functionality with snackbar notifications
+### Purchase Management
+- **Purchase Orders**: Create and manage purchase orders
+- **Purchase Invoices**: Track vendor invoices
+- **Purchase Returns**: Handle returns to vendors
+- **Payment Out**: Record and track outgoing payments
 
-### Categories Management
-- Income and Expense categories for transaction categorization
-- Custom category creation with name, description, and color coding
-- Edit and delete functionality for category management
-- Persistent storage with AsyncStorage
-- Default categories provided for quick setup
+### Financial Management
+- **Income**: Track various income sources
+- **Expenses**: Manage business expenses
+- **Transactions**: Record and monitor all financial transactions
+- **Ledger**: Double-entry bookkeeping system
 
-### Implementation Details
-1. **Utils Structure**: AsyncStorage operations are organized into dedicated utility files like `asyncStorageUtils.ts` and `categoryStorageUtils.ts` for better maintainability.
-2. **Type Safety**: Comprehensive TypeScript interfaces ensure consistent data structures.
-3. **Error Handling**: Robust error handling with user-friendly feedback for all storage operations.
-4. **Performance Optimization**: Efficient storage and retrieval methods to minimize bottlenecks.
+### Reports
+- **Transaction Report**: View all financial transactions
+- **Ledger Report**: Detailed ledger entries
+- **Income Report**: Track income sources and trends
+- **Expense Report**: Monitor expense categories
+- **Sales Report**: Analyze sales performance
+- **Purchase Report**: Track purchase activities
+- **Balance Sheet**: View financial position
 
-### User Settings
-- Currency preferences
-- Account information management
-- Account group settings for financial organization
-- Category management for income and expenses
+### Master Data Management
+- **Customers**: Manage customer information
+- **Vendors**: Track vendor details
+- **Products**: Inventory management
+- **Account Groups**: Organize financial accounts
+- **Income Categories**: Categorize income sources
+- **Expense Categories**: Classify expenses
 
-### Future Improvements
-- Data synchronization with a backend server when online
-- Data export/import functionality
-- Batch operations for improved performance
-- Data migration utilities for version updates
+## Technical Stack
 
-### Features
+- React Native
+- Expo
+- SQLite (Drizzle ORM)
+- TypeScript
+- React Navigation
+- React Native Paper
+- Lucide Icons
 
-- **Customer Management**: Add, edit, view, and delete customers with data persistent in AsyncStorage
-- **Vendor Management**: Add, edit, view, and delete vendors with data persistent in AsyncStorage
-- **Product Management**: Add, edit, view, and delete products with inventory tracking and stock status management
-- **Search and Filtering**: Search, sort, and filter customers, vendors, and products by various criteria
-- **Responsive UI**: Modern and intuitive user interface with collapsible sections
+## Prerequisites
 
-### Implementation Details
+- Node.js (v16 or higher)
+- npm or yarn
+- Expo CLI
+- Android Studio (for Android development)
+- Xcode (for iOS development, macOS only)
 
-#### Storage Keys
+## Installation
 
-Storage keys are defined in the `utils/asyncStorageUtils.ts` file:
-
-```javascript
-export const STORAGE_KEYS = {
-  CUSTOMERS: 'customers',
-  CUSTOMER_ID_COUNTER: 'customer_id_counter',
-  VENDORS: 'vendors',
-  VENDOR_ID_COUNTER: 'vendor_id_counter',
-  PRODUCTS: 'products',
-  PRODUCT_ID_COUNTER: 'product_id_counter',
-};
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/InvoiceHub.git
+cd InvoiceHub
 ```
 
-#### Data Initialization
-
-Sample data is initialized if none exists in AsyncStorage:
-
-```javascript
-export const initializeCustomers = async (): Promise<void> => {
-  const existingCustomers = await AsyncStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-  
-  if (!existingCustomers) {
-    // Sample customer data initialization
-    // ...
-  }
-};
-
-export const initializeVendors = async (): Promise<void> => {
-  const existingVendors = await AsyncStorage.getItem(STORAGE_KEYS.VENDORS);
-  
-  if (!existingVendors) {
-    // Sample vendor data initialization
-    // ...
-  }
-};
-
-export const initializeProducts = async (): Promise<void> => {
-  const existingProducts = await AsyncStorage.getItem(STORAGE_KEYS.PRODUCTS);
-  
-  if (!existingProducts) {
-    // Sample product data initialization
-    // ...
-  }
-};
+2. Install dependencies:
+```bash
+npm install
+# or
+yarn install
 ```
 
-#### Data Operations
-
-AsyncStorage utility functions follow a consistent pattern for customers, vendors, and products:
-
-1. **Get All**: Retrieve all items (`getCustomers()`, `getVendors()`, `getProducts()`)
-2. **Get By ID**: Retrieve a single item by ID (`getCustomerById()`, `getVendorById()`, `getProductById()`)
-3. **Add**: Add a new item (`addCustomer()`, `addVendor()`, `addProduct()`)
-4. **Update**: Update an existing item (`updateCustomer()`, `updateVendor()`, `updateProduct()`)
-5. **Delete**: Remove an item (`deleteCustomer()`, `deleteVendor()`, `deleteProduct()`)
-6. **Search**: Search for items by query and filter (`searchCustomers()`, `searchVendors()`, `searchProducts()`)
-
-#### ID Management
-
-Item IDs are auto-incremented using separate counters:
-
-```javascript
-// Add a new vendor
-export const addVendor = async (vendorData: Omit<Vendor, 'id' | 'createdAt' | 'updatedAt'>): Promise<Vendor> => {
-  // Get existing vendors
-  const vendors = await getVendors();
-  
-  // Generate a new ID
-  const counterStr = await AsyncStorage.getItem(STORAGE_KEYS.VENDOR_ID_COUNTER);
-  const counter = counterStr ? parseInt(counterStr) : 0;
-  const newId = (counter + 1).toString();
-  
-  // Create the new vendor with ID and timestamps
-  // ...
-}
+3. Install Expo CLI globally (if not already installed):
+```bash
+npm install -g expo-cli
+# or
+yarn global add expo-cli
 ```
 
-### Screen Integration
+4. Generate Drizzle migrations:
+```bash
+npm run generate
+# or
+yarn generate
+```
 
-All screens have been updated to use AsyncStorage operations:
-
-1. **List Screens**: Show items with filtering, sorting, and search
-2. **Detail Screens**: Show full item details with options to edit or delete
-3. **Edit Screens**: Update existing items
-4. **New Screens**: Create new items
-
-Each screen includes appropriate loading states, error handling, and success feedback.
-
-### Product Management Features
-
-The product management module includes these specific features:
-
-- **Inventory Tracking**: Track stock levels and automatically update status
-- **Stock Status**: Products are classified as "in stock", "low stock", "out of stock", or "discontinued"
-- **Stock Adjustments**: Update stock levels with reasons for adjustment
-- **Barcode Support**: Generate and scan product barcodes
-- **Image Management**: Add multiple product images
-- **Category and Tag Filtering**: Organize products by categories and tags
-- **Price Management**: Track purchase price, selling price, and profit margins
-
-### Product Edit Implementation
-
-The product edit screen follows a consistent pattern with other edit screens:
-
-1. **Data Loading**: When the screen loads, it fetches the product data from AsyncStorage using the product ID
-2. **Form Population**: All form fields are populated with the existing product data
-3. **Data Validation**: Before saving, all required fields are validated
-4. **Status Determination**: Product stock status is automatically determined based on quantity and reorder level
-5. **AsyncStorage Update**: On save, the product data is updated in AsyncStorage
-6. **Change Tracking**: The screen tracks changes to form fields to notify users of unsaved changes
-7. **Collapsible Sections**: Detailed form is organized into collapsible sections for better usability
-8. **Success Feedback**: Users receive confirmation when the product is successfully updated
-
-This ensures a consistent user experience across the application for all data types.
+5. Run database migrations:
+```bash
+npm run migrate
+# or
+yarn migrate
+```
 
 ## Running the App
 
-1. Clone the repository
-2. Install dependencies: `npm install`
-3. Start the Expo project: `npx expo start`
+1. Start the development server:
+```bash
+npx expo start
+```
+
+2. Run on specific platform:
+```bash
+# For Android
+npx expo start --android
+
+# For iOS
+npx expo start --ios
+
+# For web
+npx expo start --web
+```
+
+## Database Structure
+
+The application uses SQLite with Drizzle ORM for data persistence. Key tables include:
+
+- users
+- companies
+- customers
+- vendors
+- products
+- sales_orders
+- sales_invoices
+- sales_returns
+- purchase_orders
+- purchase_invoices
+- purchase_returns
+- payment_ins
+- payment_outs
+- income_categories
+- expense_categories
+- account_groups
+- ledger
+- transactions
+
+## Authentication
+
+- User registration and login
+- Secure password storage
+- Session management
+- Protected routes
+
+## Data Management
+
+### Sales Module
+- Create and manage sales orders
+- Generate sales invoices
+- Process sales returns
+- Track customer payments
+- View sales history
+
+### Purchase Module
+- Create and manage purchase orders
+- Process purchase invoices
+- Handle purchase returns
+- Track vendor payments
+- View purchase history
+
+### Financial Module
+- Record income and expenses
+- Track transactions
+- Maintain ledger entries
+- Generate financial reports
+- View balance sheet
+
+### Inventory Module
+- Manage product inventory
+- Track stock levels
+- Monitor product movements
+- Set reorder levels
+- View stock reports
+
+## Reports
+
+### Financial Reports
+- Transaction reports with filtering
+- Detailed ledger reports
+- Income statement
+- Expense analysis
+- Balance sheet
+
+### Business Reports
+- Sales performance analysis
+- Purchase activity reports
+- Customer transaction history
+- Vendor payment status
+- Product movement reports
 
 ## Future Improvements
 
-- Implement sync capabilities with a backend server
-- Add data export/import functionality
-- Implement data backup and restore
-- Add invoice generation using customer, vendor, and product data
-- Implement barcode scanning with device camera 
+- Cloud synchronization
+- Multi-currency support
+- Barcode scanning
+- Receipt scanning
+- Data export/import
+- Backup and restore
+- User roles and permissions
+- Multi-branch support
+- Tax management
+- Invoice templates
+- Email notifications
+- Mobile app notifications
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Support
+
+For support, email support@invoicehub.com or create an issue in the repository. 
