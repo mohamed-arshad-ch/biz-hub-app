@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, StatusBar, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Plus, Search, Filter, Calendar, SortAsc, SortDesc, ChevronDown, X, FileText, ArrowLeft, Share2, Printer } from 'lucide-react-native';
+import { Plus, Search, Filter, Calendar, SortAsc, SortDesc, ChevronDown, X, FileText, ArrowLeft, Share2, Printer, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAuthStore } from '@/store/auth';
 import { getSalesReturns } from '@/db/sales-return';
+import { formatCurrency } from '@/utils/currency';
 
 type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc';
 type FilterOption = 'all' | 'draft' | 'pending' | 'approved' | 'rejected' | 'completed';
@@ -162,7 +163,7 @@ export default function SalesReturnScreen() {
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.label}>Amount:</Text>
-            <Text style={styles.amount}>${(item.total / 100).toFixed(2)}</Text>
+            <Text style={styles.amount}>{formatCurrency(item.total / 100)}</Text>
           </View>
         </View>
       </TouchableOpacity>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, StatusBar, ActivityIndicator, Share as RNShare } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, StatusBar, ActivityIndicator, Share as RNShare, SafeAreaView as RNSafeAreaView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Edit, Trash2, Calendar, CreditCard, User, Hash, Tag, Clock, Printer, FileText, DollarSign, Package } from 'lucide-react-native';
+import { ArrowLeft, Edit, Trash2, Calendar, CreditCard, User, Hash, Tag, Clock, Printer, FileText, DollarSign, Package, Share2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { PaymentIn } from '@/types/payment-in';
 import { paymentInData } from '@/mocks/paymentInData';
@@ -11,6 +11,7 @@ import { useAuthStore } from '@/store/auth';
 import { getPaymentInById, deletePaymentIn } from '@/db/payment-in';
 import * as dbCustomer from '@/db/customer';
 import * as dbInvoice from '@/db/sales-invoice';
+import { formatCurrency } from '@/utils/currency';
 
 export default function PaymentInDetailsScreen() {
   const router = useRouter();
@@ -80,8 +81,19 @@ export default function PaymentInDetailsScreen() {
     );
   };
   
+  const handleShareReceipt = async () => {
+    try {
+      const message = `Payment Receipt: #${payment.paymentNumber}\nAmount: ${formatCurrency(payment.amount)}\nDate: ${payment.paymentDate}\nMethod: ${payment.paymentMethod}`;
+      await RNShare.share({
+        message,
+      });
+    } catch (error) {
+      console.log('Error sharing receipt:', error);
+    }
+  };
+
   const handlePrint = () => {
-    Alert.alert('Print', 'Printing payment receipt...');
+    Alert.alert('Print', `Printing payment #${payment.paymentNumber}`);
   };
 
   const getStatusColor = (status: string) => {
@@ -99,7 +111,7 @@ export default function PaymentInDetailsScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
@@ -111,65 +123,50 @@ export default function PaymentInDetailsScreen() {
     return null;
   }
 
+  const formattedDate = new Date(payment.paymentDate).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
+      
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Payment #{payment.paymentNumber}</Text>
+        <Text style={styles.title}>Payment Details</Text>
         <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={handlePrint}
+          >
+            <Printer size={20} color={Colors.primary} />
+          </TouchableOpacity>
           <TouchableOpacity 
             style={styles.headerButton}
             onPress={() => router.push(`/payment-in/edit/${payment.id}`)}
           >
             <Edit size={20} color={Colors.primary} />
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.headerButton}
-            onPress={handleDelete}
-          >
-            <Trash2 size={20} color={Colors.negative} />
-          </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Payment Information</Text>
-          <View style={styles.infoRow}>
-            <View style={styles.infoLabel}>
-              <FileText size={16} color={Colors.text.secondary} />
-              <Text style={styles.infoLabelText}>Customer</Text>
-            </View>
-            <Text style={styles.infoValue}>{customer?.name}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <View style={styles.infoLabel}>
-              <Calendar size={16} color={Colors.text.secondary} />
-              <Text style={styles.infoLabelText}>Payment Date</Text>
-            </View>
-            <Text style={styles.infoValue}>{payment.paymentDate}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <View style={styles.infoLabel}>
-              <DollarSign size={16} color={Colors.text.secondary} />
-              <Text style={styles.infoLabelText}>Payment Method</Text>
-            </View>
-            <Text style={styles.infoValue}>{payment.paymentMethod}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <View style={styles.infoLabel}>
-              <Hash size={16} color={Colors.text.secondary} />
-              <Text style={styles.infoLabelText}>Reference Number</Text>
-            </View>
-            <Text style={styles.infoValue}>{payment.referenceNumber || '-'}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <View style={styles.infoLabel}>
-              <FileText size={16} color={Colors.text.secondary} />
-              <Text style={styles.infoLabelText}>Status</Text>
+      {/* Scrollable Content */}
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Payment Summary Card */}
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryHeader}>
+            <View>
+              <Text style={styles.paymentNumber}>#{payment.paymentNumber}</Text>
+              <Text style={styles.paymentDate}>{formattedDate}</Text>
             </View>
             <View style={[styles.statusBadge, { backgroundColor: getStatusColor(payment.status).bg }]}>
               <Text style={[styles.statusText, { color: getStatusColor(payment.status).text }]}>
@@ -177,46 +174,129 @@ export default function PaymentInDetailsScreen() {
               </Text>
             </View>
           </View>
+          <View style={styles.summaryAmountContainer}>
+            <Text style={styles.amountLabel}>Payment Amount</Text>
+            <Text style={styles.amountValue}>{formatCurrency(payment.amount)}</Text>
+          </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Invoices</Text>
+        {/* Customer Info */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Customer</Text>
+          {customer && (
+            <View style={styles.customerInfo}>
+              <Text style={styles.customerName}>{customer.name}</Text>
+              {customer.email && <Text style={styles.customerDetail}>{customer.email}</Text>}
+              {customer.phone && <Text style={styles.customerDetail}>{customer.phone}</Text>}
+            </View>
+          )}
+        </View>
+
+        {/* Payment Details */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Payment Details</Text>
+          
+          <View style={styles.detailRow}>
+            <View style={styles.detailLabelContainer}>
+              <Calendar size={16} color={Colors.text.secondary} />
+              <Text style={styles.detailLabel}>Date</Text>
+            </View>
+            <Text style={styles.detailValue}>{formattedDate}</Text>
+          </View>
+          
+          <View style={styles.detailRow}>
+            <View style={styles.detailLabelContainer}>
+              <CreditCard size={16} color={Colors.text.secondary} />
+              <Text style={styles.detailLabel}>Method</Text>
+            </View>
+            <Text style={styles.detailValue}>{payment.paymentMethod}</Text>
+          </View>
+          
+          {payment.referenceNumber && (
+            <View style={styles.detailRow}>
+              <View style={styles.detailLabelContainer}>
+                <Hash size={16} color={Colors.text.secondary} />
+                <Text style={styles.detailLabel}>Reference</Text>
+              </View>
+              <Text style={styles.detailValue}>{payment.referenceNumber}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Invoices */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Invoices Paid</Text>
           {payment.items.map((item: any, index: number) => {
             const invoice = invoices.find(inv => inv.id === item.invoiceId);
             return (
-              <View key={index} style={styles.itemCard}>
-                <View style={styles.itemHeader}>
-                  <View style={styles.itemInfo}>
-                    <Package size={16} color={Colors.text.secondary} />
-                    <Text style={styles.itemName}>Invoice #{invoice?.invoiceNumber}</Text>
+              <TouchableOpacity 
+                key={index} 
+                style={styles.invoiceItem}
+                onPress={() => router.push(`/sales-invoice/${item.invoiceId}`)}
+              >
+                <View style={styles.invoiceInfo}>
+                  <View style={styles.invoiceHeader}>
+                    <Text style={styles.invoiceNumber}>
+                      Invoice #{invoice?.invoiceNumber || item.invoiceId}
+                    </Text>
+                    {invoice?.status && (
+                      <View style={[styles.smallStatusBadge, { 
+                        backgroundColor: invoice.status === 'paid' 
+                          ? 'rgba(76, 175, 80, 0.1)' 
+                          : 'rgba(251, 188, 4, 0.1)' 
+                      }]}>
+                        <Text style={[styles.smallStatusText, { 
+                          color: invoice.status === 'paid' 
+                            ? Colors.status.completed 
+                            : Colors.status.pending 
+                        }]}>
+                          {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                        </Text>
+                      </View>
+                    )}
                   </View>
+                  {invoice?.date && (
+                    <Text style={styles.invoiceDate}>
+                      {new Date(invoice.date).toLocaleDateString()}
+                    </Text>
+                  )}
                 </View>
-                <View style={styles.itemDetails}>
-                  <View style={styles.itemTotal}>
-                    <Text style={styles.itemLabel}>Amount</Text>
-                    <Text style={styles.itemTotalText}>${(item.amount / 100).toFixed(2)}</Text>
-                  </View>
-                </View>
-              </View>
+                <Text style={styles.invoiceAmount}>{formatCurrency(item.amount)}</Text>
+              </TouchableOpacity>
             );
           })}
         </View>
 
+        {/* Notes */}
         {payment.notes && (
-          <View style={styles.section}>
+          <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Notes</Text>
             <Text style={styles.notesText}>{payment.notes}</Text>
           </View>
         )}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Summary</Text>
-          <View style={[styles.summaryRow, styles.totalRow]}>
-            <Text style={styles.totalRowLabel}>Total Amount</Text>
-            <Text style={styles.totalRowValue}>${(payment.amount / 100).toFixed(2)}</Text>
-          </View>
-        </View>
+        
+        {/* Space for footer */}
+        <View style={{ height: 80 }} />
       </ScrollView>
+      
+      {/* Fixed Footer */}
+      <View style={styles.footer}>
+        <TouchableOpacity 
+          style={styles.footerButton} 
+          onPress={handleShareReceipt}
+        >
+          <Share2 size={20} color={Colors.primary} />
+          <Text style={styles.footerButtonText}>Share Receipt</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.footerButton, styles.deleteButton]} 
+          onPress={handleDelete}
+        >
+          <Trash2 size={20} color={Colors.negative} />
+          <Text style={[styles.footerButtonText, styles.deleteButtonText]}>Delete</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -231,10 +311,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: Colors.background.default,
+    height: 56,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border.light,
+    backgroundColor: Colors.background.default,
+    zIndex: 10,
   },
   backButton: {
     width: 40,
@@ -249,6 +330,7 @@ const styles = StyleSheet.create({
   },
   headerActions: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   headerButton: {
@@ -260,111 +342,194 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  section: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.text.primary,
+  summaryCard: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 16,
+    padding: 20,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
   },
-  infoRow: {
+  summaryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    alignItems: 'flex-start',
+    marginBottom: 16,
   },
-  infoLabel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  paymentNumber: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.text.primary,
+    marginBottom: 4,
   },
-  infoLabelText: {
+  paymentDate: {
     fontSize: 14,
     color: Colors.text.secondary,
-  },
-  infoValue: {
-    fontSize: 14,
-    color: Colors.text.primary,
-    fontWeight: '500',
   },
   statusBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 8,
   },
   statusText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  summaryAmountContainer: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    paddingTop: 16,
+  },
+  amountLabel: {
     fontSize: 14,
+    color: Colors.text.secondary,
+    marginBottom: 4,
+  },
+  amountValue: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  sectionCard: {
+    backgroundColor: Colors.background.default,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginBottom: 16,
+  },
+  customerInfo: {
+    gap: 4,
+  },
+  customerName: {
+    fontSize: 16,
     fontWeight: '500',
+    color: Colors.text.primary,
+    marginBottom: 4,
   },
-  itemCard: {
-    backgroundColor: Colors.background.secondary,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
+  customerDetail: {
+    fontSize: 14,
+    color: Colors.text.secondary,
   },
-  itemHeader: {
+  detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
-  itemInfo: {
+  detailLabelContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  itemName: {
-    fontSize: 14,
-    color: Colors.text.primary,
-    fontWeight: '500',
-  },
-  itemDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  itemTotal: {
-    alignItems: 'flex-end',
-  },
-  itemLabel: {
-    fontSize: 12,
+  detailLabel: {
+    fontSize: 15,
     color: Colors.text.secondary,
-    marginBottom: 4,
   },
-  itemTotalText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  notesText: {
-    fontSize: 14,
+  detailValue: {
+    fontSize: 15,
+    fontWeight: '500',
     color: Colors.text.primary,
-    lineHeight: 20,
   },
-  summaryRow: {
+  invoiceItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
   },
-  totalRow: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
-    marginTop: 8,
-    paddingTop: 16,
+  invoiceInfo: {
+    flex: 1,
   },
-  totalRowLabel: {
-    fontSize: 18,
+  invoiceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  invoiceNumber: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.text.primary,
+  },
+  smallStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  smallStatusText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  invoiceDate: {
+    fontSize: 13,
+    color: Colors.text.tertiary,
+  },
+  invoiceAmount: {
+    fontSize: 16,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  totalRowValue: {
-    fontSize: 18,
-    fontWeight: '600',
+  notesText: {
+    fontSize: 15,
+    color: Colors.text.secondary,
+    lineHeight: 22,
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.background.default,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  footerButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 8,
+    marginHorizontal: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.2)',
+  },
+  deleteButton: {
+    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+    borderColor: 'rgba(244, 67, 54, 0.2)',
+  },
+  footerButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
     color: Colors.primary,
+  },
+  deleteButtonText: {
+    color: Colors.negative,
   },
 }); 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, StatusBar, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Plus, Search, Filter, ArrowLeft, Calendar, SortAsc, SortDesc, ChevronDown, User, Share2, Printer, X, FileText } from 'lucide-react-native';
+import { Plus, Search, Filter, ArrowLeft, Calendar, SortAsc, SortDesc, ChevronDown, User, Share2, Printer, X, FileText, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth';
@@ -9,6 +9,7 @@ import { getSalesInvoices } from '@/db/sales-invoice';
 import { getAllCustomers } from '@/db/customer';
 import type { SalesInvoice } from '@/db/schema';
 import type { Customer } from '@/db/schema';
+import { formatCurrency } from '@/utils/currency';
 
 type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc';
 type FilterOption = 'all' | 'paid' | 'unpaid' | 'overdue' | 'cancelled';
@@ -166,7 +167,7 @@ export default function SalesInvoiceScreen() {
       <View style={styles.invoiceContent}>
         <View style={styles.invoiceMainInfo}>
           <Text style={styles.customerName}>{getCustomerName(item.customerId)}</Text>
-          <Text style={styles.amount}>${(item.total / 100).toFixed(2)}</Text>
+          <Text style={styles.amount}>{formatCurrency(item.total / 100)}</Text>
         </View>
         <View style={styles.invoiceDetails}>
           <View style={styles.detailRow}>

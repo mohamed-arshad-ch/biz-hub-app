@@ -31,7 +31,7 @@ import { eq, desc, and, gte, lte, sql } from 'drizzle-orm';
 import { useAuthStore } from '@/store/auth';
 
 import Colors from "@/constants/colors";
-import { formatCurrency } from "@/utils/formatters";
+import { formatCurrency } from "@/utils/currency";
 import { getMetricsData, getRecentTransactions } from "@/mocks/dashboardData";
 
 const { width } = Dimensions.get('window');

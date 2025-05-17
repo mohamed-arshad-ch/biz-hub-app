@@ -1,6 +1,7 @@
+import React from 'react';
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState, Suspense } from "react";
 import { View, ActivityIndicator, Text } from "react-native";
@@ -12,7 +13,8 @@ import { SQLiteProvider } from 'expo-sqlite';
 import { DATABASE_NAME } from '@/db';
 import { setupDatabase, setupDefaultData } from '@/db/setup';
 
-import { initializeAuth } from '../store/auth';
+import { initializeAuth, useAuthStore } from '../store/auth';
+import { useCurrencyStore } from '../store/currency';
 
 export const unstable_settings = {
   // Ensure that reloading on `/modal` keeps a back button present.
@@ -31,6 +33,7 @@ export default function RootLayout() {
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [authInitialized, setAuthInitialized] = useState(false);
+  const initializeCurrency = useCurrencyStore(state => state.initializeCurrency);
 
   // Set up database and initialize auth
   useEffect(() => {
@@ -47,6 +50,9 @@ export default function RootLayout() {
         // Initialize auth state
         await initializeAuth();
         setAuthInitialized(true);
+
+        // Initialize currency
+        await initializeCurrency();
       } catch (error) {
         console.error('Initialization error:', error);
         setDbError('An error occurred during initialization');
@@ -104,13 +110,13 @@ export default function RootLayout() {
         options={{ enableChangeListener: true }}
         useSuspense
       >
-        <GestureHandlerRootView style={{ flex: 1 }}>
+       
           <ErrorBoundary>
           
               <RootLayoutNav />
            
           </ErrorBoundary>
-        </GestureHandlerRootView>
+       
       </SQLiteProvider>
     </Suspense>
   );

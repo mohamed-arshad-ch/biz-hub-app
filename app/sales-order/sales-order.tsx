@@ -12,7 +12,8 @@ import {
   User, 
   Share2,
   Printer,
-  X
+  X,
+  ChevronRight
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,6 +23,7 @@ import type { SalesOrder } from '@/db/schema';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAllCustomers } from '@/db/customer';
 import type { Customer } from '@/db/schema';
+import { formatCurrency } from '@/utils/currency';
 
 type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc';
 type FilterOption = 'all' | 'completed' | 'processing' | 'draft' | 'cancelled';
@@ -182,7 +184,7 @@ export default function SalesOrderScreen() {
         <View style={styles.orderContent}>
           <View style={styles.orderMainInfo}>
             <Text style={styles.customerName}>{customer ? customer.name : `Customer #${item.customerId}`}</Text>
-            <Text style={styles.amount}>${(item.total / 100).toFixed(2)}</Text>
+            <Text style={styles.amount}>{formatCurrency(item.total / 100)}</Text>
           </View>
           
           <View style={styles.orderDetails}>

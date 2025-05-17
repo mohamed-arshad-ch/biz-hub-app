@@ -290,7 +290,7 @@ export default function PurchaseReportScreen() {
   // Paginate purchases
   const startIndex = (currentPage - 1) * pageSize;
   const paginatedPurchases = sortedPurchases.slice(startIndex, startIndex + pageSize);
-
+  
   // Handle sort change
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -300,7 +300,7 @@ export default function PurchaseReportScreen() {
       setSortDirection(SORT_DIRECTIONS.ASC);
     }
   };
-
+  
   // Handle vendor selection
   const handleVendorSelect = (vendor: string) => {
     setSelectedVendors(prev => 
@@ -327,7 +327,7 @@ export default function PurchaseReportScreen() {
         : [...prev, id.toString()]
     );
   };
-
+  
   // Handle select all
   const handleSelectAll = () => {
     if (selectedItems.length === paginatedPurchases.length) {
@@ -357,12 +357,12 @@ export default function PurchaseReportScreen() {
       setShowExportOptions(false);
     }
   };
-
+  
   // Render status badge
   const renderStatusBadge = (status: string) => {
     let backgroundColor = '#ccc';
     let textColor = '#fff';
-
+    
     switch (status) {
       case 'paid':
         backgroundColor = '#4CAF50';
@@ -379,7 +379,7 @@ export default function PurchaseReportScreen() {
       default:
         backgroundColor = '#9E9E9E';
     }
-
+    
     return (
       <View style={[styles.statusBadge, { backgroundColor }]}>
         <Text style={[styles.statusText, { color: textColor }]}>
@@ -388,76 +388,76 @@ export default function PurchaseReportScreen() {
       </View>
     );
   };
-
+  
   // Render summary view
   const renderSummaryView = () => (
-    <View style={styles.summaryContainer}>
-      <View style={styles.summaryCard}>
+            <View style={styles.summaryContainer}>
+                <View style={styles.summaryCard}>
         <Text style={styles.summaryLabel}>Total Purchases</Text>
         <Text style={styles.summaryValue}>{summaryStats?.totalPurchases || 0}</Text>
         <Text style={styles.summarySubtext}>
           {formatCurrency(summaryStats?.totalAmount || 0)}
-        </Text>
-      </View>
-      <View style={styles.summaryCard}>
+                    </Text>
+                  </View>
+                <View style={styles.summaryCard}>
         <Text style={styles.summaryLabel}>Average Purchase</Text>
         <Text style={styles.summaryValue}>
           {formatCurrency(summaryStats?.averageAmount || 0)}
-        </Text>
-      </View>
-      <View style={styles.summaryCard}>
+                    </Text>
+                  </View>
+                <View style={styles.summaryCard}>
         <Text style={styles.summaryLabel}>Paid Amount</Text>
         <Text style={styles.summaryValue}>
           {formatCurrency(summaryStats?.totalPaid || 0)}
         </Text>
-      </View>
-      <View style={styles.summaryCard}>
+                  </View>
+                <View style={styles.summaryCard}>
         <Text style={styles.summaryLabel}>Unpaid Amount</Text>
         <Text style={styles.summaryValue}>
           {formatCurrency(summaryStats?.totalUnpaid || 0)}
-        </Text>
-      </View>
-    </View>
+                    </Text>
+                  </View>
+                </View>
   );
 
   // Render vendor summary view
   const renderVendorSummaryView = () => (
-    <View style={styles.tableContainer}>
-      <View style={styles.tableHeader}>
+                  <View style={styles.tableContainer}>
+                    <View style={styles.tableHeader}>
         <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Vendor</Text>
         <Text style={styles.tableHeaderCell}>Purchases</Text>
         <Text style={styles.tableHeaderCell}>Total Amount</Text>
         <Text style={styles.tableHeaderCell}>Average</Text>
-      </View>
+                      </View>
       {vendorSummary.map((vendor, index) => (
         <View key={vendor.vendorId} style={[styles.tableRow, index % 2 === 0 && styles.tableRowEven]}>
           <Text style={[styles.tableCell, { flex: 2 }]}>{vendor.vendorName}</Text>
           <Text style={styles.tableCell}>{vendor.totalPurchases}</Text>
           <Text style={styles.tableCell}>{formatCurrency(vendor.totalAmount)}</Text>
           <Text style={styles.tableCell}>{formatCurrency(vendor.averageAmount)}</Text>
-        </View>
-      ))}
-    </View>
+                        </View>
+                      ))}
+                  </View>
   );
 
   // Render product summary view
   const renderProductSummaryView = () => (
-    <View style={styles.tableContainer}>
-      <View style={styles.tableHeader}>
+                  <View style={styles.tableContainer}>
+                    <View style={styles.tableHeader}>
         <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Product</Text>
         <Text style={styles.tableHeaderCell}>Quantity</Text>
         <Text style={styles.tableHeaderCell}>Total Amount</Text>
         <Text style={styles.tableHeaderCell}>Average</Text>
-      </View>
+                      </View>
       {productSummary.map((product, index) => (
         <View key={product.productId} style={[styles.tableRow, index % 2 === 0 && styles.tableRowEven]}>
           <Text style={[styles.tableCell, { flex: 2 }]}>{product.productName}</Text>
           <Text style={styles.tableCell}>{formatNumber(product.quantitySold)}</Text>
           <Text style={styles.tableCell}>{formatCurrency(product.totalAmount)}</Text>
           <Text style={styles.tableCell}>{formatCurrency(product.averageAmount)}</Text>
-        </View>
+                      </View>
       ))}
-    </View>
+                      </View>
   );
 
   // Render date range summary view
@@ -475,28 +475,28 @@ export default function PurchaseReportScreen() {
           <Text style={styles.tableCell}>{date.totalPurchases}</Text>
           <Text style={styles.tableCell}>{formatCurrency(date.totalAmount)}</Text>
           <Text style={styles.tableCell}>{formatCurrency(date.averageAmount)}</Text>
-        </View>
-      ))}
-    </View>
+                        </View>
+                      ))}
+                  </View>
   );
 
   // Render detailed view
   const renderDetailedView = () => (
     <View style={styles.tableContainer}>
       <View style={styles.tableHeader}>
-        {selectMode ? (
-          <TouchableOpacity 
+                    {selectMode ? (
+                        <TouchableOpacity 
             style={styles.checkboxCell} 
-            onPress={handleSelectAll}
-          >
-            {selectedItems.length === paginatedPurchases.length ? (
+                          onPress={handleSelectAll}
+                        >
+                          {selectedItems.length === paginatedPurchases.length ? (
               <CheckSquare size={20} color={Colors.primary} />
-            ) : (
+                          ) : (
               <Square size={20} color={Colors.primary} />
-            )}
-          </TouchableOpacity>
+                          )}
+                        </TouchableOpacity>
         ) : null}
-        <TouchableOpacity 
+                      <TouchableOpacity 
           style={styles.tableHeaderCell} 
           onPress={() => handleSort('date')}
         >
@@ -506,8 +506,8 @@ export default function PurchaseReportScreen() {
               <ArrowUp size={16} color={Colors.primary} /> : 
               <ArrowDown size={16} color={Colors.primary} />
           )}
-        </TouchableOpacity>
-        <TouchableOpacity 
+                      </TouchableOpacity>
+                      <TouchableOpacity 
           style={styles.tableHeaderCell} 
           onPress={() => handleSort('invoiceNumber')}
         >
@@ -517,8 +517,8 @@ export default function PurchaseReportScreen() {
               <ArrowUp size={16} color={Colors.primary} /> : 
               <ArrowDown size={16} color={Colors.primary} />
           )}
-        </TouchableOpacity>
-        <TouchableOpacity 
+                      </TouchableOpacity>
+                      <TouchableOpacity 
           style={styles.tableHeaderCell} 
           onPress={() => handleSort('vendor')}
         >
@@ -528,8 +528,8 @@ export default function PurchaseReportScreen() {
               <ArrowUp size={16} color={Colors.primary} /> : 
               <ArrowDown size={16} color={Colors.primary} />
           )}
-        </TouchableOpacity>
-        <TouchableOpacity 
+                      </TouchableOpacity>
+                      <TouchableOpacity 
           style={styles.tableHeaderCell} 
           onPress={() => handleSort('amount')}
         >
@@ -539,8 +539,8 @@ export default function PurchaseReportScreen() {
               <ArrowUp size={16} color={Colors.primary} /> : 
               <ArrowDown size={16} color={Colors.primary} />
           )}
-        </TouchableOpacity>
-        <TouchableOpacity 
+                      </TouchableOpacity>
+                      <TouchableOpacity 
           style={styles.tableHeaderCell} 
           onPress={() => handleSort('status')}
         >
@@ -550,21 +550,21 @@ export default function PurchaseReportScreen() {
               <ArrowUp size={16} color={Colors.primary} /> : 
               <ArrowDown size={16} color={Colors.primary} />
           )}
-        </TouchableOpacity>
-      </View>
-      {paginatedPurchases.map((purchase, index) => (
-        <TouchableOpacity
-          key={purchase.id}
+                      </TouchableOpacity>
+                    </View>
+                    {paginatedPurchases.map((purchase, index) => (
+                      <TouchableOpacity 
+                        key={purchase.id}
           style={[styles.tableRow, index % 2 === 0 && styles.tableRowEven]}
-          onPress={() => {
-            if (selectMode) {
+                        onPress={() => {
+                          if (selectMode) {
               handleItemSelect(purchase.id);
-            } else {
+                          } else {
               router.push(`/purchase-invoice/${purchase.id}`);
-            }
-          }}
-        >
-          {selectMode && (
+                          }
+                        }}
+                      >
+                        {selectMode && (
             <View style={styles.checkboxCell}>
               {selectedItems.includes(purchase.id.toString()) ? (
                 <CheckSquare size={20} color={Colors.primary} />
@@ -579,10 +579,10 @@ export default function PurchaseReportScreen() {
           <Text style={styles.tableCell}>{formatCurrency(purchase.total)}</Text>
           <View style={styles.tableCell}>
             {renderStatusBadge(purchase.status || '')}
-          </View>
+                        </View>
         </TouchableOpacity>
       ))}
-    </View>
+                        </View>
   );
 
   return (
@@ -608,9 +608,9 @@ export default function PurchaseReportScreen() {
           >
             <Filter size={24} color={Colors.primary} />
           </TouchableOpacity>
-        </View>
-      </View>
-
+                        </View>
+                        </View>
+                        
       <View style={styles.content}>
         <View style={styles.toolbar}>
           <View style={styles.searchContainer}>
@@ -624,13 +624,13 @@ export default function PurchaseReportScreen() {
             {searchQuery ? (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
                 <X size={20} color={Colors.text} />
-              </TouchableOpacity>
+                      </TouchableOpacity>
             ) : null}
-          </View>
+                  </View>
 
           <View style={styles.viewModeContainer}>
-            <TouchableOpacity
-              style={[
+                      <TouchableOpacity 
+                        style={[
                 styles.viewModeButton,
                 viewMode === VIEW_MODES.SUMMARY && styles.viewModeButtonActive
               ]}
@@ -642,7 +642,7 @@ export default function PurchaseReportScreen() {
               ]}>Summary</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[
+                          style={[
                 styles.viewModeButton,
                 viewMode === VIEW_MODES.DETAILED && styles.viewModeButtonActive
               ]}
@@ -652,9 +652,9 @@ export default function PurchaseReportScreen() {
                 styles.viewModeText,
                 viewMode === VIEW_MODES.DETAILED && styles.viewModeTextActive
               ]}>Detailed</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={[
                 styles.viewModeButton,
                 viewMode === VIEW_MODES.VENDOR && styles.viewModeButtonActive
               ]}
@@ -666,7 +666,7 @@ export default function PurchaseReportScreen() {
               ]}>By Vendor</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[
+                          style={[
                 styles.viewModeButton,
                 viewMode === VIEW_MODES.PRODUCT && styles.viewModeButtonActive
               ]}
@@ -676,9 +676,9 @@ export default function PurchaseReportScreen() {
                 styles.viewModeText,
                 viewMode === VIEW_MODES.PRODUCT && styles.viewModeTextActive
               ]}>By Product</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={[
                 styles.viewModeButton,
                 viewMode === VIEW_MODES.DATE_RANGE && styles.viewModeButtonActive
               ]}
@@ -688,7 +688,7 @@ export default function PurchaseReportScreen() {
                 styles.viewModeText,
                 viewMode === VIEW_MODES.DATE_RANGE && styles.viewModeTextActive
               ]}>By Date</Text>
-            </TouchableOpacity>
+                      </TouchableOpacity>
           </View>
         </View>
 
@@ -698,9 +698,9 @@ export default function PurchaseReportScreen() {
               <Text style={styles.filterLabel}>Vendors</Text>
               <View style={styles.filterOptions}>
                 {Array.from(new Set(purchaseData.map(purchase => purchase.vendorName))).map(vendor => (
-                  <TouchableOpacity
+                      <TouchableOpacity 
                     key={vendor}
-                    style={[
+                        style={[
                       styles.filterOption,
                       selectedVendors.includes(vendor) && styles.filterOptionSelected
                     ]}
@@ -710,18 +710,18 @@ export default function PurchaseReportScreen() {
                       styles.filterOptionText,
                       selectedVendors.includes(vendor) && styles.filterOptionTextSelected
                     ]}>{vendor}</Text>
-                  </TouchableOpacity>
+                      </TouchableOpacity>
                 ))}
               </View>
-            </View>
-
+                    </View>
+                    
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Status</Text>
               <View style={styles.filterOptions}>
                 {Array.from(new Set(purchaseData.map(purchase => purchase.status))).map(status => (
-                  <TouchableOpacity
+                        <TouchableOpacity 
                     key={status}
-                    style={[
+                          style={[
                       styles.filterOption,
                       selectedStatuses.includes(status) && styles.filterOptionSelected
                     ]}
@@ -731,10 +731,10 @@ export default function PurchaseReportScreen() {
                       styles.filterOptionText,
                       selectedStatuses.includes(status) && styles.filterOptionTextSelected
                     ]}>{status}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
 
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Options</Text>
@@ -750,8 +750,8 @@ export default function PurchaseReportScreen() {
                 </View>
               </View>
             </View>
-          </View>
-        )}
+              </View>
+            )}
 
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -764,7 +764,7 @@ export default function PurchaseReportScreen() {
             {viewMode === VIEW_MODES.VENDOR && renderVendorSummaryView()}
             {viewMode === VIEW_MODES.PRODUCT && renderProductSummaryView()}
             {viewMode === VIEW_MODES.DATE_RANGE && renderDateRangeSummaryView()}
-          </ScrollView>
+      </ScrollView>
         )}
       </View>
 
@@ -793,8 +793,8 @@ export default function PurchaseReportScreen() {
               >
                 <FileText size={24} color={Colors.primary} />
                 <Text style={styles.exportOptionText}>CSV</Text>
-              </TouchableOpacity>
-            </View>
+          </TouchableOpacity>
+        </View>
             {isExporting && (
               <View style={styles.exportProgress}>
                 <Text style={styles.exportProgressText}>
@@ -815,9 +815,9 @@ export default function PurchaseReportScreen() {
               onPress={() => setShowExportOptions(false)}
             >
               <Text style={styles.exportModalCloseText}>Close</Text>
-            </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
         </View>
+      </View>
       )}
     </SafeAreaView>
   );

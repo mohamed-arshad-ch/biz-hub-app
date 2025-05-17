@@ -311,7 +311,7 @@ export default function ExpenseReportScreen() {
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadReportData();
-    setRefreshing(false);
+      setRefreshing(false);
   };
   
   // Handle date range selection
@@ -1180,7 +1180,7 @@ export default function ExpenseReportScreen() {
         {renderDateRangeSelector()}
         
         <View style={styles.actionButtons}>
-          <TouchableOpacity 
+                <TouchableOpacity 
             style={styles.actionButton}
             onPress={handleExport}
           >
@@ -1324,52 +1324,52 @@ export default function ExpenseReportScreen() {
                 }
                 renderItem={({ item: expense }) => (
                   <TouchableOpacity 
-                    style={[
-                      styles.tableRow,
-                      selectedItems.includes(expense.id) && styles.tableRowSelected
-                    ]}
-                    onPress={() => selectMode ? handleSelectItem(expense.id) : router.push(`/expenses/${expense.id}`)}
-                    onLongPress={() => {
-                      if (!selectMode) {
-                        setSelectMode(true);
-                        handleSelectItem(expense.id);
-                      }
-                    }}
-                  >
-                    {selectMode && (
-                      <View style={[styles.tableCell, { width: 50 }]}>
-                        {selectedItems.includes(expense.id) ? (
-                          <CheckSquare size={18} color={Colors.primary} />
-                        ) : (
-                          <Square size={18} color="#666" />
-                        )}
-                      </View>
-                    )}
-                    
-                    <Text style={[styles.tableCell, { width: 100 }]}>
-                      {formatDateShort(expense.date)}
-                    </Text>
-                    
-                    <Text style={[styles.tableCell, { width: 120 }]}>
+                  style={[
+                    styles.tableRow,
+                    selectedItems.includes(expense.id) && styles.tableRowSelected
+                  ]}
+                  onPress={() => selectMode ? handleSelectItem(expense.id) : router.push(`/expenses/${expense.id}`)}
+                  onLongPress={() => {
+                    if (!selectMode) {
+                      setSelectMode(true);
+                      handleSelectItem(expense.id);
+                    }
+                  }}
+                >
+                  {selectMode && (
+                    <View style={[styles.tableCell, { width: 50 }]}>
+                      {selectedItems.includes(expense.id) ? (
+                        <CheckSquare size={18} color={Colors.primary} />
+                      ) : (
+                        <Square size={18} color="#666" />
+                      )}
+                    </View>
+                  )}
+                  
+                  <Text style={[styles.tableCell, { width: 100 }]}>
+                    {formatDateShort(expense.date)}
+                  </Text>
+                  
+                  <Text style={[styles.tableCell, { width: 120 }]}>
                       {expense.categoryName}
-                    </Text>
-                    
-                    <Text style={[styles.tableCell, { width: 150 }]} numberOfLines={1}>
-                      {expense.vendor || 'N/A'}
-                    </Text>
-                    
-                    <Text style={[styles.tableCell, { width: 200 }]} numberOfLines={1}>
-                      {expense.description}
-                    </Text>
-                    
-                    <Text style={[styles.tableCell, { width: 120 }]}>
-                      {expense.paymentMethod || 'N/A'}
-                    </Text>
-                    
-                    <Text style={[styles.tableCell, { width: 120, color: '#F44336', fontWeight: '500' }]}>
-                      {formatCurrency(expense.amount)}
-                    </Text>
-                  </TouchableOpacity>
+                  </Text>
+                  
+                  <Text style={[styles.tableCell, { width: 150 }]} numberOfLines={1}>
+                    {expense.vendor || 'N/A'}
+                  </Text>
+                  
+                  <Text style={[styles.tableCell, { width: 200 }]} numberOfLines={1}>
+                    {expense.description}
+                  </Text>
+                  
+                  <Text style={[styles.tableCell, { width: 120 }]}>
+                    {expense.paymentMethod || 'N/A'}
+                  </Text>
+                  
+                  <Text style={[styles.tableCell, { width: 120, color: '#F44336', fontWeight: '500' }]}>
+                    {formatCurrency(expense.amount)}
+                  </Text>
+                </TouchableOpacity>
                 )}
                 ListHeaderComponent={() => (
                   <View style={styles.tableHeader}>
@@ -1396,7 +1396,7 @@ export default function ExpenseReportScreen() {
                         <ArrowUp size={14} color="#666" /> : 
                         <ArrowDown size={14} color="#666" />
                       )}
-                    </TouchableOpacity>
+        </TouchableOpacity>
                     
                     <TouchableOpacity 
                       style={[styles.tableHeaderCell, { width: 120 }]}
@@ -1410,7 +1410,7 @@ export default function ExpenseReportScreen() {
                       )}
                     </TouchableOpacity>
                     
-                    <TouchableOpacity 
+          <TouchableOpacity 
                       style={[styles.tableHeaderCell, { width: 150 }]}
                       onPress={() => handleSortToggle('vendor')}
                     >
@@ -1420,9 +1420,9 @@ export default function ExpenseReportScreen() {
                         <ArrowUp size={14} color="#666" /> : 
                         <ArrowDown size={14} color="#666" />
                       )}
-                    </TouchableOpacity>
+          </TouchableOpacity>
                     
-                    <TouchableOpacity 
+          <TouchableOpacity 
                       style={[styles.tableHeaderCell, { width: 200 }]}
                       onPress={() => handleSortToggle('description')}
                     >
@@ -1432,12 +1432,12 @@ export default function ExpenseReportScreen() {
                         <ArrowUp size={14} color="#666" /> : 
                         <ArrowDown size={14} color="#666" />
                       )}
-                    </TouchableOpacity>
+          </TouchableOpacity>
                     
                     <View style={[styles.tableHeaderCell, { width: 120 }]}>
                       <Text style={styles.tableHeaderText}>Payment</Text>
-                    </View>
-                    
+      </View>
+
                     <TouchableOpacity 
                       style={[styles.tableHeaderCell, { width: 120 }]}
                       onPress={() => handleSortToggle('amount')}
@@ -1449,7 +1449,7 @@ export default function ExpenseReportScreen() {
                         <ArrowDown size={14} color="#666" />
                       )}
                     </TouchableOpacity>
-                  </View>
+        </View>
                 )}
                 ListEmptyComponent={() => (
                   <View style={styles.emptyTableContainer}>
