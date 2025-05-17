@@ -24,13 +24,10 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, fontError] = useFonts({
-    ...FontAwesome.font,
-    // Using only FontAwesome and system default fonts
-  });
+
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
-  const [authInitialized, setAuthInitialized] = useState(false);
+
   const initializeCurrency = useCurrencyStore(state => state.initializeCurrency);
 
   // Set up database and initialize auth
@@ -45,9 +42,9 @@ export default function RootLayout() {
           return;
         }
 
-        // Initialize auth state
-        await initializeAuth();
-        setAuthInitialized(true);
+        // // Initialize auth state
+        // await initializeAuth();
+        // setAuthInitialized(true);
 
         // Initialize currency
         await initializeCurrency();
@@ -61,21 +58,16 @@ export default function RootLayout() {
     initApp();
   }, []);
 
-  useEffect(() => {
-    if (fontError) {
-      console.error(fontError);
-      throw fontError;
-    }
-  }, [fontError]);
+ 
 
   useEffect(() => {
-    if (loaded && dbReady && authInitialized) {
+    if (dbReady) {
       // Hide the native splash screen
       SplashScreen.hideAsync();
     }
-  }, [loaded, dbReady, authInitialized]);
+  }, [ dbReady]);
 
-  if (!loaded || !dbReady || !authInitialized) {
+  if ( !dbReady ) {
     if (dbError) {
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
@@ -88,7 +80,14 @@ export default function RootLayout() {
         </View>
       );
     }
-    return null;
+    return  (<View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+      <Text style={{ fontSize: 18, color: 'red', textAlign: 'center', marginBottom: 20 }}>
+        {dbError}
+      </Text>
+      <Text style={{ fontSize: 14, color: '#666', textAlign: 'center' }}>
+        Please check app
+      </Text>
+    </View>);
   }
 
   return (

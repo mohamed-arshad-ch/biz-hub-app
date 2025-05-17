@@ -10,7 +10,8 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
-  Image
+  Image,
+  Linking
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -23,11 +24,13 @@ import {
   Mail,
   Phone,
   Building2,
-  Edit,
-  Trash2,
-  FileText,
-  Check,
-  ArrowLeft
+  ArrowLeft,
+  ChevronRight,
+  SortAsc,
+  SortDesc,
+  Filter,
+  MessageCircle,
+  Check
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -66,6 +69,7 @@ export default function CustomersScreen() {
   const [filterBy, setFilterBy] = useState<FilterOption>('all');
   
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
 
   // Load customers data
   useEffect(() => {
@@ -88,6 +92,7 @@ export default function CustomersScreen() {
         notes: c.notes || '',
         avatar: null, // No avatar in schema
       }));
+      setAllCustomers(mapped);
       setCustomers(mapped);
       setLoading(false);
       setRefreshing(false);
@@ -108,37 +113,79 @@ export default function CustomersScreen() {
     setSortBy(option);
     setShowSortOptions(false);
     
-    // Sort the customers based on selected option
-    const sortedCustomers = [...customers].sort((a, b) => {
-      if (option === 'name-asc') {
-        return a.name.localeCompare(b.name);
-      } else if (option === 'name-desc') {
-        return b.name.localeCompare(a.name);
-      } else if (option === 'type-asc') {
-        return a.type.localeCompare(b.type);
-      } else if (option === 'type-desc') {
-        return b.type.localeCompare(a.type);
-      } else {
-        // recent - sort by ID descending (assuming newer records have higher IDs)
-        return b.id.localeCompare(a.id);
-      }
-    });
-    
-    setCustomers(sortedCustomers);
+    // Apply sort to all filtered customers
+    applyFiltersAndSort(option, filterBy);
   };
 
   const handleFilter = (option: FilterOption) => {
     setFilterBy(option);
     setShowFilterOptions(false);
     
-    // Filter the customers based on selected option
-    if (option === 'all') {
-      setCustomers(customers);
-    } else {
-      const filteredCustomers = customers.filter(customer => 
-        customer.type.toLowerCase() === option
+    // Apply filter with current sort
+    applyFiltersAndSort(sortBy, option);
+  };
+
+  // Apply search, filter, and sort
+  useEffect(() => {
+    applyFiltersAndSort(sortBy, filterBy);
+  }, [allCustomers, searchQuery]);
+
+  const applyFiltersAndSort = (sortOption: SortOption, filterOption: FilterOption) => {
+    let filtered = [...allCustomers];
+    
+    // Apply search
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(customer => 
+        customer.name.toLowerCase().includes(query) || 
+        customer.email.toLowerCase().includes(query) ||
+        customer.phone.includes(query)
       );
-      setCustomers(filteredCustomers);
+    }
+    
+    // Apply filter
+    if (filterOption !== 'all') {
+      filtered = filtered.filter(customer => 
+        customer.type.toLowerCase() === filterOption
+      );
+    }
+    
+    // Apply sort
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortOption === 'name-asc') {
+        return a.name.localeCompare(b.name);
+      } else if (sortOption === 'name-desc') {
+        return b.name.localeCompare(a.name);
+      } else if (sortOption === 'type-asc') {
+        return a.type.localeCompare(b.type);
+      } else if (sortOption === 'type-desc') {
+        return b.type.localeCompare(a.type);
+      } else {
+        // recent - sort by ID descending
+        return b.id.localeCompare(a.id);
+      }
+    });
+    
+    setCustomers(sorted);
+  };
+
+  const handleCall = (phone: string, event: any) => {
+    event.stopPropagation();
+    if (phone) {
+      Linking.openURL(`tel:${phone}`);
+    } else {
+      Alert.alert('No Phone Number', 'This customer does not have a phone number.');
+    }
+  };
+
+  const handleWhatsApp = (phone: string, event: any) => {
+    event.stopPropagation();
+    if (phone) {
+      // Remove any non-digit characters from the phone number
+      const cleanPhone = phone.replace(/\D/g, '');
+      Linking.openURL(`https://wa.me/${cleanPhone}`);
+    } else {
+      Alert.alert('No Phone Number', 'This customer does not have a phone number for WhatsApp.');
     }
   };
 
@@ -195,110 +242,105 @@ export default function CustomersScreen() {
     
     return (
       <TouchableOpacity
-        style={styles.customerItem}
+        style={styles.card}
         onPress={() => router.push(`/customers/${item.id}`)}
       >
-        <View style={styles.customerContent}>
-          <View style={styles.customerMainInfo}>
-            <View style={styles.customerAvatarContainer}>
-              {item.avatar ? (
-                <Image source={{ uri: item.avatar }} style={styles.customerAvatar} />
-              ) : (
-                <View style={[
-                  styles.customerAvatarPlaceholder, 
-                  { backgroundColor: item.type === 'Business' ? '#E3F2FD' : '#E8F5E9' }
-                ]}>
-                  {item.type === 'Business' ? (
-                    <Building2 size={20} color="#2196F3" />
-                  ) : (
-                    <User size={20} color="#4CAF50" />
-                  )}
-                </View>
-              )}
-            </View>
-            
-            <View style={styles.customerInfo}>
-              <Text style={styles.customerName}>{item.name}</Text>
-              <View style={styles.typeBadge}>
-                <Text style={styles.typeText}>{item.type}</Text>
-              </View>
+        <View style={styles.cardHeader}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.customerName}>{item.name}</Text>
+            <View style={[styles.typeBadge, { 
+              backgroundColor: item.type === 'Business' 
+                ? 'rgba(33, 150, 243, 0.1)' 
+                : 'rgba(76, 175, 80, 0.1)'
+            }]}>
+              <Text style={[styles.typeText, { 
+                color: item.type === 'Business' 
+                  ? Colors.info 
+                  : Colors.primary 
+              }]}>
+                {item.type}
+              </Text>
             </View>
           </View>
           
-          <View style={styles.customerDetails}>
-            {item.contactName && (
-              <View style={styles.detailRow}>
-                <User size={16} color={Colors.text.secondary} style={styles.detailIcon} />
-                <Text style={styles.detailText}>{item.contactName}</Text>
-              </View>
-            )}
-            
+          {item.contactName && (
+            <Text style={styles.contactName}>{item.contactName}</Text>
+          )}
+        </View>
+        
+        <View style={styles.cardContent}>
+          <View style={styles.customerInfo}>
             <View style={styles.detailRow}>
               <Mail size={16} color={Colors.text.secondary} style={styles.detailIcon} />
-              <Text style={styles.detailText}>{item.email}</Text>
+              <Text style={styles.detailText} numberOfLines={1}>{item.email || 'No email'}</Text>
             </View>
             
             <View style={styles.detailRow}>
               <Phone size={16} color={Colors.text.secondary} style={styles.detailIcon} />
-              <Text style={styles.detailText}>{item.phone}</Text>
+              <Text style={styles.detailText}>{item.phone || 'No phone'}</Text>
             </View>
           </View>
           
-          <View style={styles.customerActions}>
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => handleEdit(item.id)}
-            >
-              <Edit size={16} color={Colors.primary} />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => router.push(`/customers/${item.id}`)}
-            >
-              <FileText size={16} color={Colors.text.secondary} />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => handleDelete(item.id)}
-            >
-              <Trash2 size={16} color="#FF3B30" />
-            </TouchableOpacity>
-          </View>
+          <ChevronRight size={18} color={Colors.text.tertiary} />
+        </View>
+
+        <View style={styles.cardActions}>
+          <TouchableOpacity 
+            style={styles.cardActionButton}
+            onPress={(e) => handleCall(item.phone, e)}
+          >
+            <Phone size={18} color={Colors.text.secondary} />
+            <Text style={styles.cardActionText}>Call</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.cardActionButton}
+            onPress={(e) => handleWhatsApp(item.phone, e)}
+          >
+            <MessageCircle size={18} color={Colors.text.secondary} />
+            <Text style={styles.cardActionText}>WhatsApp</Text>
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
-  }, [deletingId]);
-  
+  }, [router, deletingId]);
+
   const renderEmptyList = () => (
     <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>No customers found</Text>
-      {searchQuery !== '' && (
-        <Text style={styles.emptySubtext}>
-          Try adjusting your search or filter criteria
-        </Text>
+      {!loading && (
+        <>
+          <User size={50} color={Colors.text.tertiary} />
+          <Text style={styles.emptyTitle}>No Customers Found</Text>
+          <Text style={styles.emptyDescription}>
+            {searchQuery 
+              ? `No customers match "${searchQuery}"`
+              : 'Add your first customer to get started'}
+          </Text>
+          {!searchQuery && (
+            <TouchableOpacity
+              style={styles.emptyButton}
+              onPress={() => router.push('/customers/new')}
+            >
+              <Plus size={20} color="#fff" />
+              <Text style={styles.emptyButtonText}>Add Customer</Text>
+            </TouchableOpacity>
+          )}
+        </>
       )}
-      <TouchableOpacity 
-        style={styles.emptyButton}
-        onPress={() => router.push('/customers/new')}
-      >
-        <Plus size={16} color="#FFF" />
-        <Text style={styles.emptyButtonText}>Add New Customer</Text>
-      </TouchableOpacity>
     </View>
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background.default} />
-      
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Customers</Text>
-        <View style={{width: 40}} />
+        <TouchableOpacity onPress={() => router.push('/customers/new')} style={styles.addButton}>
+          <Plus size={24} color={Colors.primary} />
+        </TouchableOpacity>
       </View>
       
       <View style={styles.searchContainer}>
@@ -306,13 +348,13 @@ export default function CustomersScreen() {
           <Search size={18} color={Colors.text.secondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search customers..."
+            placeholder="Search customers"
             placeholderTextColor={Colors.text.tertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
+            <TouchableOpacity onPress={() => setSearchQuery("")}> 
               <X size={18} color={Colors.text.secondary} />
             </TouchableOpacity>
           )}
@@ -320,148 +362,123 @@ export default function CustomersScreen() {
       </View>
       
       <View style={styles.filterSortContainer}>
-        <View style={styles.filterSortWrapper}>
-          <TouchableOpacity 
-            style={styles.filterButton}
-            onPress={() => {
-              setShowFilterOptions(!showFilterOptions);
-              setShowSortOptions(false);
-            }}
-          >
-            <Text style={styles.filterSortText}>
-              {filterBy === 'all' ? 'All Customers' : 
-               filterBy === 'business' ? 'Business Customers' : 'Individual Customers'}
-            </Text>
-            <ChevronDown size={18} color={Colors.text.secondary} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.sortButton}
-            onPress={() => {
-              setShowSortOptions(!showSortOptions);
-              setShowFilterOptions(false);
-            }}
-          >
-            <ArrowUpDown size={18} color={Colors.text.secondary} />
-            <Text style={styles.filterSortText}>
-              {sortBy === 'name-asc' ? 'Name: A to Z' : 
-               sortBy === 'name-desc' ? 'Name: Z to A' :
-               sortBy === 'type-asc' ? 'Type: A to Z' :
-               sortBy === 'type-desc' ? 'Type: Z to A' : 'Most Recent'}
-            </Text>
-            <ChevronDown size={18} color={Colors.text.secondary} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity 
+          style={styles.filterButton}
+          onPress={() => {
+            setShowFilterOptions(!showFilterOptions);
+            setShowSortOptions(false);
+          }}
+        >
+          <Filter size={16} color={Colors.text.secondary} />
+          <Text style={styles.filterSortText}>
+            {filterBy === 'all' ? 'All Types' : 
+             filterBy === 'business' ? 'Business' : 'Individual'}
+          </Text>
+          <ChevronDown size={16} color={Colors.text.secondary} />
+        </TouchableOpacity>
         
-        {showSortOptions && (
-          <View style={styles.dropdown}>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'name-asc' && styles.selectedItem]}
-              onPress={() => handleSort('name-asc')}
-            >
-              <Text style={[styles.dropdownText, sortBy === 'name-asc' && styles.selectedText]}>Name: A to Z</Text>
-              {sortBy === 'name-asc' && <Check size={18} color={Colors.primary} />}
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'name-desc' && styles.selectedItem]}
-              onPress={() => handleSort('name-desc')}
-            >
-              <Text style={[styles.dropdownText, sortBy === 'name-desc' && styles.selectedText]}>Name: Z to A</Text>
-              {sortBy === 'name-desc' && <Check size={18} color={Colors.primary} />}
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'type-asc' && styles.selectedItem]}
-              onPress={() => handleSort('type-asc')}
-            >
-              <Text style={[styles.dropdownText, sortBy === 'type-asc' && styles.selectedText]}>Type: A to Z</Text>
-              {sortBy === 'type-asc' && <Check size={18} color={Colors.primary} />}
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'type-desc' && styles.selectedItem]}
-              onPress={() => handleSort('type-desc')}
-            >
-              <Text style={[styles.dropdownText, sortBy === 'type-desc' && styles.selectedText]}>Type: Z to A</Text>
-              {sortBy === 'type-desc' && <Check size={18} color={Colors.primary} />}
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, sortBy === 'recent' && styles.selectedItem]}
-              onPress={() => handleSort('recent')}
-            >
-              <Text style={[styles.dropdownText, sortBy === 'recent' && styles.selectedText]}>Most Recent</Text>
-              {sortBy === 'recent' && <Check size={18} color={Colors.primary} />}
-            </TouchableOpacity>
-          </View>
-        )}
-        
-        {showFilterOptions && (
-          <View style={styles.dropdown}>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'all' && styles.selectedItem]}
-              onPress={() => handleFilter('all')}
-            >
-              <Text style={[styles.dropdownText, filterBy === 'all' && styles.selectedText]}>All Customers</Text>
-              {filterBy === 'all' && <Check size={18} color={Colors.primary} />}
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'business' && styles.selectedItem]}
-              onPress={() => handleFilter('business')}
-            >
-              <Text style={[styles.dropdownText, filterBy === 'business' && styles.selectedText]}>Business Customers</Text>
-              {filterBy === 'business' && <Check size={18} color={Colors.primary} />}
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.dropdownItem, filterBy === 'individual' && styles.selectedItem]}
-              onPress={() => handleFilter('individual')}
-            >
-              <Text style={[styles.dropdownText, filterBy === 'individual' && styles.selectedText]}>Individual Customers</Text>
-              {filterBy === 'individual' && <Check size={18} color={Colors.primary} />}
-            </TouchableOpacity>
-          </View>
-        )}
+        <TouchableOpacity 
+          style={styles.sortButton}
+          onPress={() => {
+            setShowSortOptions(!showSortOptions);
+            setShowFilterOptions(false);
+          }}
+        >
+          {sortBy.includes('desc') ? (
+            <SortDesc size={16} color={Colors.text.secondary} />
+          ) : (
+            <SortAsc size={16} color={Colors.text.secondary} />
+          )}
+          <Text style={styles.filterSortText}>
+            {sortBy === 'name-asc' ? 'Name A-Z' :
+             sortBy === 'name-desc' ? 'Name Z-A' :
+             sortBy === 'type-asc' ? 'Type A-Z' :
+             sortBy === 'type-desc' ? 'Type Z-A' : 'Recent'}
+          </Text>
+          <ChevronDown size={16} color={Colors.text.secondary} />
+        </TouchableOpacity>
       </View>
-
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading customers...</Text>
+      
+      {showFilterOptions && (
+        <View style={styles.optionsDropdown}>
+          <TouchableOpacity
+            style={[styles.optionItem, filterBy === 'all' && styles.selectedOption]}
+            onPress={() => handleFilter('all')}
+          >
+            <Text style={styles.optionText}>All Types</Text>
+            {filterBy === 'all' && <Check size={16} color={Colors.primary} />}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionItem, filterBy === 'business' && styles.selectedOption]}
+            onPress={() => handleFilter('business')}
+          >
+            <Text style={styles.optionText}>Business</Text>
+            {filterBy === 'business' && <Check size={16} color={Colors.primary} />}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionItem, filterBy === 'individual' && styles.selectedOption]}
+            onPress={() => handleFilter('individual')}
+          >
+            <Text style={styles.optionText}>Individual</Text>
+            {filterBy === 'individual' && <Check size={16} color={Colors.primary} />}
+          </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          data={customers.filter(customer => {
-            if (searchQuery) {
-              const query = searchQuery.toLowerCase();
-              return (
-                customer.name.toLowerCase().includes(query) ||
-                (customer.contactName && customer.contactName.toLowerCase().includes(query)) ||
-                customer.email.toLowerCase().includes(query) ||
-                customer.phone.toLowerCase().includes(query) ||
-                customer.type.toLowerCase().includes(query) ||
-                (customer.notes && customer.notes.toLowerCase().includes(query))
-              );
-            }
-            return true;
-          })}
-          keyExtractor={(item) => item.id}
-          renderItem={renderCustomerItem}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[Colors.primary]}
-            />
-          }
-          ListEmptyComponent={renderEmptyList}
-        />
       )}
       
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/customers/new')}
-      >
-        <Plus size={24} color="#FFFFFF" />
-      </TouchableOpacity>
+      {showSortOptions && (
+        <View style={styles.optionsDropdown}>
+          <TouchableOpacity
+            style={[styles.optionItem, sortBy === 'name-asc' && styles.selectedOption]}
+            onPress={() => handleSort('name-asc')}
+          >
+            <Text style={styles.optionText}>Name A-Z</Text>
+            {sortBy === 'name-asc' && <Check size={16} color={Colors.primary} />}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionItem, sortBy === 'name-desc' && styles.selectedOption]}
+            onPress={() => handleSort('name-desc')}
+          >
+            <Text style={styles.optionText}>Name Z-A</Text>
+            {sortBy === 'name-desc' && <Check size={16} color={Colors.primary} />}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionItem, sortBy === 'type-asc' && styles.selectedOption]}
+            onPress={() => handleSort('type-asc')}
+          >
+            <Text style={styles.optionText}>Type A-Z</Text>
+            {sortBy === 'type-asc' && <Check size={16} color={Colors.primary} />}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionItem, sortBy === 'type-desc' && styles.selectedOption]}
+            onPress={() => handleSort('type-desc')}
+          >
+            <Text style={styles.optionText}>Type Z-A</Text>
+            {sortBy === 'type-desc' && <Check size={16} color={Colors.primary} />}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionItem, sortBy === 'recent' && styles.selectedOption]}
+            onPress={() => handleSort('recent')}
+          >
+            <Text style={styles.optionText}>Most Recent</Text>
+            {sortBy === 'recent' && <Check size={16} color={Colors.primary} />}
+          </TouchableOpacity>
+        </View>
+      )}
+      
+      <FlatList
+        data={customers}
+        keyExtractor={(item) => item.id}
+        renderItem={renderCustomerItem}
+        contentContainerStyle={styles.listContainer}
+        ListEmptyComponent={renderEmptyList}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[Colors.primary]}
+          />
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -473,62 +490,56 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: Colors.background.default,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
+    borderBottomColor: Colors.border,
   },
   backButton: {
     width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   title: {
     fontSize: 20,
     fontWeight: '600',
     color: Colors.text.primary,
   },
+  addButton: {
+    width: 40,
+    alignItems: 'flex-end',
+  },
   searchContainer: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.background.secondary,
-    borderRadius: 12,
+    borderRadius: 8,
     paddingHorizontal: 12,
-    height: 44,
+    paddingVertical: 10,
   },
   searchInput: {
     flex: 1,
-    height: 44,
     marginLeft: 8,
     fontSize: 16,
     color: Colors.text.primary,
   },
   filterSortContainer: {
-    position: 'relative',
-    zIndex: 100,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  filterSortWrapper: {
     flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
     justifyContent: 'space-between',
   },
   filterButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: Colors.background.secondary,
-    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    borderRadius: 8,
     flex: 1,
     marginRight: 8,
   },
@@ -536,165 +547,98 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.background.secondary,
-    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    borderRadius: 8,
     flex: 1,
     marginLeft: 8,
   },
   filterSortText: {
+    marginHorizontal: 8,
     fontSize: 14,
     color: Colors.text.secondary,
     flex: 1,
-    marginLeft: 8,
   },
-  dropdown: {
-    position: 'absolute',
-    top: 45,
-    left: 16,
-    right: 16,
-    backgroundColor: 'white',
-    borderRadius: 10,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
-    zIndex: 200,
+  optionsDropdown: {
+    marginHorizontal: 16,
+    backgroundColor: Colors.background.card,
+    borderRadius: 8,
+    padding: 8,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    marginBottom: 8,
+    zIndex: 100,
   },
-  dropdownItem: {
+  optionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
+    borderRadius: 6,
   },
-  selectedItem: {
-    backgroundColor: 'rgba(76, 175, 80, 0.08)',
+  selectedOption: {
+    backgroundColor: Colors.background.tertiary,
   },
-  dropdownText: {
-    fontSize: 15,
-    color: Colors.text.secondary,
-  },
-  selectedText: {
-    color: Colors.primary,
-    fontWeight: '500',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.background.default,
-  },
-  loadingText: {
-    marginTop: 12,
+  optionText: {
     fontSize: 16,
-    color: Colors.text.secondary,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.background.default,
-    padding: 20,
-    minHeight: 300,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
     color: Colors.text.primary,
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  emptyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  emptyButtonText: {
-    color: '#FFF',
-    fontWeight: '600',
-    marginLeft: 8,
   },
   listContainer: {
     padding: 16,
-    paddingBottom: 80,
+    paddingTop: 8,
   },
-  customerItem: {
-    backgroundColor: Colors.background.default,
+  card: {
+    backgroundColor: Colors.background.card,
     borderRadius: 12,
-    marginBottom: 16,
-    // // shadowColor: "#000",
-    // // shadowOffset: {
-    // //   width: 0,
-    // //   height: 2,
-    // // },
-    // // shadowOpacity: 0.1,
-    // // shadowRadius: 3,
-    // elevation: 2,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
-  },
-  customerContent: {
     padding: 16,
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
   },
-  customerMainInfo: {
+  cardHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
-  customerAvatarContainer: {
-    marginRight: 12,
-  },
-  customerAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
-  customerAvatarPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
+  headerLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  customerInfo: {
     flex: 1,
-    justifyContent: 'center',
   },
   customerName: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
     color: Colors.text.primary,
-    marginBottom: 4,
+    marginRight: 8,
+  },
+  contactName: {
+    fontSize: 14,
+    color: Colors.text.secondary,
   },
   typeBadge: {
-    backgroundColor: Colors.background.secondary,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
-    alignSelf: 'flex-start',
   },
   typeText: {
     fontSize: 12,
-    color: Colors.text.secondary,
     fontWeight: '500',
   },
-  customerDetails: {
+  cardContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
+  },
+  customerInfo: {
+    flex: 1,
   },
   detailRow: {
     flexDirection: 'row',
@@ -708,64 +652,69 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.text.secondary,
   },
-  customerActions: {
+  cardActions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
     borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
+    borderTopColor: Colors.border,
     paddingTop: 12,
   },
-  actionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
-    justifyContent: 'center',
+  cardActionButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 8,
+    justifyContent: 'center',
+    flex: 1,
+    paddingVertical: 6,
   },
-  fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
+  cardActionText: {
+    marginLeft: 6,
+    fontSize: 14,
+    color: Colors.text.secondary,
+    fontWeight: '500',
+  },
+  emptyContainer: {
     alignItems: 'center',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
-    elevation: 8,
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    marginTop: 16,
+  },
+  emptyDescription: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 24,
+  },
+  emptyButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    marginLeft: 8,
   },
   deletingItemContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.background.default,
+    backgroundColor: Colors.background.card,
     borderRadius: 12,
+    padding: 24,
     marginBottom: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#FF3B3020',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
   },
   deletingText: {
-    fontSize: 14,
-    color: '#FF3B30',
-    marginLeft: 8,
+    marginLeft: 12,
+    fontSize: 16,
+    color: Colors.text.secondary,
   },
 });
